@@ -83,7 +83,7 @@ GOOGLE_MAPS_API_KEY=your_server_key
 - Expo Android 앱 셸
 - 여행 생성: 도쿄 고정, 박/일/인원
 - Gemini AI 초기 일정 (실패 시 도쿄 폴백 코스)
-- Day 타임라인 + 롱프레스 드래그 앤 드롭 정렬
+- Day 타임라인 + **≡ 핸들** 롱프레스 DnD 정렬 (`activationDistance`)
 - Google Maps 기본 뷰 + 장소 마커
 - AsyncStorage 로컬 저장
 - 여행 중 사진+리뷰 캡처 (Step 호환)
@@ -105,13 +105,13 @@ GOOGLE_MAPS_API_KEY=your_server_key
 3. **실시간 교통**: Maps 키 있으면 Google Directions, 없으면 하버사인. 일정 생성·DnD 후 `forceRecalc`로 재계산.
 4. **SMS 실사용 경로**: 클립보드 붙여넣기 + Android share intentFilter 문서. 인박스 자동 읽기는 커스텀 빌드 필요 (`apps/mobile/docs/SMS.md`).
 5. **숙소 Top N**: `lodgingCandidates` + scoreBreakdown(centrality/price/ratingProxy). Plan에서 선택 시 동선 재계산.
-6. **카테고리 DnD UX**: 맛집/관광/숙소 필터 칩 + 카테고리별 장소 추가 제안.
+6. **카테고리 DnD UX**: 맛집/관광/숙소 필터 칩 + 카테고리별 장소 추가 제안. 필터 ON에서도 부분 집합 재정렬 후 당일 시퀀스에 splice.
 7. **Naver Maps 어댑터 스캐폴드**: `mapProvider` google|naver, `NAVER_MAP_CLIENT_ID` env. 도쿄/오사카는 Google.
 8. **다도시 라이트**: 오사카 선택 가능. `@9rutrip/shared` ↔ 9ruDocs 스키마 노트 (`packages/shared/README.md`).
 
 ## P3 (구현됨)
 
-1. **교통 수단 비교 UI**: Plan 이동 glance 탭 → 도보/대중교통/택시 분·비용 비교 시트. `preferredTransportMode` 저장 후 glance·`travelFromPrev*` 반영.
+1. **교통 수단 비교 UI**: Plan **「이동 · 비교 ›」** 칩 → 도보/대중교통/택시 분·비용 비교 시트. `preferredTransportMode` 저장 후 glance·`travelFromPrev*` 반영.
 2. **비교 API**: `POST /trip/compare-transport` (`from`/`to` 또는 `places`+`placeId`). Maps 키 있으면 Directions(walking/transit/driving), 없으면 모드별 haversine.
 3. **enrich 확장**: `/trip/enrich-transport`가 `transportOptions[]`를 채우고, 선호 모드를 travel 필드에 적용.
 4. **Plan 지도+리스트**: Day 압축 지도(~37% 높이) + DnD 리스트. 선택 시 마커 하이라이트. 키 없어도 graceful.
@@ -122,9 +122,9 @@ GOOGLE_MAPS_API_KEY=your_server_key
 
 1. `GET /health` → `googleMapsConfigured`
 2. `POST /trip/compare-transport` `{ "from":{"lat":35.6812,"lng":139.7671}, "to":{"lat":35.6581,"lng":139.7017} }` → options 3개
-3. Plan: glance 탭 → 모드 선택 → 표시 갱신
+3. Plan: 「이동 · 비교 ›」 칩 → 모드 선택 → 표시 갱신
 4. Plan: 상단 지도 마커 ↔ 리스트 선택 연동
-5. DnD 후 enrich → `transportOptions` 유지/재계산
+5. ≡ 핸들 DnD / 필터 중 DnD / Day▶ / 삭제 → enrich + 실행 취소
 
 ## 테스트
 
@@ -153,6 +153,16 @@ npm run typecheck
 - 여행 중 GPS 이탈 시 재루트 배너 (`aiRerouteEnabled`)
 - Plan Day 지도 경로 polyline
 - `npm test` (sms-parse / haversine)
+
+### Plan UX (우선 수정)
+
+- **핸들 DnD**: `≡`만 길게 눌러 순서 변경 (hitSlop·힌트·`activationDistance`)
+- **필터+DnD**: 카테고리 필터 ON에서도 필터 목록 내 재정렬 → 전체 Day에 splice (다른 카테고리 상대 위치 유지)
+- **Day 이동**: 행의 `Day▶` → 다른 `dayIndex`로 이동 후 order 재부여·enrich
+- **실행 취소**: DnD / Day 이동 / 삭제 직후 ~5초 「실행 취소」 스낵바
+- **장소 삭제**: 행 `삭제` → 확인 후 enrich
+- **낙관적 enrich**: 로컬 순서 즉시 반영 + 「교통 재계산 중…」 인디케이터
+- **비교 CTA**: glance를 「이동 · 비교 ›」 칩으로 노출
 
 ## API
 

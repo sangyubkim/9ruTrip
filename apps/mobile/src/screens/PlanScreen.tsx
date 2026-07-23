@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -55,6 +55,19 @@ const FILTERS: { id: CatFilter; label: string }[] = [
 ];
 
 const MAP_PANE_HEIGHT = Math.round(Dimensions.get("window").height * 0.37);
+const UNDO_MS = 5000;
+const HANDLE_HIT_SLOP = { top: 14, bottom: 14, left: 14, right: 14 };
+
+function renumberGlobal(places: ItineraryPlace[]): ItineraryPlace[] {
+  const sorted = [...places].sort(
+    (a, b) => a.dayIndex - b.dayIndex || a.order - b.order,
+  );
+  return sorted.map((p, i) => ({ ...p, order: i }));
+}
+
+function budgetOf(places: ItineraryPlace[]): number {
+  return places.reduce((s, p) => s + (Number(p.estimatedCost) || 0), 0);
+}
 
 export function PlanScreen({
   trip,
@@ -82,6 +95,10 @@ export function PlanScreen({
   const [compareOptions, setCompareOptions] = useState<TransportOption[]>([]);
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareEngine, setCompareEngine] = useState<string>("");
+  const [undoVisible, setUndoVisible] = useState(false);
+
+  const undoSnapshotRef = useRef<ItineraryPlace[] | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useGuideAlarms(trip, trip.guideAlarmsEnabled && trip.status === "active");
 
@@ -115,52 +132,150 @@ export function PlanScreen({
 
   const lodgingCandidates: LodgingCandidate[] = trip.lodgingCandidates ?? [];
 
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    };
+  }, []);
+
+  const clearUndoTimer = () => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+  };
+
+  const pushUndoSnapshot = () => {
+    undoSnapshotRef.current = trip.places.map((p) => ({ ...p }));
+    setUndoVisible(true);
+    clearUndoTimer();
+    undoTimerRef.current = setTimeout(() => {
+      setUndoVisible(false);
+      undoSnapshotRef.current = null;
+      undoTimerRef.current = null;
+    }, UNDO_MS);
+  };
+
+  /** 로컬 순서를 즉시 반영한 뒤 enrich (낙관적 업데이트). */
   const applyPlaces = async (
     places: ItineraryPlace[],
     extra: Partial<Trip> = {},
   ) => {
+    const localTrip: Trip = {
+      ...trip,
+      ...extra,
+      places,
+      plannedBudget: budgetOf(places),
+      updatedAt: new Date().toISOString(),
+    };
+    onChangeTrip(localTrip);
     setEnriching(true);
     try {
       const res = await enrichTransport(places, true, trip.cityId);
       onChangeTrip({
-        ...trip,
-        ...extra,
+        ...localTrip,
         places: res.places,
-        plannedBudget: res.places.reduce(
-          (s, p) => s + (Number(p.estimatedCost) || 0),
-          0,
-        ),
+        plannedBudget: budgetOf(res.places),
         updatedAt: new Date().toISOString(),
       });
     } catch {
-      onChangeTrip({
-        ...trip,
-        ...extra,
-        places,
-        updatedAt: new Date().toISOString(),
-      });
+      // 로컬 순서·삭제는 이미 반영됨
     } finally {
       setEnriching(false);
     }
   };
 
+  const undoLastChange = () => {
+    const snap = undoSnapshotRef.current;
+    if (!snap) return;
+    undoSnapshotRef.current = null;
+    setUndoVisible(false);
+    clearUndoTimer();
+    void applyPlaces(snap);
+  };
+
+  /**
+   * 필터 ON이어도 필터된 부분 집합만 재정렬한 뒤
+   * 당일 전체 시퀀스에 splice (다른 카테고리 상대 위치 유지).
+   */
   const reorder = (data: ItineraryPlace[]) => {
-    if (catFilter !== "all") {
-      Alert.alert(
-        "필터 해제",
-        "카테고리 필터가 켜져 있으면 전체 Day 순서를 바꿀 수 없습니다. 전체를 선택한 뒤 드래그하세요.",
-      );
+    pushUndoSnapshot();
+    const others = trip.places.filter((p) => p.dayIndex !== day);
+    const dayFull = trip.places
+      .filter((p) => p.dayIndex === day)
+      .sort((a, b) => a.order - b.order);
+
+    let reorderedDay: ItineraryPlace[];
+    if (catFilter === "all") {
+      reorderedDay = data.map((p) => ({ ...p, dayIndex: day }));
+    } else {
+      const queue = [...data];
+      reorderedDay = dayFull.map((p) => {
+        if (p.category === catFilter) {
+          const next = queue.shift();
+          return next ? { ...next, dayIndex: day } : { ...p, dayIndex: day };
+        }
+        return { ...p, dayIndex: day };
+      });
+    }
+
+    reorderedDay = reorderedDay.map((p, i) => ({ ...p, order: i }));
+    void applyPlaces(renumberGlobal([...others, ...reorderedDay]));
+  };
+
+  const movePlaceToDay = (placeId: string, targetDay: number) => {
+    const place = trip.places.find((p) => p.id === placeId);
+    if (!place || place.dayIndex === targetDay) return;
+    pushUndoSnapshot();
+    const without = trip.places.filter((p) => p.id !== placeId);
+    const targetOrders = without
+      .filter((p) => p.dayIndex === targetDay)
+      .map((p) => p.order);
+    const maxOrder = targetOrders.length ? Math.max(...targetOrders) : -1;
+    const moved: ItineraryPlace = {
+      ...place,
+      dayIndex: targetDay,
+      order: maxOrder + 1,
+    };
+    void applyPlaces(renumberGlobal([...without, moved]));
+    if (day !== targetDay) {
+      setSelectedPlaceId(null);
+    }
+  };
+
+  const promptMoveDay = (place: ItineraryPlace) => {
+    const targets = days.filter((d) => d !== place.dayIndex);
+    if (targets.length === 0) {
+      Alert.alert("이동 불가", "이동할 다른 Day가 없습니다.");
       return;
     }
-    const others = trip.places.filter((p) => p.dayIndex !== day);
-    const reordered = data.map((p, i) => ({ ...p, order: i, dayIndex: day }));
-    const merged = [...others, ...reordered].sort(
-      (a, b) => a.dayIndex - b.dayIndex || a.order - b.order,
+    Alert.alert(
+      "다른 날로 이동",
+      `${place.name}\n현재 Day ${place.dayIndex + 1}`,
+      [
+        ...targets.map((d) => ({
+          text: `Day ${d + 1}`,
+          onPress: () => movePlaceToDay(place.id, d),
+        })),
+        { text: "취소", style: "cancel" as const },
+      ],
     );
-    merged.forEach((p, i) => {
-      p.order = i;
-    });
-    void applyPlaces(merged);
+  };
+
+  const deletePlace = (place: ItineraryPlace) => {
+    Alert.alert("장소 삭제", `"${place.name}"을(를) 일정에서 삭제할까요?`, [
+      { text: "취소", style: "cancel" },
+      {
+        text: "삭제",
+        style: "destructive",
+        onPress: () => {
+          pushUndoSnapshot();
+          const next = trip.places.filter((p) => p.id !== place.id);
+          if (selectedPlaceId === place.id) setSelectedPlaceId(null);
+          void applyPlaces(renumberGlobal(next));
+        },
+      },
+    ]);
   };
 
   const setStatus = (status: Trip["status"]) => {
@@ -232,13 +347,7 @@ export function PlanScreen({
         dayIndex: day,
         order: maxOrder + 1,
       };
-      const merged = [...trip.places, neu].sort(
-        (a, b) => a.dayIndex - b.dayIndex || a.order - b.order,
-      );
-      merged.forEach((p, i) => {
-        p.order = i;
-      });
-      await applyPlaces(merged);
+      await applyPlaces(renumberGlobal([...trip.places, neu]));
       Alert.alert("장소 추가", `${neu.name} (Day ${day + 1})`);
     } catch (e) {
       Alert.alert(
@@ -353,14 +462,16 @@ export function PlanScreen({
       <ScaleDecorator>
         <View>
           {travel ? (
-            <Pressable onPress={() => void openTransportCompare(item)}>
-              <Text style={styles.travel}>{travel}</Text>
+            <Pressable
+              onPress={() => void openTransportCompare(item)}
+              style={styles.compareChip}
+              hitSlop={6}
+            >
+              <Text style={styles.compareChipText}>{travel}</Text>
             </Pressable>
           ) : null}
           <Pressable
             onPress={() => setSelectedPlaceId(item.id)}
-            onLongPress={catFilter === "all" ? drag : undefined}
-            delayLongPress={150}
             style={[
               styles.row,
               isActive && styles.rowActive,
@@ -368,7 +479,16 @@ export function PlanScreen({
               done && styles.rowDone,
             ]}
           >
-            <Text style={styles.drag}>≡</Text>
+            <Pressable
+              onLongPress={drag}
+              delayLongPress={120}
+              hitSlop={HANDLE_HIT_SLOP}
+              style={styles.dragHandle}
+              accessibilityLabel="순서 변경 핸들"
+              accessibilityHint="길게 눌러 순서를 바꿉니다"
+            >
+              <Text style={styles.drag}>≡</Text>
+            </Pressable>
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>
                 {item.plannedTime ? `${item.plannedTime} · ` : ""}
@@ -383,6 +503,22 @@ export function PlanScreen({
                 {item.notes ? ` · ${item.notes}` : ""}
               </Text>
             </View>
+            <Pressable
+              onPress={() => promptMoveDay(item)}
+              style={styles.iconBtn}
+              hitSlop={8}
+              accessibilityLabel="다른 날로 이동"
+            >
+              <Text style={styles.iconBtnText}>Day▶</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => deletePlace(item)}
+              style={styles.iconBtnDanger}
+              hitSlop={8}
+              accessibilityLabel="장소 삭제"
+            >
+              <Text style={styles.iconBtnDangerText}>삭제</Text>
+            </Pressable>
             {trip.status === "active" ? (
               <Pressable
                 onPress={() => markDone(item.id)}
@@ -407,11 +543,16 @@ export function PlanScreen({
       </Text>
       <Text style={styles.sub}>
         {trip.partySize}명 · 계획 {formatYen(trip.plannedBudget)} · {trip.status}
-        {enriching ? " · 교통 재계산…" : ""}
       </Text>
+      {enriching ? (
+        <View style={styles.enrichBar}>
+          <ActivityIndicator size="small" color="#0369a1" />
+          <Text style={styles.enrichText}>교통 재계산 중…</Text>
+        </View>
+      ) : null}
       <Text style={styles.tip}>
-        이동 glance를 탭하면 도보/대중교통/택시를 비교합니다. 길게 눌러
-        드래그(필터=전체).
+        핸들을 길게 눌러 순서 변경 · 「이동 · 비교 ›」로 교통 비교 · Day▶로 날짜
+        이동
       </Text>
 
       {!bannerHidden && trip.status === "active" ? (
@@ -560,12 +701,22 @@ export function PlanScreen({
         onDragEnd={({ data }) => reorder(data)}
         renderItem={renderItem}
         ListHeaderComponent={listHeader}
+        activationDistance={12}
         containerStyle={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 12 }}
         ListEmptyComponent={
           <Text style={styles.empty}>이 날 일정이 없습니다.</Text>
         }
       />
+
+      {undoVisible ? (
+        <View style={styles.undoBar}>
+          <Text style={styles.undoLabel}>일정이 변경되었습니다</Text>
+          <Pressable onPress={undoLastChange} style={styles.undoBtn}>
+            <Text style={styles.undoBtnText}>실행 취소</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <View style={styles.actions}>
         <Pressable style={styles.btn} onPress={onMap}>
@@ -623,6 +774,18 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: "800", color: "#0c4a6e" },
   sub: { color: "#64748b", marginTop: 2 },
   tip: { marginTop: 8, marginBottom: 8, fontSize: 12, color: "#94a3b8" },
+  enrichBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: "#e0f2fe",
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  enrichText: { fontSize: 12, fontWeight: "700", color: "#0369a1" },
   mapPane: {
     height: MAP_PANE_HEIGHT,
     marginBottom: 10,
@@ -691,12 +854,21 @@ const styles = StyleSheet.create({
   lodgingOn: { backgroundColor: "#ffedd5" },
   lodgingName: { fontWeight: "700", color: "#7c2d12", fontSize: 12 },
   lodgingMeta: { fontSize: 10, color: "#c2410c", marginTop: 2 },
-  travel: {
-    fontSize: 11,
-    color: "#0369a1",
+  compareChip: {
+    alignSelf: "flex-start",
     marginBottom: 4,
-    marginLeft: 8,
-    fontWeight: "600",
+    marginLeft: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: "#e0f2fe",
+    borderWidth: 1,
+    borderColor: "#7dd3fc",
+  },
+  compareChipText: {
+    fontSize: 12,
+    color: "#0369a1",
+    fontWeight: "700",
   },
   row: {
     flexDirection: "row",
@@ -711,11 +883,36 @@ const styles = StyleSheet.create({
   rowActive: { backgroundColor: "#e0f2fe", borderColor: "#38bdf8" },
   rowSelected: { borderColor: "#0284c7", backgroundColor: "#f0f9ff" },
   rowDone: { opacity: 0.55 },
-  drag: { fontSize: 18, color: "#94a3b8", marginRight: 10, width: 20 },
+  dragHandle: {
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    marginRight: 6,
+    justifyContent: "center",
+    alignItems: "center",
+    minWidth: 36,
+    minHeight: 36,
+  },
+  drag: { fontSize: 20, color: "#64748b", width: 22, textAlign: "center" },
   name: { fontWeight: "700", color: "#0f172a" },
   meta: { marginTop: 2, fontSize: 12, color: "#64748b" },
+  iconBtn: {
+    marginLeft: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: "#f1f5f9",
+  },
+  iconBtnText: { color: "#475569", fontWeight: "700", fontSize: 11 },
+  iconBtnDanger: {
+    marginLeft: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: "#fef2f2",
+  },
+  iconBtnDangerText: { color: "#b91c1c", fontWeight: "700", fontSize: 11 },
   doneBtn: {
-    marginLeft: 8,
+    marginLeft: 4,
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 6,
@@ -723,6 +920,24 @@ const styles = StyleSheet.create({
   },
   doneText: { color: "#047857", fontWeight: "700", fontSize: 12 },
   empty: { color: "#94a3b8", padding: 16 },
+  undoBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#0f172a",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 4,
+  },
+  undoLabel: { color: "#e2e8f0", fontSize: 13, fontWeight: "600" },
+  undoBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: "#38bdf8",
+  },
+  undoBtnText: { color: "#0c4a6e", fontWeight: "800", fontSize: 13 },
   actions: { flexDirection: "row", gap: 8, marginTop: 8 },
   btn: {
     flex: 1,

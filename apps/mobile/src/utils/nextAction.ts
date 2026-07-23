@@ -52,19 +52,19 @@ const MODE_SHORT: Record<string, string> = {
   taxi: "택시",
 };
 
+/** Plan 리스트 CTA: "이동 · 비교 ›" 중심 (분·비용은 보조). */
 export function formatTravelGlance(place: ItineraryPlace): string | null {
   const mins = place.travelFromPrevMinutes;
   const cost = place.travelFromPrevCost;
   if (mins == null && cost == null) return null;
   if ((mins ?? 0) <= 0 && (cost ?? 0) <= 0) return null;
-  const parts: string[] = [];
+  const detail: string[] = [];
   const modeLabel = place.preferredTransportMode
     ? MODE_SHORT[place.preferredTransportMode]
     : null;
-  if (modeLabel) parts.push(modeLabel);
-  else parts.push("이동");
-  if (mins != null && mins > 0) parts.push(`~${mins}분`);
-  if (cost != null && cost > 0) parts.push(`~¥${cost.toLocaleString("ja-JP")}`);
-  parts.push("▾");
-  return parts.join(" · ");
+  if (modeLabel) detail.push(modeLabel);
+  if (mins != null && mins > 0) detail.push(`~${mins}분`);
+  if (cost != null && cost > 0) detail.push(`~¥${cost.toLocaleString("ja-JP")}`);
+  if (detail.length === 0) return "이동 · 비교 ›";
+  return `이동 · ${detail.join(" · ")} · 비교 ›`;
 }
