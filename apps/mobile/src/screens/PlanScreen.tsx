@@ -42,6 +42,11 @@ import {
   markPlanCoachSeen,
 } from "../storage/planCoachStorage";
 import {
+  loadPlanUiMode,
+  savePlanUiMode,
+  type PlanUiMode,
+} from "../storage/planUiModeStorage";
+import {
   assignDayToCity,
   buildCityLegs,
   CITIES,
@@ -152,6 +157,7 @@ export function PlanScreen({
   const [inlineMsg, setInlineMsg] = useState<string | null>(null);
   const [listDragging, setListDragging] = useState(false);
   const [planCoachVisible, setPlanCoachVisible] = useState(false);
+  const [planUiMode, setPlanUiMode] = useState<PlanUiMode>("easy");
 
   const undoStackRef = useRef<ItineraryPlace[][]>([]);
   const inlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -160,6 +166,7 @@ export function PlanScreen({
 
   const { colors } = useTheme();
   const reduceMotion = useReduceMotion();
+  const isEasy = planUiMode === "easy";
 
   useGuideAlarms(trip, trip.guideAlarmsEnabled && trip.status === "active");
 
@@ -207,9 +214,24 @@ export function PlanScreen({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void loadPlanUiMode().then((mode) => {
+      if (!cancelled) setPlanUiMode(mode);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const dismissPlanCoach = () => {
     setPlanCoachVisible(false);
     void markPlanCoachSeen();
+  };
+
+  const setUiMode = (mode: PlanUiMode) => {
+    setPlanUiMode(mode);
+    void savePlanUiMode(mode);
   };
 
   const dayPlaces = useMemo(() => {
@@ -1031,7 +1053,7 @@ export function PlanScreen({
         {trip.partySize}명 · 계획 {formatYen(trip.plannedBudget)} ·{" "}
         {STATUS_LABEL[trip.status] ?? trip.status}
       </Text>
-      <WeatherCrowdChip cityId={dayCityId} />
+      {!isEasy ? <WeatherCrowdChip cityId={dayCityId} /> : null}
       {enriching ? (
         <View style={styles.enrichBar}>
           <ActivityIndicator size="small" color="#0369a1" />
@@ -1154,7 +1176,105 @@ export function PlanScreen({
               </Text>
             </Pressable>
           </View>
-          <ChecklistSection items={checklist} onToggle={toggleChecklist} />
+          {!isEasy ? (
+            <ChecklistSection items={checklist} onToggle={toggleChecklist} />
+          ) : null}
+          {isEasy ? (
+            <View style={styles.easyExtras}>
+              <Text style={styles.sectionLabel}>카테고리 · 장소 추가</Text>
+              <View style={styles.tabs}>
+                {FILTERS.map((f) => (
+                  <Pressable
+                    key={f.id}
+                    style={[styles.chip, catFilter === f.id && styles.chipOn]}
+                    onPress={() => setCatFilter(f.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        catFilter === f.id && styles.chipTextOn,
+                      ]}
+                    >
+                      {f.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={styles.insertRow}>
+                {(["food", "attraction", "hotel"] as PlaceCategory[]).map(
+                  (c) => (
+                    <Pressable
+                      key={c}
+                      style={[styles.insertBtn, suggesting && { opacity: 0.6 }]}
+                      disabled={suggesting}
+                      onPress={() => void insertSuggested(c)}
+                    >
+                      <Text style={styles.insertText}>
+                        +{CATEGORY_LABEL[c] || c}
+                      </Text>
+                    </Pressable>
+                  ),
+                )}
+              </View>
+              <Pressable
+                style={[styles.optimizeBtn, optimizing && { opacity: 0.6 }]}
+                disabled={optimizing}
+                onPress={() => void runOptimizeDay()}
+              >
+                {optimizing ? (
+                  <ActivityIndicator color="#0c4a6e" />
+                ) : (
+                  <Text style={styles.optimizeBtnText}>동선 최적화</Text>
+                )}
+              </Pressable>
+              <ChecklistSection items={checklist} onToggle={toggleChecklist} />
+            </View>
+          ) : null}
+          {isEasy && isMultiCity ? (
+            <View style={styles.easyExtras}>
+              <Text style={styles.sectionLabel}>
+                Day {day + 1} 도시 배정
+              </Text>
+              <View style={styles.tabs}>
+                {(
+                  (trip.cities?.map((c) => c.cityId) ?? [
+                    trip.cityId,
+                  ]) as MvpCityId[]
+                ).map((cid) => {
+                  const on = dayCityId === cid;
+                  return (
+                    <Pressable
+                      key={cid}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor: on
+                            ? colors.chipOnBg
+                            : colors.chipBg,
+                        },
+                      ]}
+                      onPress={() => promptAssignDayCity(cid)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Day ${day + 1}을 ${CITIES[cid].nameKo}로 배정`}
+                      accessibilityState={{ selected: on }}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          {
+                            color: on ? colors.chipOnFg : colors.chipFg,
+                          },
+                        ]}
+                      >
+                        {CITIES[cid].nameKo}
+                        {on ? " ✓" : ""}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
           {secondaryCityToAdd ? (
             <Pressable
               style={styles.addCityBtn}
@@ -1165,7 +1285,7 @@ export function PlanScreen({
               </Text>
             </Pressable>
           ) : null}
-          {lodgingCandidates.length > 0 ? (
+          {lodgingCandidates.length > 0 && !isEasy ? (
             <View style={styles.lodgingBox}>
               <Text style={styles.lodgingTitle}>숙소 후보 (점수 분해)</Text>
               {lodgingCandidates.map((c) => {
@@ -1185,6 +1305,29 @@ export function PlanScreen({
                         · {line}
                       </Text>
                     ))}
+                    <Text style={styles.lodgingMeta}>
+                      {formatYen(c.estimatedCost)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+          {lodgingCandidates.length > 0 && isEasy ? (
+            <View style={styles.lodgingBox}>
+              <Text style={styles.lodgingTitle}>숙소 후보</Text>
+              {lodgingCandidates.map((c) => {
+                const selected = trip.preferredLodgingId === c.id;
+                return (
+                  <Pressable
+                    key={c.id}
+                    style={[styles.lodgingRow, selected && styles.lodgingOn]}
+                    onPress={() => pickLodging(c)}
+                  >
+                    <Text style={styles.lodgingName}>
+                      {selected ? "✓ " : ""}
+                      {c.name}
+                    </Text>
                     <Text style={styles.lodgingMeta}>
                       {formatYen(c.estimatedCost)}
                     </Text>
@@ -1234,7 +1377,7 @@ export function PlanScreen({
         ))}
       </View>
 
-      {isMultiCity ? (
+      {isMultiCity && !isEasy ? (
         <FadeIn trigger={`day-city-${day}-${dayCityId}`}>
           <Text style={[styles.sectionLabel, { color: colors.text }]}>
             Day {day + 1} 도시 배정
@@ -1288,48 +1431,55 @@ export function PlanScreen({
         />
       </View>
 
-      <Text style={styles.sectionLabel}>카테고리 · 장소 추가</Text>
-      <View style={styles.tabs}>
-        {FILTERS.map((f) => (
-          <Pressable
-            key={f.id}
-            style={[styles.chip, catFilter === f.id && styles.chipOn]}
-            onPress={() => setCatFilter(f.id)}
-          >
-            <Text
-              style={[styles.chipText, catFilter === f.id && styles.chipTextOn]}
-            >
-              {f.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {!isEasy ? (
+        <>
+          <Text style={styles.sectionLabel}>카테고리 · 장소 추가</Text>
+          <View style={styles.tabs}>
+            {FILTERS.map((f) => (
+              <Pressable
+                key={f.id}
+                style={[styles.chip, catFilter === f.id && styles.chipOn]}
+                onPress={() => setCatFilter(f.id)}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    catFilter === f.id && styles.chipTextOn,
+                  ]}
+                >
+                  {f.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
 
-      <View style={styles.insertRow}>
-        {(["food", "attraction", "hotel"] as PlaceCategory[]).map((c) => (
+          <View style={styles.insertRow}>
+            {(["food", "attraction", "hotel"] as PlaceCategory[]).map((c) => (
+              <Pressable
+                key={c}
+                style={[styles.insertBtn, suggesting && { opacity: 0.6 }]}
+                disabled={suggesting}
+                onPress={() => void insertSuggested(c)}
+              >
+                <Text style={styles.insertText}>
+                  +{CATEGORY_LABEL[c] || c}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
           <Pressable
-            key={c}
-            style={[styles.insertBtn, suggesting && { opacity: 0.6 }]}
-            disabled={suggesting}
-            onPress={() => void insertSuggested(c)}
+            style={[styles.optimizeBtn, optimizing && { opacity: 0.6 }]}
+            disabled={optimizing}
+            onPress={() => void runOptimizeDay()}
           >
-            <Text style={styles.insertText}>
-              +{CATEGORY_LABEL[c] || c}
-            </Text>
+            {optimizing ? (
+              <ActivityIndicator color="#0c4a6e" />
+            ) : (
+              <Text style={styles.optimizeBtnText}>동선 최적화</Text>
+            )}
           </Pressable>
-        ))}
-      </View>
-      <Pressable
-        style={[styles.optimizeBtn, optimizing && { opacity: 0.6 }]}
-        disabled={optimizing}
-        onPress={() => void runOptimizeDay()}
-      >
-        {optimizing ? (
-          <ActivityIndicator color="#0c4a6e" />
-        ) : (
-          <Text style={styles.optimizeBtnText}>동선 최적화</Text>
-        )}
-      </Pressable>
+        </>
+      ) : null}
       <Text style={styles.sectionLabel}>
         Day {day + 1} 일정 ({dayPlaces.length})
       </Text>
@@ -1343,6 +1493,41 @@ export function PlanScreen({
           <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
             <Text style={[styles.back, { color: colors.accent }]}>← 목록</Text>
           </Pressable>
+          <View style={styles.modeToggleRow}>
+            {(
+              [
+                { id: "easy" as const, label: "쉽게" },
+                { id: "detailed" as const, label: "자세히" },
+              ] as const
+            ).map((opt) => {
+              const on = planUiMode === opt.id;
+              return (
+                <Pressable
+                  key={opt.id}
+                  style={[
+                    styles.modeChip,
+                    {
+                      backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                    },
+                  ]}
+                  onPress={() => setUiMode(opt.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`표시 ${opt.label}`}
+                >
+                  <Text
+                    style={{
+                      color: on ? colors.chipOnFg : colors.chipFg,
+                      fontWeight: "800",
+                      fontSize: 13,
+                    }}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
           <Text style={[styles.title, { color: colors.text }]}>
             {tripCitiesLabel(trip)} · 현장 모드
           </Text>
@@ -1350,12 +1535,14 @@ export function PlanScreen({
             Day {day + 1} · 한 손 조작 ·{" "}
             {STATUS_LABEL[trip.status] ?? trip.status}
           </Text>
-          <WeatherCrowdChip cityId={dayCityId} />
-          <ChecklistSection
-            items={checklist}
-            onToggle={toggleChecklist}
-            compact
-          />
+          {!isEasy ? <WeatherCrowdChip cityId={dayCityId} /> : null}
+          {!isEasy ? (
+            <ChecklistSection
+              items={checklist}
+              onToggle={toggleChecklist}
+              compact
+            />
+          ) : null}
           {inlineMsg ? (
             <View style={styles.inlineToast}>
               <Text style={styles.inlineToastText}>{inlineMsg}</Text>
@@ -1452,6 +1639,41 @@ export function PlanScreen({
               {GESTURE_HINT}
             </Text>
           </View>
+          <View style={styles.modeToggleRow}>
+            {(
+              [
+                { id: "easy" as const, label: "쉽게" },
+                { id: "detailed" as const, label: "자세히" },
+              ] as const
+            ).map((opt) => {
+              const on = planUiMode === opt.id;
+              return (
+                <Pressable
+                  key={opt.id}
+                  style={[
+                    styles.modeChip,
+                    {
+                      backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                    },
+                  ]}
+                  onPress={() => setUiMode(opt.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`표시 ${opt.label}`}
+                >
+                  <Text
+                    style={{
+                      color: on ? colors.chipOnFg : colors.chipFg,
+                      fontWeight: "800",
+                      fontSize: 13,
+                    }}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
           <DraggableFlatList
             data={dayPlaces}
             keyExtractor={(item) => item.id}
@@ -1525,21 +1747,27 @@ export function PlanScreen({
         >
           <Text style={styles.btnPrimaryText}>길안내</Text>
         </Pressable>
-        <Pressable style={styles.btn} onPress={onExpenses}>
-          <Text style={styles.btnText}>경비</Text>
-        </Pressable>
-        <Pressable style={styles.btn} onPress={onSummary}>
-          <Text style={styles.btnText}>요약</Text>
-        </Pressable>
+        {!isEasy ? (
+          <>
+            <Pressable style={styles.btn} onPress={onExpenses}>
+              <Text style={styles.btnText}>경비</Text>
+            </Pressable>
+            <Pressable style={styles.btn} onPress={onSummary}>
+              <Text style={styles.btnText}>요약</Text>
+            </Pressable>
+          </>
+        ) : null}
       </View>
-      <View style={styles.actions}>
-        <Pressable style={styles.btnGhost} onPress={onMap}>
-          <Text style={styles.btnGhostText}>전체지도</Text>
-        </Pressable>
-        <Pressable style={styles.btnGhost} onPress={onCapture}>
-          <Text style={styles.btnGhostText}>리뷰</Text>
-        </Pressable>
-      </View>
+      {!isEasy ? (
+        <View style={styles.actions}>
+          <Pressable style={styles.btnGhost} onPress={onMap}>
+            <Text style={styles.btnGhostText}>전체지도</Text>
+          </Pressable>
+          <Pressable style={styles.btnGhost} onPress={onCapture}>
+            <Text style={styles.btnGhostText}>리뷰</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <View style={styles.actions}>
         <Pressable
           style={styles.btnAlt}
@@ -1549,19 +1777,21 @@ export function PlanScreen({
         >
           <Text style={styles.btnAltText}>여행 시작</Text>
         </Pressable>
-        <Pressable
-          style={[styles.btnAlt, rerouting && { opacity: 0.6 }]}
-          disabled={rerouting}
-          onPress={() =>
-            void runReroute("사용자가 동선에서 벗어남 / 남은 일정 재조정")
-          }
-        >
-          {rerouting ? (
-            <ActivityIndicator color="#075985" />
-          ) : (
-            <Text style={styles.btnAltText}>이탈·재루트</Text>
-          )}
-        </Pressable>
+        {!isEasy ? (
+          <Pressable
+            style={[styles.btnAlt, rerouting && { opacity: 0.6 }]}
+            disabled={rerouting}
+            onPress={() =>
+              void runReroute("사용자가 동선에서 벗어남 / 남은 일정 재조정")
+            }
+          >
+            {rerouting ? (
+              <ActivityIndicator color="#075985" />
+            ) : (
+              <Text style={styles.btnAltText}>이탈·재루트</Text>
+            )}
+          </Pressable>
+        ) : null}
         <Pressable style={styles.btnAlt} onPress={() => setStatus("done")}>
           <Text style={styles.btnAltText}>여행 종료</Text>
         </Pressable>
@@ -1662,6 +1892,20 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 17,
   },
+  modeToggleRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  modeChip: {
+    flex: 1,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  easyExtras: { marginTop: 8 },
   backHit: {
     alignSelf: "flex-start",
     minHeight: TOUCH_MIN,

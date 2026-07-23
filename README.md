@@ -191,6 +191,7 @@ npm run typecheck
 ### Plan UX (우선 수정)
 
 - **학습 힌트**: 일정 탭 상단 고정 「≡ 길게 = 순서 · 왼쪽 밀기 = 삭제 · 마커 길게 = 순서 모드」+ 첫 Plan 코치마크(`@9rutrip/planCoachSeen`)
+- **쉽게 | 자세히**: 기본 「쉽게」(Day·리스트·≡·이동비교·길안내·여행시작). 날씨·체크리스트·필터/추가·최적화·도시배정·숙소점수 등은 「자세히」또는 ⋯. 저장 키 `@9rutrip/planUiMode`
 - **핸들 DnD**: `≡`만 길게 눌러 순서 변경 (hitSlop·힌트·`activationDistance`)
 - **필터+DnD**: 카테고리 필터 ON에서도 필터 목록 내 재정렬 → 전체 Day에 splice (다른 카테고리 상대 위치 유지)
 - **Day 이동**: 행의 `Day▶` → 다른 `dayIndex`로 이동 후 order 재부여·enrich
