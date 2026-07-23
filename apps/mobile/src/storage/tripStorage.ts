@@ -72,6 +72,22 @@ export async function deleteTrip(id: string): Promise<Trip[]> {
   return trips;
 }
 
+/** 로컬 복제 — 새 id, planning 상태, 완료/리뷰/경비 초기화(일정·숙소 후보는 유지) */
+export async function duplicateTrip(source: Trip): Promise<Trip[]> {
+  const now = new Date().toISOString();
+  const copy: Trip = {
+    ...normalizeTrip(source),
+    id: `trip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    status: "planning",
+    completedPlaceIds: [],
+    expenses: [],
+    reviews: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  return upsertTrip(copy);
+}
+
 export function createEmptyTrip(input: {
   cityId?: import("../types").MvpCityId;
   nights: number;

@@ -145,6 +145,8 @@ npm run typecheck
 - 계정 동기화 / 클라우드 백업
 - 물리 모노레포 병합 / Routes API 고도화
 - SMS 공유 UX 추가 폴리시
+- Places API (New) 전면 재작성
+- 외부 Yahoo/NAVITIME 등 유료 JP 대중교통 파트너 API
 
 ## 최근 보완 (P3+)
 
@@ -152,7 +154,21 @@ npm run typecheck
 - 도쿄/오사카 숙소·장소 정적 POI 보강, 숙소 점수 허브 도시별
 - 여행 중 GPS 이탈 시 재루트 배너 (`aiRerouteEnabled`)
 - Plan Day 지도 경로 polyline
-- `npm test` (sms-parse / haversine)
+- `npm test` (sms-parse / haversine / optimize-day)
+
+### 차별화 · 현장 UX (Sprint A)
+
+- **현장 모드**: `status===active` 시 큰 NextAction 패널(길안내·완료·재루트) + 현장/일정 탭
+- **동선 최적화**: `POST /trip/optimize-day` (Gemini 재배치, 폴백 nearest-neighbor) → Plan 「동선 최적화」미리보기 후 enrich
+- **숙소 설명**: scoreBreakdown → 「역세권 근접 / 가격 경쟁력 / 평점」한국어 라인
+- **JP transit 정직성**: 비교 시트에서 `haversine:transit` 안내 + Google Maps `travelmode=transit` CTA
+- **경비 인사이트**: Summary에 계획 대비·식비/교통 비중 한국어 1–3줄
+
+### UX polish (Sprint B)
+
+- 홈: 길게 누르기 / ⋯ 메뉴 → **삭제·복제**
+- 첫 실행 온보딩 3단계 (AsyncStorage `@9rutrip/onboardingSeen`)
+- 장소 제안: Places 응답 시 카드 **Google Places** 뱃지
 
 ### Directions transit · 캐시
 
@@ -185,6 +201,7 @@ npm run typecheck
 | GET | `/health` | 헬스 + Gemini/WP/Maps 설정 여부 |
 | POST | `/trip/itinerary` | `{ cityId, nights, days, partySize }` → 일정 + lodgingCandidates |
 | POST | `/trip/reroute` | 당일 남은 일정 재생성 |
+| POST | `/trip/optimize-day` | `{ places, dayIndex, cityId }` → 당일 동선 재배치 (Gemini / NN) |
 | POST | `/trip/export-draft` | BlogDraft 호환 JSON |
 | POST | `/trip/parse-sms` | 카드 SMS 파싱 |
 | POST | `/trip/enrich-transport` | `{ places, forceRecalc? }` → 이동시간/비용 + transportOptions |

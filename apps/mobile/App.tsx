@@ -7,9 +7,16 @@ import Constants from "expo-constants";
 import { generateItinerary } from "./src/api/trip";
 import { setApiClientBaseUrl } from "./src/api/client";
 import { ErrorBoundary } from "./src/components/ErrorBoundary";
+import { OnboardingModal } from "./src/components/OnboardingModal";
 import { ApiProvider, useApi } from "./src/context/ApiContext";
 import {
+  hasSeenOnboarding,
+  markOnboardingSeen,
+} from "./src/storage/onboardingStorage";
+import {
   createEmptyTrip,
+  deleteTrip,
+  duplicateTrip,
   loadTrips,
   upsertTrip,
 } from "./src/storage/tripStorage";
@@ -32,6 +39,7 @@ function AppInner() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     setApiClientBaseUrl(apiBaseUrl);
@@ -41,8 +49,12 @@ function AppInner() {
     if (!ready) return;
     void (async () => {
       try {
-        const saved = await loadTrips();
+        const [saved, seen] = await Promise.all([
+          loadTrips(),
+          hasSeenOnboarding(),
+        ]);
         setTrips(saved);
+        if (!seen) setShowOnboarding(true);
       } catch (e) {
         setBootError(e instanceof Error ? e.message : "초기화 실패");
       } finally {
@@ -55,6 +67,26 @@ function AppInner() {
     setActive(trip);
     const next = await upsertTrip(trip);
     setTrips(next);
+  }, []);
+
+  const handleDeleteTrip = useCallback(async (trip: Trip) => {
+    const next = await deleteTrip(trip.id);
+    setTrips(next);
+    if (active?.id === trip.id) {
+      setActive(null);
+      setScreen("home");
+    }
+  }, [active?.id]);
+
+  const handleDuplicateTrip = useCallback(async (trip: Trip) => {
+    const next = await duplicateTrip(trip);
+    setTrips(next);
+    Alert.alert("복제 완료", `${trip.cityName} 여행 사본이 목록 맨 위에 추가되었습니다.`);
+  }, []);
+
+  const finishOnboarding = useCallback(() => {
+    setShowOnboarding(false);
+    void markOnboardingSeen();
   }, []);
 
   const handleCreate = useCallback(
@@ -118,6 +150,7 @@ function AppInner() {
   return (
     <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
       <StatusBar style="dark" />
+      <OnboardingModal visible={showOnboarding} onDone={finishOnboarding} />
       {screen === "home" && !showSettings ? (
         <View style={styles.header}>
           <Text style={styles.sub}>Expo SDK {sdk} · Android first</Text>
@@ -138,6 +171,8 @@ function AppInner() {
             setScreen("plan");
           }}
           onSettings={() => setShowSettings(true)}
+          onDelete={(t) => void handleDeleteTrip(t)}
+          onDuplicate={(t) => void handleDuplicateTrip(t)}
         />
       )}
       {screen === "create" && (

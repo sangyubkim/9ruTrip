@@ -57,7 +57,14 @@ export function PlaceSuggestModal({
                     style={styles.row}
                     onPress={() => onPick(p)}
                   >
-                    <Text style={styles.name}>{p.name}</Text>
+                    <View style={styles.nameRow}>
+                      <Text style={styles.name}>{p.name}</Text>
+                      {source === "places" ? (
+                        <View style={styles.badge}>
+                          <Text style={styles.badgeText}>Google Places</Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <Text style={styles.meta}>
                       {CATEGORY_LABEL[p.category] || p.category} ·{" "}
                       {formatYen(p.estimatedCost)}
@@ -100,7 +107,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#e2e8f0",
   },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
   name: { fontWeight: "700", color: "#0f172a", fontSize: 15 },
+  badge: {
+    backgroundColor: "#e0f2fe",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  badgeText: { fontSize: 10, fontWeight: "800", color: "#0369a1" },
   meta: { marginTop: 3, fontSize: 12, color: "#64748b" },
   close: {
     marginTop: 12,
