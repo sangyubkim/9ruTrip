@@ -190,6 +190,7 @@ npm run typecheck
 
 ### Plan UX (우선 수정)
 
+- **학습 힌트**: 일정 탭 상단 고정 「≡ 길게 = 순서 · 왼쪽 밀기 = 삭제 · 마커 길게 = 순서 모드」+ 첫 Plan 코치마크(`@9rutrip/planCoachSeen`)
 - **핸들 DnD**: `≡`만 길게 눌러 순서 변경 (hitSlop·힌트·`activationDistance`)
 - **필터+DnD**: 카테고리 필터 ON에서도 필터 목록 내 재정렬 → 전체 Day에 splice (다른 카테고리 상대 위치 유지)
 - **Day 이동**: 행의 `Day▶` → 다른 `dayIndex`로 이동 후 order 재부여·enrich

@@ -29,6 +29,7 @@ import { DeviationBanner } from "../components/DeviationBanner";
 import { FadeIn } from "../components/FadeIn";
 import { NextActionBanner } from "../components/NextActionBanner";
 import { PlaceSuggestModal } from "../components/PlaceSuggestModal";
+import { PlanCoachmark } from "../components/PlanCoachmark";
 import { PlannedTimeModal } from "../components/PlannedTimeModal";
 import { PlanDayMap } from "../components/PlanDayMap";
 import { TransportCompareSheet } from "../components/TransportCompareSheet";
@@ -36,6 +37,10 @@ import { WeatherCrowdChip } from "../components/WeatherCrowdChip";
 import { useGpsDeviation } from "../hooks/useGpsDeviation";
 import { useGuideAlarms } from "../hooks/useGuideAlarms";
 import { useReduceMotion } from "../hooks/useReduceMotion";
+import {
+  hasSeenPlanCoach,
+  markPlanCoachSeen,
+} from "../storage/planCoachStorage";
 import {
   assignDayToCity,
   buildCityLegs,
@@ -60,6 +65,9 @@ import {
 } from "../utils/mapsNavigation";
 import { formatTravelGlance, getNextAction } from "../utils/nextAction";
 import { summarizeRerouteChanges } from "../utils/reroutePreview";
+
+const GESTURE_HINT =
+  "≡ 길게 = 순서 · 왼쪽 밀기 = 삭제 · 마커 길게 = 순서 모드";
 
 type Props = {
   trip: Trip;
@@ -143,6 +151,7 @@ export function PlanScreen({
   );
   const [inlineMsg, setInlineMsg] = useState<string | null>(null);
   const [listDragging, setListDragging] = useState(false);
+  const [planCoachVisible, setPlanCoachVisible] = useState(false);
 
   const undoStackRef = useRef<ItineraryPlace[][]>([]);
   const inlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -187,6 +196,21 @@ export function PlanScreen({
       setViewMode("list");
     }
   }, [trip.status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void hasSeenPlanCoach().then((seen) => {
+      if (!cancelled && !seen) setPlanCoachVisible(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const dismissPlanCoach = () => {
+    setPlanCoachVisible(false);
+    void markPlanCoachSeen();
+  };
 
   const dayPlaces = useMemo(() => {
     let list = trip.places
@@ -1412,29 +1436,46 @@ export function PlanScreen({
           </Pressable>
         </View>
       ) : (
-        <DraggableFlatList
-          data={dayPlaces}
-          keyExtractor={(item) => item.id}
-          onDragBegin={() => setListDragging(true)}
-          onDragEnd={({ data }) => {
-            setListDragging(false);
-            reorder(data);
-          }}
-          renderItem={renderItem}
-          ListHeaderComponent={listHeader}
-          activationDistance={16}
-          containerStyle={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: 12 }}
-          ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyTitle}>이 날 일정이 비어 있습니다</Text>
-              <Text style={styles.empty}>
-                위에서 +음식 · +관광 · +숙소로 장소를 추가하거나, 다른 Day에서
-                Day▶로 옮겨 오세요.
-              </Text>
-            </View>
-          }
-        />
+        <View style={styles.listRoot}>
+          <View
+            style={[
+              styles.gestureHintBar,
+              { backgroundColor: colors.chipOnBg },
+            ]}
+            accessibilityRole="summary"
+            accessibilityLabel={GESTURE_HINT}
+          >
+            <Text
+              style={[styles.gestureHintText, { color: colors.chipOnFg }]}
+              numberOfLines={2}
+            >
+              {GESTURE_HINT}
+            </Text>
+          </View>
+          <DraggableFlatList
+            data={dayPlaces}
+            keyExtractor={(item) => item.id}
+            onDragBegin={() => setListDragging(true)}
+            onDragEnd={({ data }) => {
+              setListDragging(false);
+              reorder(data);
+            }}
+            renderItem={renderItem}
+            ListHeaderComponent={listHeader}
+            activationDistance={16}
+            containerStyle={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 12 }}
+            ListEmptyComponent={
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyTitle}>이 날 일정이 비어 있습니다</Text>
+                <Text style={styles.empty}>
+                  위에서 +음식 · +관광 · +숙소로 장소를 추가하거나, 다른 Day에서
+                  Day▶로 옮겨 오세요.
+                </Text>
+              </View>
+            }
+          />
+        </View>
       )}
 
       {undoVisible ? (
@@ -1596,12 +1637,31 @@ export function PlanScreen({
         onSave={savePlannedTime}
         onClose={() => setTimeEditPlace(null)}
       />
+
+      <PlanCoachmark
+        visible={planCoachVisible}
+        onDismiss={dismissPlanCoach}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  listRoot: { flex: 1 },
+  gestureHintBar: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: TOUCH_MIN,
+    justifyContent: "center",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(15,23,42,0.12)",
+  },
+  gestureHintText: {
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+  },
   backHit: {
     alignSelf: "flex-start",
     minHeight: TOUCH_MIN,
