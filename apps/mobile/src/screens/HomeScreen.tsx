@@ -12,7 +12,7 @@ import { tripCitiesLabel } from "../types";
 import { EmptyState } from "../components/EmptyState";
 import { formatYen, STATUS_LABEL } from "../utils/cost";
 import { useTheme } from "../theme/ThemeContext";
-import { radius, space } from "../theme/tokens";
+import { radius, space, type } from "../theme/tokens";
 
 type Props = {
   trips: Trip[];
@@ -228,12 +228,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   brand: {
-    fontSize: 30,
-    fontWeight: "800",
+    ...type.brand,
     color: "#f0f9ff",
-    letterSpacing: -0.4,
   },
-  tag: { marginTop: 8, color: "#7dd3fc", fontSize: 13, lineHeight: 18 },
+  tag: {
+    marginTop: space.sm,
+    color: "#7dd3fc",
+    fontSize: type.caption.fontSize,
+    lineHeight: type.caption.lineHeight,
+  },
   primary: {
     marginTop: space.lg,
     backgroundColor: "#38bdf8",

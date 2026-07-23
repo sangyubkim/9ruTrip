@@ -3,6 +3,7 @@ import { Alert, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { space } from "./src/theme/tokens";
 import Constants from "expo-constants";
 import { generateItinerary } from "./src/api/trip";
 import { setApiClientBaseUrl } from "./src/api/client";
@@ -262,8 +263,8 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, paddingHorizontal: 16 },
-  header: { paddingTop: 4, paddingBottom: 4 },
+  root: { flex: 1, paddingHorizontal: space.lg },
+  header: { paddingTop: space.xs, paddingBottom: space.xs },
   sub: { fontSize: 11 },
-  bootErr: { padding: 16, fontSize: 16 },
+  bootErr: { padding: space.lg, fontSize: 16 },
 });

@@ -180,6 +180,15 @@ npm run typecheck
 - **B10 제스처**: ≡만 DnD · 왼쪽 스와이프 삭제 · 드래그 중 스와이프 off · `activeOffsetX`/`failOffsetY` · 리스트 스크롤 유지.
 - **B11 모션·a11y**: `FadeIn`/스낵바/NextAction Animated + `AccessibilityInfo` reduce-motion · Label/Role/Hint · 다크 칩 대비.
 
+### UI 폴리시 (완성 후보 · self 피드백 5회)
+
+- **공통**: `EmptyState` · `InlineToast` · `theme/tokens` (`space` / `radius` / `type`)
+- **#1** Plan 힌트·빈 Day · Home 히어로 계층
+- **#2** CreateTrip 필드 그리드 · Home 개수 칩 · 피드백 바 일관화
+- **#3** Capture 별점 칩·저장 토스트 · Expenses 합계 칩 · Summary After 히어로
+- **#4** 현장 NextAction 타이밍 칩 · DeviationBanner 테마
+- **#5** 온보딩·코치마크 테마 · 타이포/여백 토큰 마무리
+
 
 ### Directions transit · 캐시
 

@@ -17,6 +17,16 @@ export const radius = {
   pill: 999,
 } as const;
 
+/** 화면 공통 타이포 — 폴리시 일관성 */
+export const type = {
+  brand: { fontSize: 30, fontWeight: "800" as const, letterSpacing: -0.4 },
+  title: { fontSize: 22, fontWeight: "800" as const, letterSpacing: -0.2 },
+  section: { fontSize: 16, fontWeight: "800" as const },
+  body: { fontSize: 15, lineHeight: 22 },
+  caption: { fontSize: 13, lineHeight: 19 },
+  label: { fontSize: 13, fontWeight: "700" as const },
+} as const;
+
 export type ColorTokens = {
   bg: string;
   bgElevated: string;
