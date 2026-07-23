@@ -47,6 +47,10 @@ import {
   type PlanUiMode,
 } from "../storage/planUiModeStorage";
 import {
+  hasSeenFieldGuideToast,
+  markFieldGuideToastSeen,
+} from "../storage/fieldGuideToastStorage";
+import {
   assignDayToCity,
   buildCityLegs,
   CITIES,
@@ -551,6 +555,16 @@ export function PlanScreen({
 
   const setStatus = (status: Trip["status"]) => {
     onChangeTrip({ ...trip, status, updatedAt: new Date().toISOString() });
+    if (status === "active") {
+      setViewMode("field");
+      setBannerHidden(false);
+      void hasSeenFieldGuideToast().then((seen) => {
+        if (!seen) {
+          flashInline("현장 모드로 안내합니다");
+          void markFieldGuideToastSeen();
+        }
+      });
+    }
   };
 
   const toggle = (key: "aiRerouteEnabled" | "guideAlarmsEnabled") => {
