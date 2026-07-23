@@ -11,7 +11,10 @@ import { buildExportDraft } from "./lib/export-draft.mjs";
 import { rerouteItinerary } from "./lib/reroute.mjs";
 import { publishToWordPress } from "./lib/wordpress.mjs";
 import { parseKoreanCardSms } from "./lib/sms-parse.mjs";
-import { enrichPlacesWithTransport } from "./lib/transport.mjs";
+import {
+  compareLegTransport,
+  enrichPlacesWithTransport,
+} from "./lib/transport.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv(join(__dirname, ".env"));
@@ -131,6 +134,7 @@ async function handle(req, res) {
             "POST /trip/export-draft",
             "POST /trip/parse-sms",
             "POST /trip/enrich-transport",
+            "POST /trip/compare-transport",
             "POST /trip/suggest-places",
             "POST /wordpress/publish",
           ],
@@ -194,6 +198,69 @@ async function handle(req, res) {
           transportEngine: env.googleMapsApiKey
             ? "directions+haversine"
             : "haversine",
+        },
+        origin,
+      );
+      return;
+    }
+
+    if (method === "POST" && matchRoute(url, "/trip/compare-transport")) {
+      const body = await readBody(req);
+      let from = body?.from;
+      let to = body?.to;
+      const places = Array.isArray(body?.places) ? body.places : null;
+      const placeId = body?.placeId;
+
+      if ((!from || !to) && places && placeId) {
+        const sorted = [...places].sort(
+          (a, b) =>
+            (Number(a.dayIndex) || 0) - (Number(b.dayIndex) || 0) ||
+            (Number(a.order) || 0) - (Number(b.order) || 0),
+        );
+        const idx = sorted.findIndex((p) => p.id === placeId);
+        if (idx > 0) {
+          const cur = sorted[idx];
+          const sameDayPrev = [...sorted]
+            .slice(0, idx)
+            .reverse()
+            .find((p) => Number(p.dayIndex) === Number(cur.dayIndex));
+          from = sameDayPrev;
+          to = cur;
+        }
+      }
+
+      if (
+        !from ||
+        !to ||
+        !Number.isFinite(Number(from.lat)) ||
+        !Number.isFinite(Number(to.lat))
+      ) {
+        send(
+          res,
+          400,
+          {
+            error:
+              "from/to 좌표 또는 places+placeId(직전 구간)가 필요합니다.",
+          },
+          origin,
+        );
+        return;
+      }
+
+      const result = await compareLegTransport(from, to, env.googleMapsApiKey);
+      send(
+        res,
+        200,
+        {
+          options: result.options,
+          engine: result.engine,
+          from: {
+            lat: Number(from.lat),
+            lng: Number(from.lng),
+            name: from.name,
+          },
+          to: { lat: Number(to.lat), lng: Number(to.lng), name: to.name },
+          googleMapsConfigured: Boolean(env.googleMapsApiKey),
         },
         origin,
       );

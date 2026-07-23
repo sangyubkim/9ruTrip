@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Pressable,
   StyleSheet,
   Text,
@@ -12,16 +13,21 @@ import DraggableFlatList, {
   ScaleDecorator,
 } from "react-native-draggable-flatlist";
 import {
+  compareTransport,
   enrichTransport,
   rerouteTrip,
   suggestPlaces,
 } from "../api/trip";
 import { NextActionBanner } from "../components/NextActionBanner";
+import { PlanDayMap } from "../components/PlanDayMap";
+import { TransportCompareSheet } from "../components/TransportCompareSheet";
 import { useGuideAlarms } from "../hooks/useGuideAlarms";
 import type {
   ItineraryPlace,
   LodgingCandidate,
   PlaceCategory,
+  TransportMode,
+  TransportOption,
   Trip,
 } from "../types";
 import { CATEGORY_LABEL, formatYen } from "../utils/cost";
@@ -46,6 +52,8 @@ const FILTERS: { id: CatFilter; label: string }[] = [
   { id: "hotel", label: "숙소" },
 ];
 
+const MAP_PANE_HEIGHT = Math.round(Dimensions.get("window").height * 0.37);
+
 export function PlanScreen({
   trip,
   onChangeTrip,
@@ -67,6 +75,11 @@ export function PlanScreen({
   const [enriching, setEnriching] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [bannerHidden, setBannerHidden] = useState(false);
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  const [comparePlace, setComparePlace] = useState<ItineraryPlace | null>(null);
+  const [compareOptions, setCompareOptions] = useState<TransportOption[]>([]);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareEngine, setCompareEngine] = useState<string>("");
 
   useGuideAlarms(trip, trip.guideAlarmsEnabled && trip.status === "active");
 
@@ -84,6 +97,14 @@ export function PlanScreen({
     }
     return list;
   }, [trip.places, day, catFilter]);
+
+  const mapPlaces = useMemo(
+    () =>
+      trip.places
+        .filter((p) => p.dayIndex === day)
+        .sort((a, b) => a.order - b.order),
+    [trip.places, day],
+  );
 
   const lodgingCandidates: LodgingCandidate[] = trip.lodgingCandidates ?? [];
 
@@ -117,7 +138,6 @@ export function PlanScreen({
   };
 
   const reorder = (data: ItineraryPlace[]) => {
-    // 필터 중이면 전체 day 순서를 건드리지 않고 필터된 항목만 상대 순서 유지
     if (catFilter !== "all") {
       Alert.alert(
         "필터 해제",
@@ -256,6 +276,64 @@ export function PlanScreen({
     }
   };
 
+  const openTransportCompare = async (place: ItineraryPlace) => {
+    setSelectedPlaceId(place.id);
+    setComparePlace(place);
+    setCompareLoading(true);
+    setCompareEngine("");
+    const cached = place.transportOptions;
+    if (cached && cached.length >= 3) {
+      setCompareOptions(cached);
+      setCompareLoading(false);
+      return;
+    }
+    try {
+      const res = await compareTransport({
+        places: trip.places,
+        placeId: place.id,
+      });
+      setCompareOptions(res.options ?? []);
+      setCompareEngine(
+        res.googleMapsConfigured
+          ? `엔진: ${res.engine}`
+          : `엔진: ${res.engine} (Maps 키 없음 · 추정)`,
+      );
+    } catch (e) {
+      setCompareOptions(place.transportOptions ?? []);
+      Alert.alert(
+        "비교 실패",
+        e instanceof Error ? e.message : "교통 비교를 불러오지 못했습니다.",
+      );
+      setComparePlace(null);
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
+  const applyTransportMode = (mode: TransportMode) => {
+    if (!comparePlace) return;
+    const opt = compareOptions.find((o) => o.mode === mode);
+    if (!opt) return;
+    const places = trip.places.map((p) =>
+      p.id === comparePlace.id
+        ? {
+            ...p,
+            preferredTransportMode: mode,
+            transportOptions: compareOptions,
+            travelFromPrevMinutes: opt.minutes,
+            travelFromPrevCost: opt.estimatedCost,
+            transportEngine: opt.engine,
+          }
+        : p,
+    );
+    onChangeTrip({
+      ...trip,
+      places,
+      updatedAt: new Date().toISOString(),
+    });
+    setComparePlace(null);
+  };
+
   const renderItem = ({
     item,
     drag,
@@ -263,16 +341,23 @@ export function PlanScreen({
   }: RenderItemParams<ItineraryPlace>) => {
     const done = (trip.completedPlaceIds ?? []).includes(item.id);
     const travel = formatTravelGlance(item);
+    const selected = selectedPlaceId === item.id;
     return (
       <ScaleDecorator>
         <View>
-          {travel ? <Text style={styles.travel}>{travel}</Text> : null}
+          {travel ? (
+            <Pressable onPress={() => void openTransportCompare(item)}>
+              <Text style={styles.travel}>{travel}</Text>
+            </Pressable>
+          ) : null}
           <Pressable
+            onPress={() => setSelectedPlaceId(item.id)}
             onLongPress={catFilter === "all" ? drag : undefined}
             delayLongPress={150}
             style={[
               styles.row,
               isActive && styles.rowActive,
+              selected && styles.rowSelected,
               done && styles.rowDone,
             ]}
           >
@@ -305,8 +390,8 @@ export function PlanScreen({
     );
   };
 
-  return (
-    <View style={styles.root}>
+  const listHeader = (
+    <View>
       <Pressable onPress={onBack}>
         <Text style={styles.back}>← 목록</Text>
       </Pressable>
@@ -318,8 +403,8 @@ export function PlanScreen({
         {enriching ? " · 교통 재계산…" : ""}
       </Text>
       <Text style={styles.tip}>
-        길게 눌러 드래그하면 순서를 바꿉니다. (필터=전체일 때) 이동시간은
-        자동 재계산됩니다.
+        이동 glance를 탭하면 도보/대중교통/택시를 비교합니다. 길게 눌러
+        드래그(필터=전체).
       </Text>
 
       {!bannerHidden && trip.status === "active" ? (
@@ -366,13 +451,25 @@ export function PlanScreen({
           <Pressable
             key={d}
             style={[styles.tab, day === d && styles.tabOn]}
-            onPress={() => setDay(d)}
+            onPress={() => {
+              setDay(d);
+              setSelectedPlaceId(null);
+            }}
           >
             <Text style={[styles.tabText, day === d && styles.tabTextOn]}>
               Day {d + 1}
             </Text>
           </Pressable>
         ))}
+      </View>
+
+      <View style={styles.mapPane}>
+        <PlanDayMap
+          cityId={trip.cityId}
+          places={mapPlaces}
+          selectedPlaceId={selectedPlaceId}
+          onSelectPlace={setSelectedPlaceId}
+        />
       </View>
 
       <View style={styles.tabs}>
@@ -431,12 +528,17 @@ export function PlanScreen({
           })}
         </View>
       ) : null}
+    </View>
+  );
 
+  return (
+    <View style={styles.root}>
       <DraggableFlatList
         data={dayPlaces}
         keyExtractor={(item) => item.id}
         onDragEnd={({ data }) => reorder(data)}
         renderItem={renderItem}
+        ListHeaderComponent={listHeader}
         containerStyle={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 12 }}
         ListEmptyComponent={
@@ -446,7 +548,7 @@ export function PlanScreen({
 
       <View style={styles.actions}>
         <Pressable style={styles.btn} onPress={onMap}>
-          <Text style={styles.btnText}>지도</Text>
+          <Text style={styles.btnText}>전체지도</Text>
         </Pressable>
         <Pressable style={styles.btn} onPress={onCapture}>
           <Text style={styles.btnText}>리뷰</Text>
@@ -479,6 +581,17 @@ export function PlanScreen({
           <Text style={styles.btnAltText}>여행 종료</Text>
         </Pressable>
       </View>
+
+      <TransportCompareSheet
+        visible={comparePlace != null}
+        placeName={comparePlace?.name ?? ""}
+        options={compareOptions}
+        selectedMode={comparePlace?.preferredTransportMode}
+        loading={compareLoading}
+        engineHint={compareEngine}
+        onSelect={applyTransportMode}
+        onClose={() => setComparePlace(null)}
+      />
     </View>
   );
 }
@@ -489,6 +602,10 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: "800", color: "#0f172a" },
   sub: { color: "#64748b", marginTop: 2 },
   tip: { marginTop: 8, marginBottom: 8, fontSize: 12, color: "#94a3b8" },
+  mapPane: {
+    height: MAP_PANE_HEIGHT,
+    marginBottom: 10,
+  },
   toggles: { flexDirection: "row", gap: 8, marginBottom: 8 },
   toggle: {
     flex: 1,
@@ -539,7 +656,12 @@ const styles = StyleSheet.create({
     borderColor: "#fed7aa",
     maxHeight: 140,
   },
-  lodgingTitle: { fontWeight: "800", color: "#9a3412", marginBottom: 6, fontSize: 12 },
+  lodgingTitle: {
+    fontWeight: "800",
+    color: "#9a3412",
+    marginBottom: 6,
+    fontSize: 12,
+  },
   lodgingRow: {
     paddingVertical: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -566,6 +688,7 @@ const styles = StyleSheet.create({
     borderColor: "#e2e8f0",
   },
   rowActive: { backgroundColor: "#e0f2fe", borderColor: "#38bdf8" },
+  rowSelected: { borderColor: "#0284c7", backgroundColor: "#f0f9ff" },
   rowDone: { opacity: 0.55 },
   drag: { fontSize: 18, color: "#94a3b8", marginRight: 10, width: 20 },
   name: { fontWeight: "700", color: "#0f172a" },

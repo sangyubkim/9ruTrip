@@ -46,13 +46,25 @@ export function getNextAction(trip: Trip, now = new Date()): NextAction | null {
   };
 }
 
+const MODE_SHORT: Record<string, string> = {
+  walking: "도보",
+  transit: "대중교통",
+  taxi: "택시",
+};
+
 export function formatTravelGlance(place: ItineraryPlace): string | null {
   const mins = place.travelFromPrevMinutes;
   const cost = place.travelFromPrevCost;
   if (mins == null && cost == null) return null;
   if ((mins ?? 0) <= 0 && (cost ?? 0) <= 0) return null;
   const parts: string[] = [];
-  if (mins != null && mins > 0) parts.push(`이동 ~${mins}분`);
+  const modeLabel = place.preferredTransportMode
+    ? MODE_SHORT[place.preferredTransportMode]
+    : null;
+  if (modeLabel) parts.push(modeLabel);
+  else parts.push("이동");
+  if (mins != null && mins > 0) parts.push(`~${mins}분`);
   if (cost != null && cost > 0) parts.push(`~¥${cost.toLocaleString("ja-JP")}`);
+  parts.push("▾");
   return parts.join(" · ");
 }

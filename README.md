@@ -71,7 +71,9 @@ EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_key
 GOOGLE_MAPS_API_KEY=your_key
 ```
 
-키가 없으면 지도는 graceful degrade(힌트 표시 + 기본 지도/제한 모드), 교통 추정은 **하버사인 폴백**. 가짜 키를 넣지 마세요.
+키가 없으면 지도는 graceful degrade(힌트 표시 + 기본 지도/제한 모드), 교통 추정은 **모드별 하버사인 폴백**(도보/대중교통/택시). Directions 실측이 필요하면 `GOOGLE_MAPS_API_KEY`를 `apps/api/.env`에 설정하세요. 가짜 키를 넣지 마세요.
+
+실기기 전체 사이클: [`docs/E2E-CHECKLIST.md`](docs/E2E-CHECKLIST.md).
 
 ## P0 (구현됨)
 
@@ -104,11 +106,29 @@ GOOGLE_MAPS_API_KEY=your_key
 7. **Naver Maps 어댑터 스캐폴드**: `mapProvider` google|naver, `NAVER_MAP_CLIENT_ID` env. 도쿄/오사카는 Google.
 8. **다도시 라이트**: 오사카 선택 가능. `@9rutrip/shared` ↔ 9ruDocs 스키마 노트 (`packages/shared/README.md`).
 
+## P3 (구현됨)
+
+1. **교통 수단 비교 UI**: Plan 이동 glance 탭 → 도보/대중교통/택시 분·비용 비교 시트. `preferredTransportMode` 저장 후 glance·`travelFromPrev*` 반영.
+2. **비교 API**: `POST /trip/compare-transport` (`from`/`to` 또는 `places`+`placeId`). Maps 키 있으면 Directions(walking/transit/driving), 없으면 모드별 haversine.
+3. **enrich 확장**: `/trip/enrich-transport`가 `transportOptions[]`를 채우고, 선호 모드를 travel 필드에 적용.
+4. **Plan 지도+리스트**: Day 압축 지도(~37% 높이) + DnD 리스트. 선택 시 마커 하이라이트. 키 없어도 graceful.
+5. **E2E 체크리스트**: `docs/E2E-CHECKLIST.md` (Android 실기기 전체 사이클).
+6. **Maps 키**: 로컬 `apps/api/.env`에 `GOOGLE_MAPS_API_KEY` 없으면 haversine 폴백 유지. 키를 넣으면 Directions 실측 — **가짜 키 금지**.
+
+### P3 빠른 테스트
+
+1. `GET /health` → `googleMapsConfigured`
+2. `POST /trip/compare-transport` `{ "from":{"lat":35.6812,"lng":139.7671}, "to":{"lat":35.6581,"lng":139.7017} }` → options 3개
+3. Plan: glance 탭 → 모드 선택 → 표시 갱신
+4. Plan: 상단 지도 마커 ↔ 리스트 선택 연동
+5. DnD 후 enrich → `transportOptions` 유지/재계산
+
 ## 이후 (보류)
 
 - 국내 도시 실연동 (Naver Maps SDK)
 - 네이티브 SMS 인박스 (expo-dev-client + 권한 플러그인)
 - 물리 모노레포 병합 / Routes API 고도화
+- GPS 이탈(deviation) 힌트 (선택)
 
 ## API
 
@@ -119,7 +139,8 @@ GOOGLE_MAPS_API_KEY=your_key
 | POST | `/trip/reroute` | 당일 남은 일정 재생성 |
 | POST | `/trip/export-draft` | BlogDraft 호환 JSON |
 | POST | `/trip/parse-sms` | 카드 SMS 파싱 |
-| POST | `/trip/enrich-transport` | `{ places, forceRecalc? }` → 이동시간/비용 |
+| POST | `/trip/enrich-transport` | `{ places, forceRecalc? }` → 이동시간/비용 + transportOptions |
+| POST | `/trip/compare-transport` | `{ from, to }` 또는 `{ places, placeId }` → 도보/대중교통/택시 비교 |
 | POST | `/trip/suggest-places` | `{ cityId, category }` → 카테고리 제안 |
 | POST | `/wordpress/publish` | BlogDraft 또는 `{ trip, status }` → WP 발행 |
 

@@ -4,6 +4,7 @@ import type {
   LodgingCandidate,
   MvpCityId,
   PlaceCategory,
+  TransportOption,
   Trip,
 } from "../types";
 
@@ -171,6 +172,35 @@ export async function enrichTransport(
   };
   if (!res.ok) {
     throw new Error(json.error ?? `Enrich failed: ${res.status}`);
+  }
+  return json;
+}
+
+export type CompareTransportResponse = {
+  options: TransportOption[];
+  engine: string;
+  from?: { lat: number; lng: number; name?: string };
+  to?: { lat: number; lng: number; name?: string };
+  googleMapsConfigured?: boolean;
+};
+
+/** 구간 이동 수단 비교 (도보/대중교통/택시) */
+export async function compareTransport(payload: {
+  from?: { lat: number; lng: number; name?: string };
+  to?: { lat: number; lng: number; name?: string };
+  places?: ItineraryPlace[];
+  placeId?: string;
+}): Promise<CompareTransportResponse> {
+  const res = await apiFetch("/trip/compare-transport", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = (await res.json()) as CompareTransportResponse & {
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(json.error ?? `Compare failed: ${res.status}`);
   }
   return json;
 }

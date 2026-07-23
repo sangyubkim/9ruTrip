@@ -11,8 +11,72 @@ export function haversineKm(a, b) {
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+export const TRANSPORT_MODES = ["walking", "transit", "taxi"];
+
+/**
+ * 모드별 하버사인 추정 (키 없을 때 / Directions 실패 시)
+ * - walking: ~4.5km/h, 비용 0
+ * - transit: 도쿄 지하철형 분·요금
+ * - taxi: 도심 속도 + 기본요금·거리요금 추정
+ */
+export function estimateLegByModeHaversine(from, to, mode) {
+  if (!from || !to) {
+    return {
+      mode,
+      minutes: 0,
+      estimatedCost: 0,
+      engine: "none",
+    };
+  }
+  const km = haversineKm(
+    { lat: Number(from.lat), lng: Number(from.lng) },
+    { lat: Number(to.lat), lng: Number(to.lng) },
+  );
+  if (!Number.isFinite(km) || km < 0.05) {
+    return {
+      mode,
+      minutes: 3,
+      estimatedCost: 0,
+      engine: `haversine:${mode}`,
+    };
+  }
+
+  if (mode === "walking") {
+    return {
+      mode: "walking",
+      minutes: Math.max(3, Math.round(km * 14)),
+      estimatedCost: 0,
+      engine: "haversine:walking",
+    };
+  }
+
+  if (mode === "taxi") {
+    // 도심 ~22km/h 상당 + 대기, 기본 ¥500 + ¥120/km 근사
+    const minutes = Math.max(5, Math.round(km * 2.8 + 4));
+    const cost = Math.round(500 + Math.max(0, km) * 120);
+    return {
+      mode: "taxi",
+      minutes,
+      estimatedCost: cost,
+      engine: "haversine:taxi",
+    };
+  }
+
+  // transit (default)
+  const minutes =
+    km < 1.2 ? Math.round(5 + km * 12) : Math.round(10 + km * 3.5 + 6);
+  const cost = km < 0.9 ? 0 : Math.round(170 + Math.min(km, 25) * 18);
+  return {
+    mode: "transit",
+    minutes: Math.max(3, minutes),
+    estimatedCost: Math.max(0, cost),
+    engine: "haversine:transit",
+  };
+}
+
 /**
  * 도쿄 기준 간이 교통 추정 (지하철/도보 혼합) — 키 없을 때 폴백
+ * 레거시: transit 우선 휴리스틱 단일 값
  */
 export function estimateLegHaversine(from, to) {
   if (!from || !to) {
@@ -22,24 +86,20 @@ export function estimateLegHaversine(from, to) {
       transportEngine: "none",
     };
   }
+  const opt = estimateLegByModeHaversine(from, to, "transit");
+  const walk = estimateLegByModeHaversine(from, to, "walking");
+  // 짧으면 도보, 길면 대중교통 (기존 동작에 가깝게)
   const km = haversineKm(
     { lat: Number(from.lat), lng: Number(from.lng) },
     { lat: Number(to.lat), lng: Number(to.lng) },
   );
-  if (!Number.isFinite(km) || km < 0.05) {
-    return {
-      travelFromPrevMinutes: 3,
-      travelFromPrevCost: 0,
-      transportEngine: "haversine",
-    };
-  }
-  const minutes =
-    km < 1.2 ? Math.round(5 + km * 12) : Math.round(10 + km * 3.5 + 6);
-  const cost = km < 0.9 ? 0 : Math.round(170 + Math.min(km, 25) * 18);
+  const pick = Number.isFinite(km) && km < 1.2 ? walk : opt;
   return {
-    travelFromPrevMinutes: Math.max(3, minutes),
-    travelFromPrevCost: Math.max(0, cost),
-    transportEngine: "haversine",
+    travelFromPrevMinutes: pick.minutes,
+    travelFromPrevCost: pick.estimatedCost,
+    transportEngine: pick.engine.startsWith("haversine")
+      ? "haversine"
+      : pick.engine,
   };
 }
 
@@ -48,52 +108,85 @@ export function estimateLeg(from, to) {
   return estimateLegHaversine(from, to);
 }
 
+/** Directions mode 매핑: taxi → driving */
+function directionsApiMode(mode) {
+  if (mode === "taxi") return "driving";
+  return mode;
+}
+
+/**
+ * Google Directions 단일 모드
+ * taxi는 driving 결과를 쓰고 요금은 거리 기반 추정
+ */
+export async function estimateLegByModeDirections(from, to, mode, apiKey) {
+  if (!apiKey || !from || !to) {
+    return estimateLegByModeHaversine(from, to, mode);
+  }
+
+  const origin = `${Number(from.lat)},${Number(from.lng)}`;
+  const destination = `${Number(to.lat)},${Number(to.lng)}`;
+  const apiMode = directionsApiMode(mode);
+
+  try {
+    const url = new URL(
+      "https://maps.googleapis.com/maps/api/directions/json",
+    );
+    url.searchParams.set("origin", origin);
+    url.searchParams.set("destination", destination);
+    url.searchParams.set("mode", apiMode);
+    url.searchParams.set("language", "ko");
+    url.searchParams.set("key", apiKey);
+
+    const res = await fetch(url.toString());
+    if (!res.ok) return estimateLegByModeHaversine(from, to, mode);
+    const data = await res.json();
+    if (data.status !== "OK" || !data.routes?.[0]?.legs?.[0]) {
+      return estimateLegByModeHaversine(from, to, mode);
+    }
+
+    const leg = data.routes[0].legs[0];
+    const seconds = Number(leg.duration?.value) || 0;
+    const meters = Number(leg.distance?.value) || 0;
+    const minutes = Math.max(3, Math.round(seconds / 60));
+    const km = meters / 1000;
+
+    let cost = 0;
+    if (mode === "walking") {
+      cost = 0;
+    } else if (mode === "taxi") {
+      cost = Math.round(500 + Math.max(0, km) * 120);
+    } else if (leg.fare?.value != null && Number.isFinite(Number(leg.fare.value))) {
+      cost = Math.round(Number(leg.fare.value));
+    } else if (meters > 900) {
+      cost = Math.round(170 + Math.min(km, 25) * 18);
+    }
+
+    return {
+      mode,
+      minutes,
+      estimatedCost: Math.max(0, cost),
+      engine: `directions:${apiMode}`,
+    };
+  } catch {
+    return estimateLegByModeHaversine(from, to, mode);
+  }
+}
+
 /**
  * Google Directions API (transit 우선, 실패 시 walking → haversine)
- * https://developers.google.com/maps/documentation/directions
+ * 레거시 단일 값 경로 — 비교 UI는 compareLegTransport 사용
  */
 export async function estimateLegDirections(from, to, apiKey) {
   if (!apiKey || !from || !to) return estimateLegHaversine(from, to);
 
-  const origin = `${Number(from.lat)},${Number(from.lng)}`;
-  const destination = `${Number(to.lat)},${Number(to.lng)}`;
-
   for (const mode of ["transit", "walking"]) {
-    try {
-      const url = new URL(
-        "https://maps.googleapis.com/maps/api/directions/json",
-      );
-      url.searchParams.set("origin", origin);
-      url.searchParams.set("destination", destination);
-      url.searchParams.set("mode", mode);
-      url.searchParams.set("language", "ko");
-      url.searchParams.set("key", apiKey);
-
-      const res = await fetch(url.toString());
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (data.status !== "OK" || !data.routes?.[0]?.legs?.[0]) continue;
-
-      const leg = data.routes[0].legs[0];
-      const seconds = Number(leg.duration?.value) || 0;
-      const meters = Number(leg.distance?.value) || 0;
-      const minutes = Math.max(3, Math.round(seconds / 60));
-
-      // fare는 transit에서만 가끔 제공 — 없으면 거리 기반 추정
-      let cost = 0;
-      if (leg.fare?.value != null && Number.isFinite(Number(leg.fare.value))) {
-        cost = Math.round(Number(leg.fare.value));
-      } else if (mode === "transit" && meters > 900) {
-        cost = Math.round(170 + Math.min(meters / 1000, 25) * 18);
-      }
-
+    const opt = await estimateLegByModeDirections(from, to, mode, apiKey);
+    if (opt.engine.startsWith("directions:")) {
       return {
-        travelFromPrevMinutes: minutes,
-        travelFromPrevCost: Math.max(0, cost),
-        transportEngine: `directions:${mode}`,
+        travelFromPrevMinutes: opt.minutes,
+        travelFromPrevCost: opt.estimatedCost,
+        transportEngine: opt.engine,
       };
-    } catch {
-      // try next mode
     }
   }
 
@@ -103,6 +196,85 @@ export async function estimateLegDirections(from, to, apiKey) {
 export async function estimateLegSmart(from, to, apiKey) {
   if (apiKey) return estimateLegDirections(from, to, apiKey);
   return estimateLegHaversine(from, to);
+}
+
+/** 기본 추천 모드: 짧은 도보 우선, 그 외 대중교통 (택시는 수동 선택) */
+export function pickDefaultTransportMode(options) {
+  if (!Array.isArray(options) || options.length === 0) return "transit";
+  const transit = options.find((o) => o.mode === "transit");
+  const walking = options.find((o) => o.mode === "walking");
+  if (
+    walking &&
+    walking.minutes <= 25 &&
+    (!transit || walking.minutes <= transit.minutes + 5)
+  ) {
+    return "walking";
+  }
+  if (transit) return "transit";
+  return options[0]?.mode || "transit";
+}
+
+/**
+ * 도보 / 대중교통 / 택시 비교
+ * Maps 키 있으면 Directions 병렬, 없으면 모드별 haversine
+ */
+export async function compareLegTransport(from, to, apiKey) {
+  if (!from || !to) {
+    return {
+      options: TRANSPORT_MODES.map((mode) => ({
+        mode,
+        minutes: 0,
+        estimatedCost: 0,
+        engine: "none",
+      })),
+      engine: "none",
+    };
+  }
+
+  const options = await Promise.all(
+    TRANSPORT_MODES.map((mode) =>
+      apiKey
+        ? estimateLegByModeDirections(from, to, mode, apiKey)
+        : Promise.resolve(estimateLegByModeHaversine(from, to, mode)),
+    ),
+  );
+
+  const anyDirections = options.some((o) =>
+    String(o.engine).startsWith("directions:"),
+  );
+
+  return {
+    options,
+    engine: apiKey
+      ? anyDirections
+        ? "directions+haversine"
+        : "haversine"
+      : "haversine",
+  };
+}
+
+/** preferred 모드(또는 기본)로 travelFromPrev* 적용 */
+export function applyTransportOption(place, options, preferredMode) {
+  const mode =
+    preferredMode && TRANSPORT_MODES.includes(preferredMode)
+      ? preferredMode
+      : pickDefaultTransportMode(options);
+  const opt =
+    options.find((o) => o.mode === mode) ||
+    options[0] || {
+      mode: "transit",
+      minutes: 0,
+      estimatedCost: 0,
+      engine: "none",
+    };
+  return {
+    ...place,
+    preferredTransportMode: mode,
+    transportOptions: options,
+    travelFromPrevMinutes: opt.minutes,
+    travelFromPrevCost: opt.estimatedCost,
+    transportEngine: opt.engine,
+  };
 }
 
 /** 숙소 점수 분해 (centrality / price / rating proxy) */
@@ -236,8 +408,9 @@ export function buildLodgingCandidates({ nights = 2, partySize = 2, topN = 5 } =
 }
 
 /**
- * day별 순서대로 travelFromPrev* / plannedTime / lodgingScore 보강
+ * day별 순서대로 travelFromPrev* / plannedTime / lodgingScore / transportOptions 보강
  * forceRecalc=true 이면 기존 travelFromPrev* 덮어씀 (DnD 후 재계산)
+ * preferredTransportMode 가 있으면 해당 모드의 분·비용을 travelFromPrev*에 반영
  */
 export async function enrichPlacesWithTransport(
   places,
@@ -258,23 +431,34 @@ export async function enrichPlacesWithTransport(
     let minutesFromStart = startHour * 60;
     let prev = null;
     for (let i = 0; i < dayList.length; i++) {
-      const p = { ...dayList[i] };
+      let p = { ...dayList[i] };
       if (prev) {
         const needRecalc =
           forceRecalc ||
           !(Number(p.travelFromPrevMinutes) > 0) ||
-          !Number.isFinite(Number(p.travelFromPrevCost));
+          !Number.isFinite(Number(p.travelFromPrevCost)) ||
+          !Array.isArray(p.transportOptions) ||
+          p.transportOptions.length === 0;
         if (needRecalc) {
-          const leg = await estimateLegSmart(prev, p, mapsApiKey);
-          p.travelFromPrevMinutes = leg.travelFromPrevMinutes;
-          p.travelFromPrevCost = leg.travelFromPrevCost;
-          p.transportEngine = leg.transportEngine;
+          const { options } = await compareLegTransport(prev, p, mapsApiKey);
+          p = applyTransportOption(p, options, p.preferredTransportMode);
+        } else if (
+          p.preferredTransportMode &&
+          Array.isArray(p.transportOptions) &&
+          p.transportOptions.length > 0
+        ) {
+          p = applyTransportOption(
+            p,
+            p.transportOptions,
+            p.preferredTransportMode,
+          );
         }
         minutesFromStart += Number(p.travelFromPrevMinutes) || 0;
       } else {
         p.travelFromPrevMinutes = 0;
         p.travelFromPrevCost = 0;
         p.transportEngine = "none";
+        p.transportOptions = undefined;
       }
 
       if (

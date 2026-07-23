@@ -23,6 +23,15 @@ export const lodgingScoreBreakdownSchema = z.object({
   ratingProxy: z.number(),
 });
 
+export const transportModeSchema = z.enum(["walking", "transit", "taxi"]);
+
+export const transportOptionSchema = z.object({
+  mode: transportModeSchema,
+  minutes: z.number(),
+  estimatedCost: z.number(),
+  engine: z.string(),
+});
+
 export const itineraryPlaceSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -39,6 +48,8 @@ export const itineraryPlaceSchema = z.object({
   lodgingScore: z.number().optional(),
   scoreBreakdown: lodgingScoreBreakdownSchema.optional(),
   transportEngine: z.string().optional(),
+  preferredTransportMode: transportModeSchema.optional(),
+  transportOptions: z.array(transportOptionSchema).optional(),
 });
 
 export const lodgingCandidateSchema = z.object({

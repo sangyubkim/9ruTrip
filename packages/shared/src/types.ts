@@ -25,6 +25,19 @@ export type PlaceCategory =
   | "transport"
   | "other";
 
+/** 구간 이동 수단 비교 (도보 / 대중교통 / 택시) */
+export type TransportMode = "walking" | "transit" | "taxi";
+
+export type TransportOption = {
+  mode: TransportMode;
+  /** 예상 이동 분 */
+  minutes: number;
+  /** 예상 비용(엔) */
+  estimatedCost: number;
+  /** haversine:walking | directions:transit | directions:driving 등 */
+  engine: string;
+};
+
 export type LodgingScoreBreakdown = {
   /** 교통 허브 근접 (1–100) */
   centrality: number;
@@ -66,8 +79,12 @@ export type ItineraryPlace = {
   /** 숙소 추천 점수 1–100 */
   lodgingScore?: number;
   scoreBreakdown?: LodgingScoreBreakdown;
-  /** haversine | directions:transit | directions:walking */
+  /** haversine | directions:transit | directions:walking | directions:driving */
   transportEngine?: string;
+  /** 사용자가 고른 구간 이동 수단 */
+  preferredTransportMode?: TransportMode;
+  /** 도보/대중교통/택시 비교 옵션 */
+  transportOptions?: TransportOption[];
 };
 
 export type Expense = {

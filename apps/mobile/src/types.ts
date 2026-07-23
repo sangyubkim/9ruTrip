@@ -25,6 +25,15 @@ export type PlaceCategory =
   | "transport"
   | "other";
 
+export type TransportMode = "walking" | "transit" | "taxi";
+
+export type TransportOption = {
+  mode: TransportMode;
+  minutes: number;
+  estimatedCost: number;
+  engine: string;
+};
+
 export type LodgingScoreBreakdown = {
   centrality: number;
   priceEstimate: number;
@@ -59,6 +68,8 @@ export type ItineraryPlace = {
   lodgingScore?: number;
   scoreBreakdown?: LodgingScoreBreakdown;
   transportEngine?: string;
+  preferredTransportMode?: TransportMode;
+  transportOptions?: TransportOption[];
 };
 
 export type Expense = {
