@@ -115,7 +115,19 @@ export function HomeScreen({
         </Pressable>
       </View>
 
-      <Text style={[styles.section, { color: colors.text }]}>저장된 여행</Text>
+      <View style={styles.sectionRow}>
+        <Text style={[styles.section, { color: colors.text }]}>저장된 여행</Text>
+        {trips.length > 0 ? (
+          <View
+            style={[styles.countChip, { backgroundColor: colors.accentMuted }]}
+            accessibilityLabel={`${trips.length}개`}
+          >
+            <Text style={[styles.countChipText, { color: colors.accent }]}>
+              {trips.length}
+            </Text>
+          </View>
+        ) : null}
+      </View>
       {trips.length === 0 ? (
         <EmptyState
           glyph="✈"
@@ -239,11 +251,25 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   ghostText: { color: "#bae6fd", fontSize: 14, fontWeight: "600" },
+  sectionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    marginBottom: space.md,
+  },
   section: {
     fontSize: 16,
     fontWeight: "800",
-    marginBottom: space.md,
   },
+  countChip: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  countChipText: { fontSize: 13, fontWeight: "800" },
   sep: { height: space.sm },
   card: {
     borderRadius: radius.md,

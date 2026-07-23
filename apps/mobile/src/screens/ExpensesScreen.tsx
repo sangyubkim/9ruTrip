@@ -11,8 +11,11 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { parseSmsExpense } from "../api/trip";
+import { EmptyState } from "../components/EmptyState";
 import { FadeIn } from "../components/FadeIn";
+import { InlineToast } from "../components/InlineToast";
 import { useTheme } from "../theme/ThemeContext";
+import { radius, space } from "../theme/tokens";
 import type { Expense, PlaceCategory, Trip } from "../types";
 import { CATEGORY_LABEL, formatYen, sumActual } from "../utils/cost";
 import { parseKoreanCardSmsLocal } from "../utils/smsParse";
@@ -186,13 +189,7 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
       </FadeIn>
 
       {inlineMsg ? (
-        <FadeIn trigger={inlineMsg}>
-          <View style={[styles.toast, { backgroundColor: colors.undoBg }]}>
-            <Text style={[styles.toastText, { color: colors.undoFg }]}>
-              {inlineMsg}
-            </Text>
-          </View>
-        </FadeIn>
+        <InlineToast message={inlineMsg} withFade />
       ) : null}
 
       <Text style={[styles.label, { color: colors.text }]}>카드 SMS</Text>
@@ -355,22 +352,11 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
           </View>
         )}
         ListEmptyComponent={
-          <View
-            style={[
-              styles.emptyBox,
-              {
-                backgroundColor: colors.bgMuted,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              아직 경비가 없습니다
-            </Text>
-            <Text style={[styles.hint, { color: colors.textMuted }]}>
-              SMS를 파싱하거나 항목·금액을 입력한 뒤 「추가」를 누르세요.
-            </Text>
-          </View>
+          <EmptyState
+            glyph="¥"
+            title="아직 경비가 없습니다"
+            body="SMS를 파싱하거나 항목·금액을 입력한 뒤 「추가」를 누르세요."
+          />
         }
       />
     </View>
@@ -394,13 +380,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   hint: { fontSize: 12, marginTop: 4, lineHeight: 18 },
-  toast: {
-    marginTop: 10,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  toastText: { fontSize: 13, fontWeight: "600" },
   label: { marginTop: 12, fontWeight: "700" },
   divider: {
     height: StyleSheet.hairlineWidth,
@@ -461,10 +440,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   del: { fontWeight: "700" },
-  emptyBox: {
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  emptyTitle: { fontWeight: "800", marginBottom: 4 },
 });

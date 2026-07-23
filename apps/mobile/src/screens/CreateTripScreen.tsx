@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { CITIES, type MvpCityId } from "../types";
 import { useTheme } from "../theme/ThemeContext";
+import { radius, space } from "../theme/tokens";
 
 type Props = {
   onBack: () => void;
@@ -70,11 +71,11 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       </Pressable>
       <Text style={[styles.title, { color: colors.text }]}>여행 만들기</Text>
       <Text style={[styles.hint, { color: colors.textMuted }]}>
-        도쿄·오사카 복수 선택 가능(멀티시티). 국내(네이버)는 스캐폴드만.
+        도시만 고르면 AI가 Day 일정을 만듭니다. 도쿄·오사카 복수 선택 가능.
       </Text>
 
       <Text style={[styles.label, { color: colors.textSecondary }]}>
-        도시 (복수 선택)
+        도시
       </Text>
       <View style={styles.cityRow}>
         {(Object.keys(CITIES) as MvpCityId[]).map((id) => {
@@ -84,7 +85,10 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
               key={id}
               style={[
                 styles.cityChip,
-                { backgroundColor: on ? colors.chipOnBg : colors.chipBg },
+                {
+                  backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                  borderColor: on ? colors.primary : colors.border,
+                },
               ]}
               onPress={() => toggleCity(id)}
               accessibilityRole="checkbox"
@@ -110,57 +114,65 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
         </Text>
       </View>
 
-      <Text style={[styles.label, { color: colors.textSecondary }]}>
-        박수 (nights)
-      </Text>
-      <TextInput
-        style={[
-          styles.input,
-          {
-            borderColor: colors.border,
-            backgroundColor: colors.bgElevated,
-            color: colors.textSecondary,
-          },
-        ]}
-        keyboardType="number-pad"
-        value={nights}
-        onChangeText={setNights}
-        accessibilityLabel="박수"
-      />
-
-      <Text style={[styles.label, { color: colors.textSecondary }]}>
-        일수 (days)
-      </Text>
-      <TextInput
-        style={[
-          styles.input,
-          {
-            borderColor: colors.border,
-            backgroundColor: colors.bgElevated,
-            color: colors.textSecondary,
-          },
-        ]}
-        keyboardType="number-pad"
-        value={days}
-        onChangeText={setDays}
-        accessibilityLabel="일수"
-      />
-
-      <Text style={[styles.label, { color: colors.textSecondary }]}>인원</Text>
-      <TextInput
-        style={[
-          styles.input,
-          {
-            borderColor: colors.border,
-            backgroundColor: colors.bgElevated,
-            color: colors.textSecondary,
-          },
-        ]}
-        keyboardType="number-pad"
-        value={party}
-        onChangeText={setParty}
-        accessibilityLabel="인원"
-      />
+      <View style={styles.fieldGrid}>
+        <View style={styles.fieldCol}>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>
+            박수
+          </Text>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                borderColor: colors.border,
+                backgroundColor: colors.bgElevated,
+                color: colors.text,
+              },
+            ]}
+            keyboardType="number-pad"
+            value={nights}
+            onChangeText={setNights}
+            accessibilityLabel="박수"
+          />
+        </View>
+        <View style={styles.fieldCol}>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>
+            일수
+          </Text>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                borderColor: colors.border,
+                backgroundColor: colors.bgElevated,
+                color: colors.text,
+              },
+            ]}
+            keyboardType="number-pad"
+            value={days}
+            onChangeText={setDays}
+            accessibilityLabel="일수"
+          />
+        </View>
+        <View style={styles.fieldCol}>
+          <Text style={[styles.label, { color: colors.textSecondary }]}>
+            인원
+          </Text>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                borderColor: colors.border,
+                backgroundColor: colors.bgElevated,
+                color: colors.text,
+              },
+            ]}
+            keyboardType="number-pad"
+            value={party}
+            onChangeText={setParty}
+            accessibilityLabel="인원"
+          />
+        </View>
+      </View>
 
       <Pressable
         style={[
@@ -190,40 +202,54 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   back: { fontSize: 15, fontWeight: "700" },
-  title: { fontSize: 22, fontWeight: "800" },
-  hint: { marginTop: 6, marginBottom: 16 },
-  label: { marginTop: 12, fontWeight: "600" },
+  title: { fontSize: 24, fontWeight: "800", letterSpacing: -0.3 },
+  hint: {
+    marginTop: space.sm,
+    marginBottom: space.lg,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  label: { marginTop: space.md, fontWeight: "700", fontSize: 13 },
+  fieldGrid: {
+    flexDirection: "row",
+    gap: space.sm,
+    marginTop: space.xs,
+  },
+  fieldCol: { flex: 1 },
   input: {
-    marginTop: 6,
+    marginTop: space.sm,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    minHeight: 44,
-    fontSize: 16,
-  },
-  cityRow: { flexDirection: "row", gap: 8, marginTop: 6 },
-  cityChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    minHeight: 44,
-    borderRadius: 10,
-    justifyContent: "center",
-  },
-  cityChipText: { fontWeight: "700" },
-  locked: {
-    marginTop: 8,
-    borderRadius: 12,
-    padding: 12,
-  },
-  lockedText: { fontWeight: "600" },
-  primary: {
-    marginTop: 24,
-    paddingVertical: 14,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
     minHeight: 48,
-    borderRadius: 12,
+    fontSize: 17,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  cityRow: { flexDirection: "row", gap: space.sm, marginTop: space.sm },
+  cityChip: {
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+    minHeight: 48,
+    borderRadius: radius.md,
+    justifyContent: "center",
+    borderWidth: 1.5,
+  },
+  cityChipText: { fontWeight: "800", fontSize: 15 },
+  locked: {
+    marginTop: space.md,
+    borderRadius: radius.md,
+    padding: space.md,
+  },
+  lockedText: { fontWeight: "700", fontSize: 13 },
+  primary: {
+    marginTop: space.xl,
+    paddingVertical: 16,
+    minHeight: 52,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryText: { fontWeight: "700", fontSize: 16 },
+  primaryText: { fontWeight: "800", fontSize: 16 },
 });

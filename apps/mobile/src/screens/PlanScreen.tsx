@@ -28,6 +28,7 @@ import { ChecklistSection } from "../components/ChecklistSection";
 import { DeviationBanner } from "../components/DeviationBanner";
 import { EmptyState } from "../components/EmptyState";
 import { FadeIn } from "../components/FadeIn";
+import { InlineToast } from "../components/InlineToast";
 import { NextActionBanner } from "../components/NextActionBanner";
 import { PlaceSuggestModal } from "../components/PlaceSuggestModal";
 import { PlanCoachmark } from "../components/PlanCoachmark";
@@ -1075,11 +1076,7 @@ export function PlanScreen({
           <Text style={styles.enrichText}>교통 재계산 중…</Text>
         </View>
       ) : null}
-      {inlineMsg ? (
-        <View style={styles.inlineToast}>
-          <Text style={styles.inlineToastText}>{inlineMsg}</Text>
-        </View>
-      ) : null}
+      {inlineMsg ? <InlineToast message={inlineMsg} /> : null}
 
       {!bannerHidden && trip.status === "active" && viewMode === "list" ? (
         <NextActionBanner
@@ -1558,11 +1555,7 @@ export function PlanScreen({
               compact
             />
           ) : null}
-          {inlineMsg ? (
-            <View style={styles.inlineToast}>
-              <Text style={styles.inlineToastText}>{inlineMsg}</Text>
-            </View>
-          ) : null}
+          {inlineMsg ? <InlineToast message={inlineMsg} /> : null}
           <NextActionBanner
             fieldMode
             next={nextAction}
@@ -1990,14 +1983,6 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   enrichText: { fontSize: 12, fontWeight: "700", color: "#0369a1" },
-  inlineToast: {
-    marginTop: 8,
-    backgroundColor: "#0f172a",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  inlineToastText: { color: "#e0f2fe", fontSize: 13, fontWeight: "600" },
   mapPane: {
     height: MAP_PANE_HEIGHT,
     marginBottom: 10,
