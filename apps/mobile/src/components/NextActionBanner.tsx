@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { useReduceMotion } from "../hooks/useReduceMotion";
 import { useTheme } from "../theme/ThemeContext";
+import { radius, space } from "../theme/tokens";
 import type { NextAction } from "../utils/nextAction";
 
 type Props = {
@@ -110,6 +111,27 @@ export function NextActionBanner({
       ? { backgroundColor: dueBg, borderColor: dueBorder }
       : { backgroundColor: idleBg, borderColor: colors.mapBorder };
 
+  const timingChipBg = next.isOverdue
+    ? isDark
+      ? "#7f1d1d"
+      : "#fecaca"
+    : next.isDue
+      ? isDark
+        ? "#78350f"
+        : "#fde68a"
+      : isDark
+        ? colors.bgElevated
+        : "#ffffff";
+  const timingChipFg = next.isOverdue
+    ? isDark
+      ? "#fecaca"
+      : "#991b1b"
+    : next.isDue
+      ? isDark
+        ? "#fde68a"
+        : "#92400e"
+      : colors.textSecondary;
+
   if (fieldMode) {
     return (
       <Animated.View
@@ -133,16 +155,28 @@ export function NextActionBanner({
             </Pressable>
           ) : null}
         </View>
+        <View
+          style={[styles.timingChip, { backgroundColor: timingChipBg }]}
+          accessibilityRole="text"
+        >
+          <Text style={[styles.timingChipText, { color: timingChipFg }]}>
+            {timing}
+          </Text>
+        </View>
         <Text
           style={[styles.fieldTitle, { color: colors.text }]}
           numberOfLines={2}
         >
           {next.place.name}
         </Text>
-        <Text style={[styles.fieldMeta, { color: colors.textSecondary }]}>
-          {timing}
-          {next.place.notes ? ` · ${next.place.notes}` : ""}
-        </Text>
+        {next.place.notes ? (
+          <Text
+            style={[styles.fieldMeta, { color: colors.textSecondary }]}
+            numberOfLines={2}
+          >
+            {next.place.notes}
+          </Text>
+        ) : null}
         <View style={styles.ctaRow}>
           {onNavigate ? (
             <Pressable
@@ -160,14 +194,15 @@ export function NextActionBanner({
           ) : null}
           {onMarkDone ? (
             <Pressable
-              style={[styles.ctaPrimaryDone, { backgroundColor: colors.accent }]}
+              style={[
+                styles.ctaPrimaryDone,
+                { backgroundColor: colors.success },
+              ]}
               onPress={onMarkDone}
               accessibilityRole="button"
               accessibilityLabel="완료"
             >
-              <Text
-                style={[styles.ctaPrimaryText, { color: colors.primaryFg }]}
-              >
+              <Text style={[styles.ctaPrimaryText, { color: "#fff" }]}>
                 완료
               </Text>
             </Pressable>
@@ -210,10 +245,17 @@ export function NextActionBanner({
         <Text style={[styles.title, { color: colors.text }]}>
           {next.place.name}
         </Text>
-        <Text style={[styles.meta, { color: colors.textMuted }]}>
-          {timing}
-          {next.place.notes ? ` · ${next.place.notes}` : ""}
-        </Text>
+        <View
+          style={[
+            styles.timingChipCompact,
+            { backgroundColor: timingChipBg },
+          ]}
+        >
+          <Text style={[styles.timingChipTextCompact, { color: timingChipFg }]}>
+            {timing}
+            {next.place.notes ? ` · ${next.place.notes}` : ""}
+          </Text>
+        </View>
       </View>
       {onMarkDone ? (
         <Pressable
@@ -246,17 +288,17 @@ const styles = StyleSheet.create({
   banner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
+    gap: space.sm,
+    borderRadius: radius.md,
+    padding: space.md,
+    marginBottom: space.md,
     borderWidth: 1,
   },
   field: {
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
-    minHeight: 168,
+    borderRadius: radius.lg,
+    padding: space.lg,
+    marginBottom: space.md,
+    minHeight: 188,
     borderWidth: 2,
   },
   fieldTop: {
@@ -267,51 +309,70 @@ const styles = StyleSheet.create({
   kicker: { fontSize: 13, fontWeight: "800" },
   title: { marginTop: 2, fontWeight: "800", fontSize: 15 },
   fieldTitle: {
-    marginTop: 10,
+    marginTop: space.sm,
     fontWeight: "900",
     fontSize: 28,
     lineHeight: 34,
+    letterSpacing: -0.4,
   },
-  meta: { marginTop: 2, fontSize: 12 },
+  meta: { marginTop: space.sm, fontSize: 13, lineHeight: 19 },
   fieldMeta: {
-    marginTop: 8,
-    fontSize: 15,
-    fontWeight: "700",
+    marginTop: space.sm,
+    fontSize: 14,
+    fontWeight: "600",
+    lineHeight: 20,
   },
+  timingChip: {
+    alignSelf: "flex-start",
+    marginTop: space.md,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  timingChipText: { fontSize: 13, fontWeight: "900" },
+  timingChipCompact: {
+    alignSelf: "flex-start",
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    maxWidth: "100%",
+  },
+  timingChipTextCompact: { fontSize: 12, fontWeight: "700" },
   ctaRow: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 18,
+    gap: space.md,
+    marginTop: space.lg,
   },
   ctaPrimary: {
     flex: 1,
     paddingVertical: 16,
-    minHeight: 52,
-    borderRadius: 14,
+    minHeight: 54,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
   ctaPrimaryDone: {
     flex: 1,
     paddingVertical: 16,
-    minHeight: 52,
-    borderRadius: 14,
+    minHeight: 54,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
   ctaPrimaryText: { fontWeight: "900", fontSize: 17 },
   ctaGhost: {
-    marginTop: 10,
+    marginTop: space.md,
     borderWidth: 1,
     paddingVertical: 12,
     minHeight: 44,
-    borderRadius: 12,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
   ctaGhostText: { fontWeight: "700", fontSize: 14 },
   listLink: {
-    marginTop: 14,
+    marginTop: space.md,
     alignSelf: "flex-start",
     paddingVertical: 10,
     minHeight: 44,
@@ -319,10 +380,10 @@ const styles = StyleSheet.create({
   },
   listLinkText: { fontWeight: "800", fontSize: 15 },
   btn: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
     minHeight: 44,
-    borderRadius: 10,
+    borderRadius: radius.sm,
     justifyContent: "center",
   },
   btnText: { fontWeight: "800", fontSize: 14 },

@@ -1541,11 +1541,10 @@ export function PlanScreen({
             })}
           </View>
           <Text style={[styles.title, { color: colors.text }]}>
-            {tripCitiesLabel(trip)} · 현장 모드
+            {tripCitiesLabel(trip)} · 현장
           </Text>
-          <Text style={styles.sub}>
-            Day {day + 1} · 한 손 조작 ·{" "}
-            {STATUS_LABEL[trip.status] ?? trip.status}
+          <Text style={[styles.sub, { color: colors.textMuted }]}>
+            Day {day + 1} · 한 손 · 다음 장소만 크게
           </Text>
           {!isEasy ? <WeatherCrowdChip cityId={dayCityId} /> : null}
           {!isEasy ? (
