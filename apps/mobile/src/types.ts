@@ -213,6 +213,69 @@ export function tripCitiesLabel(trip: Trip): string {
   return trip.cityName;
 }
 
+/**
+ * 특정 Day를 도시에 수동 배정.
+ * dayIndexes를 재구성하고, updatePlaces면 해당 Day 장소의 cityId도 갱신.
+ */
+export function assignDayToCity(
+  trip: Trip,
+  dayIndex: number,
+  cityId: MvpCityId,
+  updatePlaces: boolean,
+): Trip {
+  const meta = getCityMeta(cityId);
+  const existing =
+    trip.cities && trip.cities.length > 0
+      ? trip.cities.map((c) => ({
+          ...c,
+          dayIndexes: c.dayIndexes.filter((d) => d !== dayIndex),
+        }))
+      : [
+          {
+            cityId: trip.cityId,
+            cityName: trip.cityName,
+            dayIndexes: Array.from({ length: trip.days }, (_, i) => i).filter(
+              (d) => d !== dayIndex,
+            ),
+          },
+        ];
+
+  let legs = existing.filter(
+    (c) => c.dayIndexes.length > 0 || c.cityId === cityId,
+  );
+  const target = legs.find((c) => c.cityId === cityId);
+  if (target) {
+    target.dayIndexes = [...target.dayIndexes, dayIndex].sort((a, b) => a - b);
+  } else {
+    legs = [
+      ...legs,
+      {
+        cityId,
+        cityName: meta.nameKo,
+        dayIndexes: [dayIndex],
+      },
+    ];
+  }
+  legs = legs.filter((c) => c.dayIndexes.length > 0);
+
+  const places = updatePlaces
+    ? trip.places.map((p) =>
+        p.dayIndex === dayIndex ? { ...p, cityId } : p,
+      )
+    : trip.places;
+
+  return {
+    ...trip,
+    cities: legs,
+    cityName:
+      legs.length > 1
+        ? legs.map((l) => l.cityName).join(" · ")
+        : (legs[0]?.cityName ?? trip.cityName),
+    places,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 /** dayIndexes 균등 분할로 TripCityLeg[] 생성 */
 export function buildCityLegs(
   cityIds: MvpCityId[],

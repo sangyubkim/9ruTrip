@@ -11,6 +11,8 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { parseSmsExpense } from "../api/trip";
+import { FadeIn } from "../components/FadeIn";
+import { useTheme } from "../theme/ThemeContext";
 import type { Expense, PlaceCategory, Trip } from "../types";
 import { CATEGORY_LABEL, formatYen, sumActual } from "../utils/cost";
 import { parseKoreanCardSmsLocal } from "../utils/smsParse";
@@ -43,6 +45,7 @@ function extractSharedText(url: string | null): string | null {
 }
 
 export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
+  const { colors } = useTheme();
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState<PlaceCategory | "misc">("food");
@@ -164,89 +167,157 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
   };
 
   return (
-    <View style={styles.root}>
-      <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
-        <Text style={styles.back}>← 일정</Text>
-      </Pressable>
-      <Text style={styles.title}>경비</Text>
-      <Text style={styles.topHint}>
-        ① SMS 복사 → 붙여넣기 → 파싱 ② 금액 확인 후 「추가」 · 합계{" "}
-        {formatYen(sumActual(trip.expenses))}
-      </Text>
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
+      <FadeIn>
+        <Pressable
+          onPress={onBack}
+          style={styles.backHit}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="일정으로 돌아가기"
+        >
+          <Text style={[styles.back, { color: colors.accent }]}>← 일정</Text>
+        </Pressable>
+        <Text style={[styles.title, { color: colors.text }]}>경비</Text>
+        <Text style={[styles.topHint, { color: colors.textSecondary }]}>
+          ① SMS 복사 → 붙여넣기 → 파싱 ② 금액 확인 후 「추가」 · 합계{" "}
+          {formatYen(sumActual(trip.expenses))}
+        </Text>
+      </FadeIn>
 
       {inlineMsg ? (
-        <View style={styles.toast}>
-          <Text style={styles.toastText}>{inlineMsg}</Text>
-        </View>
+        <FadeIn trigger={inlineMsg}>
+          <View style={[styles.toast, { backgroundColor: colors.undoBg }]}>
+            <Text style={[styles.toastText, { color: colors.undoFg }]}>
+              {inlineMsg}
+            </Text>
+          </View>
+        </FadeIn>
       ) : null}
 
-      <Text style={styles.label}>카드 SMS</Text>
-      <Text style={styles.hint}>
+      <Text style={[styles.label, { color: colors.text }]}>카드 SMS</Text>
+      <Text style={[styles.hint, { color: colors.textMuted }]}>
         Expo Go는 인박스 자동 읽기 불가 · 복사/공유로 붙여넣기
       </Text>
       <TextInput
-        style={[styles.input, styles.smsBox]}
+        style={[
+          styles.input,
+          styles.smsBox,
+          {
+            backgroundColor: colors.bgElevated,
+            borderColor: colors.border,
+            color: colors.text,
+          },
+        ]}
         multiline
         value={smsText}
         onChangeText={setSmsText}
         placeholder="예: [신한] 03/21 14:22 승인 12,000원 스타벅스강남"
+        placeholderTextColor={colors.textMuted}
         textAlignVertical="top"
+        accessibilityLabel="카드 SMS 텍스트"
       />
       <View style={styles.smsActions}>
         <Pressable
-          style={styles.secondary}
+          style={[styles.secondary, { backgroundColor: colors.accentMuted }]}
           onPress={() => void pasteFromClipboard()}
+          accessibilityRole="button"
+          accessibilityLabel="클립보드 붙여넣기"
         >
-          <Text style={styles.secondaryText}>붙여넣기</Text>
+          <Text style={[styles.secondaryText, { color: colors.accent }]}>
+            붙여넣기
+          </Text>
         </Pressable>
         <Pressable
           style={[
             styles.secondary,
-            styles.secondaryPrimary,
+            { backgroundColor: colors.primary },
             parsing && { opacity: 0.6 },
           ]}
           disabled={parsing}
           onPress={() => void parseSms()}
+          accessibilityRole="button"
+          accessibilityLabel="SMS 파싱"
         >
-          <Text style={[styles.secondaryText, styles.secondaryPrimaryText]}>
+          <Text style={[styles.secondaryText, { color: colors.primaryFg }]}>
             {parsing ? "파싱 중…" : "SMS 파싱"}
           </Text>
         </Pressable>
       </View>
 
-      <View style={styles.divider} />
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-      <Text style={styles.label}>항목</Text>
+      <Text style={[styles.label, { color: colors.text }]}>항목</Text>
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input,
+          {
+            backgroundColor: colors.bgElevated,
+            borderColor: colors.border,
+            color: colors.text,
+          },
+        ]}
         value={label}
         onChangeText={setLabel}
         placeholder="예: 라멘"
+        placeholderTextColor={colors.textMuted}
+        accessibilityLabel="경비 항목명"
       />
-      <Text style={styles.label}>금액 (JPY)</Text>
+      <Text style={[styles.label, { color: colors.text }]}>금액 (JPY)</Text>
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input,
+          {
+            backgroundColor: colors.bgElevated,
+            borderColor: colors.border,
+            color: colors.text,
+          },
+        ]}
         keyboardType="number-pad"
         value={amount}
         onChangeText={setAmount}
+        accessibilityLabel="금액 엔"
       />
 
       <View style={styles.chips}>
-        {CATS.map((c) => (
-          <Pressable
-            key={c}
-            style={[styles.chip, category === c && styles.chipOn]}
-            onPress={() => setCategory(c)}
-          >
-            <Text style={[styles.chipText, category === c && styles.chipTextOn]}>
-              {CATEGORY_LABEL[c] || c}
-            </Text>
-          </Pressable>
-        ))}
+        {CATS.map((c) => {
+          const on = category === c;
+          return (
+            <Pressable
+              key={c}
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                },
+              ]}
+              onPress={() => setCategory(c)}
+              accessibilityRole="button"
+              accessibilityLabel={`카테고리 ${CATEGORY_LABEL[c] || c}`}
+              accessibilityState={{ selected: on }}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  { color: on ? colors.chipOnFg : colors.chipFg },
+                ]}
+              >
+                {CATEGORY_LABEL[c] || c}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
-      <Pressable style={styles.primary} onPress={() => add()}>
-        <Text style={styles.primaryText}>추가</Text>
+      <Pressable
+        style={[styles.primary, { backgroundColor: colors.primary }]}
+        onPress={() => add()}
+        accessibilityRole="button"
+        accessibilityLabel="경비 추가"
+      >
+        <Text style={[styles.primaryText, { color: colors.primaryFg }]}>
+          추가
+        </Text>
       </Pressable>
 
       <FlatList
@@ -254,24 +325,49 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
         data={[...trip.expenses].reverse()}
         keyExtractor={(e) => e.id}
         renderItem={({ item }) => (
-          <View style={styles.card}>
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.bgElevated,
+                borderColor: colors.border,
+              },
+            ]}
+          >
             <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{item.label}</Text>
-              <Text style={styles.meta}>
+              <Text style={[styles.name, { color: colors.text }]}>
+                {item.label}
+              </Text>
+              <Text style={[styles.meta, { color: colors.textMuted }]}>
                 {CATEGORY_LABEL[item.category] || item.category} ·{" "}
                 {formatYen(item.amount)}
                 {item.sourceSms ? " · SMS" : ""}
               </Text>
             </View>
-            <Pressable onPress={() => remove(item.id)} style={styles.delHit}>
-              <Text style={styles.del}>삭제</Text>
+            <Pressable
+              onPress={() => remove(item.id)}
+              style={styles.delHit}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.label} 삭제`}
+            >
+              <Text style={[styles.del, { color: colors.danger }]}>삭제</Text>
             </Pressable>
           </View>
         )}
         ListEmptyComponent={
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyTitle}>아직 경비가 없습니다</Text>
-            <Text style={styles.hint}>
+          <View
+            style={[
+              styles.emptyBox,
+              {
+                backgroundColor: colors.bgMuted,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              아직 경비가 없습니다
+            </Text>
+            <Text style={[styles.hint, { color: colors.textMuted }]}>
               SMS를 파싱하거나 항목·금액을 입력한 뒤 「추가」를 누르세요.
             </Text>
           </View>
@@ -289,40 +385,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 2,
   },
-  back: { color: "#0369a1", fontWeight: "700", fontSize: 15 },
-  title: { fontSize: 20, fontWeight: "800", color: "#0c4a6e" },
+  back: { fontWeight: "700", fontSize: 15 },
+  title: { fontSize: 20, fontWeight: "800" },
   topHint: {
-    color: "#475569",
     fontSize: 13,
     marginTop: 6,
     lineHeight: 20,
     fontWeight: "600",
   },
-  hint: { color: "#64748b", fontSize: 12, marginTop: 4, lineHeight: 18 },
+  hint: { fontSize: 12, marginTop: 4, lineHeight: 18 },
   toast: {
     marginTop: 10,
-    backgroundColor: "#0f172a",
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  toastText: { color: "#e0f2fe", fontSize: 13, fontWeight: "600" },
-  label: { marginTop: 12, fontWeight: "700", color: "#0c4a6e" },
+  toastText: { fontSize: 13, fontWeight: "600" },
+  label: { marginTop: 12, fontWeight: "700" },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "#cbd5e1",
     marginTop: 16,
     marginBottom: 4,
   },
   input: {
     marginTop: 6,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 12,
     minHeight: 44,
-    backgroundColor: "#fff",
   },
   smsBox: { minHeight: 72 },
   smsActions: { flexDirection: "row", gap: 8, marginTop: 8 },
@@ -332,59 +423,48 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     minHeight: 40,
     borderRadius: 10,
-    backgroundColor: "#e2e8f0",
     justifyContent: "center",
   },
-  chipOn: { backgroundColor: "#0369a1" },
-  chipText: { color: "#334155", fontSize: 12, fontWeight: "600" },
-  chipTextOn: { color: "#fff" },
+  chipText: { fontSize: 12, fontWeight: "600" },
   secondary: {
     flex: 1,
-    backgroundColor: "#e0f2fe",
     paddingVertical: 12,
     minHeight: 44,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  secondaryPrimary: { backgroundColor: "#0c4a6e" },
-  secondaryText: { color: "#075985", fontWeight: "700", fontSize: 13 },
-  secondaryPrimaryText: { color: "#fff" },
+  secondaryText: { fontWeight: "700", fontSize: 13 },
   primary: {
     marginTop: 16,
-    backgroundColor: "#0c4a6e",
     paddingVertical: 16,
     minHeight: 52,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryText: { color: "#fff", fontWeight: "900", fontSize: 17 },
+  primaryText: { fontWeight: "900", fontSize: 17 },
   card: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: "#e2e8f0",
   },
-  name: { fontWeight: "700", color: "#0f172a" },
-  meta: { marginTop: 2, color: "#64748b", fontSize: 13 },
+  name: { fontWeight: "700" },
+  meta: { marginTop: 2, fontSize: 13 },
   delHit: {
     minWidth: 44,
     minHeight: 44,
     alignItems: "center",
     justifyContent: "center",
   },
-  del: { color: "#b91c1c", fontWeight: "700" },
+  del: { fontWeight: "700" },
   emptyBox: {
     padding: 16,
-    backgroundColor: "#f8fafc",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#e2e8f0",
   },
-  emptyTitle: { fontWeight: "800", color: "#0c4a6e", marginBottom: 4 },
+  emptyTitle: { fontWeight: "800", marginBottom: 4 },
 });

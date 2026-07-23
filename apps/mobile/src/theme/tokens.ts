@@ -61,7 +61,7 @@ export const darkTokens: ColorTokens = {
   chipBg: "#334155",
   chipFg: "#e2e8f0",
   chipOnBg: "#0284c7",
-  chipOnFg: "#f0f9ff",
+  chipOnFg: "#f8fafc",
   danger: "#f87171",
   success: "#34d399",
   mapBorder: "#0369a1",

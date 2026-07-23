@@ -10,6 +10,8 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { FadeIn } from "../components/FadeIn";
+import { useTheme } from "../theme/ThemeContext";
 import type { PlaceReview, Trip } from "../types";
 
 type Props = {
@@ -19,6 +21,7 @@ type Props = {
 };
 
 export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
+  const { colors } = useTheme();
   const [placeId, setPlaceId] = useState(trip.places[0]?.id ?? "");
   const [caption, setCaption] = useState("");
   const [rating, setRating] = useState("5");
@@ -76,41 +79,81 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
   };
 
   return (
-    <View style={styles.root}>
-      <Pressable onPress={onBack}>
-        <Text style={styles.back}>← 일정</Text>
-      </Pressable>
-      <Text style={styles.title}>사진 · 리뷰 캡처</Text>
-      <Text style={styles.hint}>9ruDocs Step 모델과 호환 (발행 시 BlogDraft로 변환)</Text>
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
+      <FadeIn>
+        <Pressable
+          onPress={onBack}
+          accessibilityRole="button"
+          accessibilityLabel="일정으로 돌아가기"
+        >
+          <Text style={[styles.back, { color: colors.accent }]}>← 일정</Text>
+        </Pressable>
+        <Text style={[styles.title, { color: colors.text }]}>
+          사진 · 리뷰 캡처
+        </Text>
+        <Text style={[styles.hint, { color: colors.textMuted }]}>
+          9ruDocs Step 모델과 호환 (발행 시 BlogDraft로 변환)
+        </Text>
+      </FadeIn>
 
-      <Text style={styles.label}>장소 선택</Text>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>
+        장소 선택
+      </Text>
       <FlatList
         horizontal
         data={trip.places}
         keyExtractor={(p) => p.id}
         style={{ maxHeight: 48, marginVertical: 8 }}
-        renderItem={({ item }) => (
-          <Pressable
-            style={[styles.chip, placeId === item.id && styles.chipOn]}
-            onPress={() => setPlaceId(item.id)}
-          >
-            <Text
-              style={[styles.chipText, placeId === item.id && styles.chipTextOn]}
-              numberOfLines={1}
+        renderItem={({ item }) => {
+          const on = placeId === item.id;
+          return (
+            <Pressable
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                },
+              ]}
+              onPress={() => setPlaceId(item.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`장소 ${item.name}`}
+              accessibilityState={{ selected: on }}
             >
-              {item.name}
-            </Text>
-          </Pressable>
-        )}
-        ListEmptyComponent={<Text style={styles.hint}>일정이 없습니다.</Text>}
+              <Text
+                style={[
+                  styles.chipText,
+                  { color: on ? colors.chipOnFg : colors.chipFg },
+                ]}
+                numberOfLines={1}
+              >
+                {item.name}
+              </Text>
+            </Pressable>
+          );
+        }}
+        ListEmptyComponent={
+          <Text style={[styles.hint, { color: colors.textMuted }]}>
+            일정이 없습니다.
+          </Text>
+        }
       />
 
       <View style={styles.row}>
-        <Pressable style={styles.btn} onPress={() => void pick(true)}>
-          <Text style={styles.btnText}>카메라</Text>
+        <Pressable
+          style={[styles.btn, { backgroundColor: colors.accentMuted }]}
+          onPress={() => void pick(true)}
+          accessibilityRole="button"
+          accessibilityLabel="카메라"
+        >
+          <Text style={[styles.btnText, { color: colors.accent }]}>카메라</Text>
         </Pressable>
-        <Pressable style={styles.btn} onPress={() => void pick(false)}>
-          <Text style={styles.btnText}>갤러리</Text>
+        <Pressable
+          style={[styles.btn, { backgroundColor: colors.accentMuted }]}
+          onPress={() => void pick(false)}
+          accessibilityRole="button"
+          accessibilityLabel="갤러리"
+        >
+          <Text style={[styles.btnText, { color: colors.accent }]}>갤러리</Text>
         </Pressable>
       </View>
 
@@ -118,40 +161,79 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
         <Image source={{ uri: imageUri }} style={styles.preview} />
       ) : null}
 
-      <Text style={styles.label}>리뷰</Text>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>리뷰</Text>
       <TextInput
-        style={[styles.input, { minHeight: 72 }]}
+        style={[
+          styles.input,
+          {
+            minHeight: 72,
+            backgroundColor: colors.bgElevated,
+            borderColor: colors.border,
+            color: colors.text,
+          },
+        ]}
         multiline
         value={caption}
         onChangeText={setCaption}
         placeholder="맛·분위기·팁 등"
+        placeholderTextColor={colors.textMuted}
+        accessibilityLabel="리뷰 문구"
       />
 
-      <Text style={styles.label}>별점 (1~5)</Text>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>
+        별점 (1~5)
+      </Text>
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input,
+          {
+            backgroundColor: colors.bgElevated,
+            borderColor: colors.border,
+            color: colors.text,
+          },
+        ]}
         keyboardType="number-pad"
         value={rating}
         onChangeText={setRating}
+        accessibilityLabel="별점"
       />
 
-      <Pressable style={styles.primary} onPress={save}>
-        <Text style={styles.primaryText}>리뷰 저장</Text>
+      <Pressable
+        style={[styles.primary, { backgroundColor: colors.primary }]}
+        onPress={save}
+        accessibilityRole="button"
+        accessibilityLabel="리뷰 저장"
+      >
+        <Text style={[styles.primaryText, { color: colors.primaryFg }]}>
+          리뷰 저장
+        </Text>
       </Pressable>
 
-      <Text style={styles.section}>저장된 리뷰 ({trip.reviews.length})</Text>
+      <Text style={[styles.section, { color: colors.text }]}>
+        저장된 리뷰 ({trip.reviews.length})
+      </Text>
       <FlatList
         data={[...trip.reviews].sort((a, b) => a.order - b.order)}
         keyExtractor={(r) => r.id}
         style={{ flex: 1 }}
         renderItem={({ item }) => (
-          <View style={styles.card}>
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.bgElevated,
+                borderColor: colors.border,
+              },
+            ]}
+          >
             {item.imageUri ? (
               <Image source={{ uri: item.imageUri }} style={styles.thumb} />
             ) : null}
             <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{item.placeName || "장소 미지정"}</Text>
-              <Text style={styles.meta}>
+              <Text style={[styles.name, { color: colors.text }]}>
+                {item.placeName || "장소 미지정"}
+              </Text>
+              <Text style={[styles.meta, { color: colors.textMuted }]}>
                 {item.caption || "(문구 없음)"}
                 {item.rating ? ` · ★${item.rating}` : ""}
               </Text>
@@ -165,60 +247,57 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  back: { color: "#0369a1", marginBottom: 6 },
-  title: { fontSize: 20, fontWeight: "800", color: "#0f172a" },
-  hint: { color: "#64748b", fontSize: 12, marginBottom: 4 },
-  label: { marginTop: 10, fontWeight: "600", color: "#334155" },
+  back: { marginBottom: 6, fontWeight: "700" },
+  title: { fontSize: 20, fontWeight: "800" },
+  hint: { fontSize: 12, marginBottom: 4 },
+  label: { marginTop: 10, fontWeight: "600" },
   input: {
     marginTop: 6,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: "#fff",
   },
   row: { flexDirection: "row", gap: 8, marginTop: 8 },
   btn: {
     flex: 1,
-    backgroundColor: "#e0f2fe",
     paddingVertical: 10,
+    minHeight: 44,
     borderRadius: 8,
     alignItems: "center",
+    justifyContent: "center",
   },
-  btnText: { color: "#075985", fontWeight: "700" },
+  btnText: { fontWeight: "700" },
   preview: { marginTop: 10, width: "100%", height: 160, borderRadius: 10 },
   primary: {
     marginTop: 14,
-    backgroundColor: "#0369a1",
     paddingVertical: 12,
+    minHeight: 48,
     borderRadius: 10,
     alignItems: "center",
+    justifyContent: "center",
   },
-  primaryText: { color: "#fff", fontWeight: "700" },
+  primaryText: { fontWeight: "700" },
   section: { marginTop: 16, marginBottom: 8, fontWeight: "700" },
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
-    backgroundColor: "#e2e8f0",
     marginRight: 6,
     maxWidth: 160,
+    minHeight: 40,
+    justifyContent: "center",
   },
-  chipOn: { backgroundColor: "#0369a1" },
-  chipText: { color: "#334155", fontSize: 12 },
-  chipTextOn: { color: "#fff" },
+  chipText: { fontSize: 12, fontWeight: "600" },
   card: {
     flexDirection: "row",
     gap: 10,
-    backgroundColor: "#fff",
     borderRadius: 10,
     padding: 10,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: "#e2e8f0",
   },
   thumb: { width: 56, height: 56, borderRadius: 8 },
-  name: { fontWeight: "700", color: "#0f172a" },
-  meta: { marginTop: 2, color: "#64748b", fontSize: 13 },
+  name: { fontWeight: "700" },
+  meta: { marginTop: 2, fontSize: 13 },
 });

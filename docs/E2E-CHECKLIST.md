@@ -106,3 +106,12 @@ curl -X POST http://localhost:3011/trip/optimize-day ^
 | 네이티브 SMS 인박스 | 문서화만 (`apps/mobile/docs/SMS.md`) |
 | Yahoo / NAVITIME 등 JP 대중교통 파트너 | 어댑터+딥링크 구현 (`docs/JP-TRANSIT-PARTNER.md`). 키/HOST 없으면 추정+외부 앱 |
 | Places API (New) 전면 재작성 | 보류 — 기존 Places 검색 유지 |
+| Android 지도 마커 geo-드래그 | 불안정 → **순서 모드 + ≡ 스트립 + ▲▼** 사용 (B7) |
+
+## 7. UX B7–B11 수동 QA
+
+- [ ] **B7**: 마커 롱프레스 → 순서 모드 · 하단 ≡ 길게→다른 번호 탭 → enrich·Undo
+- [ ] **B8**: 멀티시티 여행에서 Day 도시 칩 전환 → 지도 중심·dayIndexes · 장소 cityId 프롬프트
+- [ ] **B9**: 설정 다크 → Capture / Expenses / Summary 배경·칩·입력 대비
+- [ ] **B10**: ≡ DnD 중 스와이프 비활성 · 왼쪽 스와이프 삭제 · 세로 스크롤 유지
+- [ ] **B11**: NextAction/스낵바 페이드 · 시스템 동작 줄이기 시 즉시 표시 · TalkBack Label

@@ -172,6 +172,15 @@ npm run typecheck
 - 첫 실행 온보딩 3단계 (AsyncStorage `@9rutrip/onboardingSeen`)
 - 장소 제안: Places 응답 시 카드 **Google Places** 뱃지
 
+### UX B7–B11 (최근)
+
+- **B7 순서 모드**: 마커 롱프레스 → 순서 모드 + 하단 ≡ 스트립 재정렬(▲▼ 병행). Android 지도 핀 geo-드래그 미사용(불안정).
+- **B8 Day↔도시**: 멀티시티 시 Day별 도쿄/오사카 칩 → `cities.dayIndexes` + (선택) `place.cityId` · 지도 중심 갱신.
+- **B9 다크 완성**: Capture / Expenses / Summary 테마 토큰 (설정 시스템·라이트·다크).
+- **B10 제스처**: ≡만 DnD · 왼쪽 스와이프 삭제 · 드래그 중 스와이프 off · `activeOffsetX`/`failOffsetY` · 리스트 스크롤 유지.
+- **B11 모션·a11y**: `FadeIn`/스낵바/NextAction Animated + `AccessibilityInfo` reduce-motion · Label/Role/Hint · 다크 칩 대비.
+
+
 ### Directions transit · 캐시
 
 - transit/driving에 `departure_time=now`, `language=ko`, `region=jp` + 일시 오류 재시도
@@ -197,12 +206,12 @@ npm run typecheck
 
 ### UX backlog 7–12 (구현됨)
 
-1. **마커 순서 변경 (#7)**: Plan Day 지도 마커 탭 → 「순서 변경」 오버레이(▲▼). 리스트·enrich·Undo 스택과 동기. (Android maps 드래그는 불안정해 오버레이 방식)
-2. **멀티시티 (#8)**: `Trip.cities[]` + place `cityId`. Create에서 도쿄·오사카 복수 선택. Day별 지도 중심 도시. Plan 「도시 추가」. 스키마 하위 호환(단일 cityId).
+1. **마커 순서 변경 (#7 / B7)**: 롱프레스 → 「순서 모드」+ 지도 하단 ≡ 스트립(길게→다른 번호 탭) + ▲▼. 리스트·enrich·Undo 동기. **Android `react-native-maps` 핀 geo-드래그는 불안정해 비활성** — 순서 모드/스트립이 대체 UX.
+2. **멀티시티 Day 배정 (#8 / B8)**: `Trip.cities[].dayIndexes` 수동 할당 UI(도쿄/오사카 칩). 지도 중심·(선택) 당일 `place.cityId` 갱신 프롬프트.
 3. **스와이프 삭제 + 다단계 Undo (#9)**: `Swipeable` 행 삭제. Undo 스택 N=5, 스낵바에 깊이 표시.
 4. **날씨·혼잡 (#10)**: Open-Meteo(키 없음) → 「오늘 날씨 · °C · 강수%」 칩 + 시간대 혼잡 휴리스틱.
 5. **체크인 체크리스트 (#11)**: 예약번호·여권·WiFi·미팅포인트 — Trip에 저장, Plan ⋯ / 현장 모드 체크박스.
-6. **브랜드 모션·다크·a11y (#12)**: 설정 테마(시스템/라이트/다크), Home·Plan·Active 토큰, Day/탭 `LayoutAnimation`, 주요 버튼 `accessibilityLabel`·대비 칩.
+6. **브랜드 모션·다크·a11y (#12 / B9–B11)**: 설정 테마(시스템/라이트/다크) → Capture·Expenses·Summary·NextAction까지 토큰 적용. `FadeIn`/스낵바·NextAction `Animated`(reduce-motion 존중). Swipe↔DnD: ≡만 드래그, 스와이프는 왼쪽·`activeOffsetX`/`failOffsetY`, 드래그 중 스와이프 비활성.
 
 
 ## API
