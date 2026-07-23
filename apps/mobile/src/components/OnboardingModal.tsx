@@ -4,15 +4,15 @@ import { useState } from "react";
 const STEPS = [
   {
     title: "여행 만들기",
-    body: "홈에서 새 여행을 만들고 AI가 도쿄·오사카 일정을 제안합니다.",
+    body: "홈에서 「새 여행 만들기」로 도쿄·오사카 일정을 만듭니다. 카드의 ⋯ 메뉴로 삭제·복제할 수 있습니다.",
   },
   {
-    title: "순서 바꾸기 (DnD)",
-    body: "일정 화면에서 ≡ 핸들을 길게 눌러 당일 순서를 바꾸고, 교통이 다시 계산됩니다.",
+    title: "일정 다듬기",
+    body: "≡ 핸들을 길게 눌러 순서를 바꾸고, 🕒로 시각을, Day▶로 다른 날로 옮깁니다. 변경은 하단 「실행 취소」로 되돌릴 수 있습니다.",
   },
   {
-    title: "이동 비교",
-    body: "「이동 · 비교 ›」로 도보·대중교통·택시를 비교한 뒤, 길안내 앱으로 환승을 확인하세요.",
+    title: "현장 · 한 손 조작",
+    body: "여행을 시작하면 「다음으로 갈 곳」이 크게 보입니다. 길안내·완료를 누르고, 이동이 막히면 재루트를 쓰세요.",
   },
 ] as const;
 
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: "#fff",
-    borderRadius: 18,
+    borderRadius: 14,
     padding: 22,
   },
   brand: {
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 22,
     fontWeight: "900",
-    color: "#0f172a",
+    color: "#0c4a6e",
   },
   body: {
     marginTop: 10,
@@ -112,9 +112,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#0c4a6e",
     borderRadius: 12,
     paddingVertical: 14,
+    minHeight: 48,
     alignItems: "center",
+    justifyContent: "center",
   },
   btnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
-  skip: { marginTop: 12, alignItems: "center", padding: 8 },
+  skip: { marginTop: 12, alignItems: "center", padding: 10, minHeight: 44 },
   skipText: { color: "#64748b", fontWeight: "600" },
 });

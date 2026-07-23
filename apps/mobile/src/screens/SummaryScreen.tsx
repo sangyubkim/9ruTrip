@@ -94,7 +94,7 @@ export function SummaryScreen({ trip, onBack }: Props) {
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={{ paddingBottom: 40 }}>
-      <Pressable onPress={onBack}>
+      <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
         <Text style={styles.back}>← 일정</Text>
       </Pressable>
       <Text style={styles.title}>계획 vs 실제</Text>
@@ -189,8 +189,14 @@ export function SummaryScreen({ trip, onBack }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  back: { color: "#0369a1", marginBottom: 6 },
-  title: { fontSize: 20, fontWeight: "800", color: "#0f172a" },
+  backHit: {
+    alignSelf: "flex-start",
+    minHeight: 44,
+    justifyContent: "center",
+    marginBottom: 2,
+  },
+  back: { color: "#0369a1", fontWeight: "700", fontSize: 15 },
+  title: { fontSize: 20, fontWeight: "800", color: "#0c4a6e" },
   sub: { color: "#64748b", marginTop: 4 },
   box: {
     marginTop: 16,
@@ -202,10 +208,16 @@ const styles = StyleSheet.create({
   variance: { marginTop: 8, fontSize: 16, fontWeight: "800" },
   over: { color: "#fda4af" },
   under: { color: "#86efac" },
-  section: { marginTop: 20, marginBottom: 8, fontWeight: "700", fontSize: 16 },
+  section: {
+    marginTop: 20,
+    marginBottom: 8,
+    fontWeight: "800",
+    fontSize: 16,
+    color: "#0c4a6e",
+  },
   insightBox: {
     backgroundColor: "#f0fdf4",
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 12,
     borderWidth: 1,
     borderColor: "#bbf7d0",
@@ -214,7 +226,7 @@ const styles = StyleSheet.create({
   insightLine: { color: "#14532d", fontSize: 13, lineHeight: 20 },
   row: {
     backgroundColor: "#fff",
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
@@ -225,27 +237,33 @@ const styles = StyleSheet.create({
   hint: { color: "#64748b", fontSize: 13, lineHeight: 20 },
   primary: {
     marginTop: 12,
-    backgroundColor: "#0369a1",
+    backgroundColor: "#0c4a6e",
     paddingVertical: 14,
+    minHeight: 48,
     borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
   },
-  primaryText: { color: "#fff", fontWeight: "700" },
+  primaryText: { color: "#fff", fontWeight: "800" },
   wpRow: { flexDirection: "row", gap: 8, marginTop: 10 },
   draftBtn: {
     flex: 1,
     backgroundColor: "#e0f2fe",
     paddingVertical: 14,
+    minHeight: 48,
     borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
   },
   draftText: { color: "#075985", fontWeight: "700" },
   publishBtn: {
     flex: 1,
     backgroundColor: "#15803d",
     paddingVertical: 14,
+    minHeight: 48,
     borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
   },
   publishText: { color: "#fff", fontWeight: "700" },
   ok: { marginTop: 10, color: "#047857" },

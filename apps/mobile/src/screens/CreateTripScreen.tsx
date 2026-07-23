@@ -36,7 +36,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
 
   return (
     <View style={styles.root}>
-      <Pressable onPress={onBack}>
+      <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
         <Text style={styles.back}>← 뒤로</Text>
       </Pressable>
       <Text style={styles.title}>여행 만들기</Text>
@@ -108,26 +108,35 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  back: { color: "#0369a1", fontSize: 15, marginBottom: 8 },
-  title: { fontSize: 22, fontWeight: "800", color: "#0f172a" },
+  backHit: {
+    alignSelf: "flex-start",
+    minHeight: 44,
+    justifyContent: "center",
+    marginBottom: 2,
+  },
+  back: { color: "#0369a1", fontSize: 15, fontWeight: "700" },
+  title: { fontSize: 22, fontWeight: "800", color: "#0c4a6e" },
   hint: { marginTop: 6, color: "#64748b", marginBottom: 16 },
   label: { marginTop: 12, fontWeight: "600", color: "#334155" },
   input: {
     marginTop: 6,
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    minHeight: 44,
     fontSize: 16,
     backgroundColor: "#fff",
   },
   cityRow: { flexDirection: "row", gap: 8, marginTop: 6 },
   cityChip: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 12,
+    minHeight: 44,
+    borderRadius: 10,
     backgroundColor: "#e2e8f0",
+    justifyContent: "center",
   },
   cityChipOn: { backgroundColor: "#0369a1" },
   cityChipText: { color: "#334155", fontWeight: "700" },
@@ -135,16 +144,18 @@ const styles = StyleSheet.create({
   locked: {
     marginTop: 8,
     backgroundColor: "#e0f2fe",
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 12,
   },
   lockedText: { color: "#075985", fontWeight: "600" },
   primary: {
     marginTop: 24,
-    backgroundColor: "#0369a1",
+    backgroundColor: "#0c4a6e",
     paddingVertical: 14,
+    minHeight: 48,
     borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
   },
   primaryText: { color: "#fff", fontWeight: "700", fontSize: 16 },
 });

@@ -33,7 +33,6 @@ const CATS: (PlaceCategory | "misc")[] = [
 function extractSharedText(url: string | null): string | null {
   if (!url) return null;
   try {
-    // intent / deep link 쿼리로 전달된 경우
     const q = url.includes("?") ? url.split("?")[1] : "";
     const params = new URLSearchParams(q);
     const text = params.get("text") || params.get("body");
@@ -49,6 +48,12 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
   const [category, setCategory] = useState<PlaceCategory | "misc">("food");
   const [smsText, setSmsText] = useState("");
   const [parsing, setParsing] = useState(false);
+  const [inlineMsg, setInlineMsg] = useState<string | null>(null);
+
+  const flash = (msg: string) => {
+    setInlineMsg(msg);
+    setTimeout(() => setInlineMsg(null), 3500);
+  };
 
   const add = (override?: Partial<Expense> & { label: string; amount: number }) => {
     const n = override?.amount ?? Number(amount);
@@ -73,6 +78,7 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
     });
     setLabel("");
     setAmount("");
+    flash(`추가됨 · ${lab}`);
   };
 
   const remove = (id: string) => {
@@ -87,16 +93,13 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
     try {
       const text = await Clipboard.getStringAsync();
       if (!text?.trim()) {
-        Alert.alert(
-          "클립보드 비어 있음",
-          "카드 SMS를 복사한 뒤 다시 눌러 주세요.\n(SMS 앱 → 공유로 9ruTrip을 선택하는 방법도 있습니다. 커스텀 빌드 권장)",
-        );
+        flash("클립보드가 비어 있습니다. SMS를 복사한 뒤 다시 눌러 주세요.");
         return;
       }
       setSmsText(text.trim());
-      Alert.alert("붙여넣기 완료", "내용을 확인한 뒤 SMS 파싱을 누르세요.");
+      flash("붙여넣기 완료 · 아래 「SMS 파싱」을 누르세요.");
     } catch {
-      Alert.alert("클립보드 오류", "붙여넣기에 실패했습니다. 직접 입력해 주세요.");
+      flash("붙여넣기 실패 · 직접 입력해 주세요.");
     }
   }, []);
 
@@ -116,7 +119,7 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
 
   const parseSms = async () => {
     if (!smsText.trim()) {
-      Alert.alert("SMS 붙여넣기", "카드 결제 SMS 전문을 붙여넣어 주세요.");
+      flash("카드 결제 SMS를 붙여넣은 뒤 파싱하세요.");
       return;
     }
     setParsing(true);
@@ -139,7 +142,7 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
       setCategory("misc");
       Alert.alert(
         "SMS 파싱됨",
-        `가맹점: ${parsed.merchant}\nKRW ${parsed.amountKrw.toLocaleString()}\n추정 JPY ¥${jpy.toLocaleString()}\n\n금액을 확인한 뒤 경비 추가를 누르세요.\n(환율은 추정값 · 수정 가능)`,
+        `가맹점: ${parsed.merchant}\nKRW ${parsed.amountKrw.toLocaleString()}\n추정 JPY ¥${jpy.toLocaleString()}\n\n금액을 확인한 뒤 「추가」를 누르세요.`,
         [
           { text: "확인" },
           {
@@ -162,18 +165,24 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
 
   return (
     <View style={styles.root}>
-      <Pressable onPress={onBack}>
+      <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
         <Text style={styles.back}>← 일정</Text>
       </Pressable>
       <Text style={styles.title}>경비</Text>
-      <Text style={styles.hint}>
-        현금 수동 + SMS 붙여넣기/공유 · 합계 {formatYen(sumActual(trip.expenses))}
+      <Text style={styles.topHint}>
+        ① SMS 복사 → 붙여넣기 → 파싱 ② 금액 확인 후 「추가」 · 합계{" "}
+        {formatYen(sumActual(trip.expenses))}
       </Text>
 
-      <Text style={styles.label}>카드 SMS (붙여넣기 · 공유)</Text>
+      {inlineMsg ? (
+        <View style={styles.toast}>
+          <Text style={styles.toastText}>{inlineMsg}</Text>
+        </View>
+      ) : null}
+
+      <Text style={styles.label}>카드 SMS</Text>
       <Text style={styles.hint}>
-        Expo Go는 SMS 인박스 자동 읽기 불가. 복사 후 붙여넣거나, 커스텀
-        빌드에서 SMS → 공유 → 9ruTrip. 상세: apps/mobile/docs/SMS.md
+        Expo Go는 인박스 자동 읽기 불가 · 복사/공유로 붙여넣기
       </Text>
       <TextInput
         style={[styles.input, styles.smsBox]}
@@ -184,11 +193,18 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
         textAlignVertical="top"
       />
       <View style={styles.smsActions}>
-        <Pressable style={styles.secondary} onPress={() => void pasteFromClipboard()}>
-          <Text style={styles.secondaryText}>클립보드에서 붙여넣기</Text>
+        <Pressable
+          style={styles.secondary}
+          onPress={() => void pasteFromClipboard()}
+        >
+          <Text style={styles.secondaryText}>붙여넣기</Text>
         </Pressable>
         <Pressable
-          style={[styles.secondary, styles.secondaryPrimary, parsing && { opacity: 0.6 }]}
+          style={[
+            styles.secondary,
+            styles.secondaryPrimary,
+            parsing && { opacity: 0.6 },
+          ]}
           disabled={parsing}
           onPress={() => void parseSms()}
         >
@@ -197,6 +213,8 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
           </Text>
         </Pressable>
       </View>
+
+      <View style={styles.divider} />
 
       <Text style={styles.label}>항목</Text>
       <TextInput
@@ -228,7 +246,7 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
       </View>
 
       <Pressable style={styles.primary} onPress={() => add()}>
-        <Text style={styles.primaryText}>경비 추가</Text>
+        <Text style={styles.primaryText}>추가</Text>
       </Pressable>
 
       <FlatList
@@ -245,12 +263,19 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
                 {item.sourceSms ? " · SMS" : ""}
               </Text>
             </View>
-            <Pressable onPress={() => remove(item.id)}>
+            <Pressable onPress={() => remove(item.id)} style={styles.delHit}>
               <Text style={styles.del}>삭제</Text>
             </Pressable>
           </View>
         )}
-        ListEmptyComponent={<Text style={styles.hint}>아직 경비가 없습니다.</Text>}
+        ListEmptyComponent={
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyTitle}>아직 경비가 없습니다</Text>
+            <Text style={styles.hint}>
+              SMS를 파싱하거나 항목·금액을 입력한 뒤 「추가」를 누르세요.
+            </Text>
+          </View>
+        }
       />
     </View>
   );
@@ -258,54 +283,88 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  back: { color: "#0369a1", marginBottom: 6 },
-  title: { fontSize: 20, fontWeight: "800", color: "#0f172a" },
-  hint: { color: "#64748b", fontSize: 12, marginTop: 4 },
-  label: { marginTop: 10, fontWeight: "600", color: "#334155" },
+  backHit: {
+    alignSelf: "flex-start",
+    minHeight: 44,
+    justifyContent: "center",
+    marginBottom: 2,
+  },
+  back: { color: "#0369a1", fontWeight: "700", fontSize: 15 },
+  title: { fontSize: 20, fontWeight: "800", color: "#0c4a6e" },
+  topHint: {
+    color: "#475569",
+    fontSize: 13,
+    marginTop: 6,
+    lineHeight: 20,
+    fontWeight: "600",
+  },
+  hint: { color: "#64748b", fontSize: 12, marginTop: 4, lineHeight: 18 },
+  toast: {
+    marginTop: 10,
+    backgroundColor: "#0f172a",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  toastText: { color: "#e0f2fe", fontSize: 13, fontWeight: "600" },
+  label: { marginTop: 12, fontWeight: "700", color: "#0c4a6e" },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "#cbd5e1",
+    marginTop: 16,
+    marginBottom: 4,
+  },
   input: {
     marginTop: 6,
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
+    minHeight: 44,
     backgroundColor: "#fff",
   },
   smsBox: { minHeight: 72 },
   smsActions: { flexDirection: "row", gap: 8, marginTop: 8 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
   chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 40,
+    borderRadius: 10,
     backgroundColor: "#e2e8f0",
+    justifyContent: "center",
   },
   chipOn: { backgroundColor: "#0369a1" },
-  chipText: { color: "#334155", fontSize: 12 },
+  chipText: { color: "#334155", fontSize: 12, fontWeight: "600" },
   chipTextOn: { color: "#fff" },
   secondary: {
     flex: 1,
     backgroundColor: "#e0f2fe",
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingVertical: 12,
+    minHeight: 44,
+    borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
   },
   secondaryPrimary: { backgroundColor: "#0c4a6e" },
-  secondaryText: { color: "#075985", fontWeight: "700", fontSize: 12 },
+  secondaryText: { color: "#075985", fontWeight: "700", fontSize: 13 },
   secondaryPrimaryText: { color: "#fff" },
   primary: {
-    marginTop: 14,
-    backgroundColor: "#0369a1",
-    paddingVertical: 12,
-    borderRadius: 10,
+    marginTop: 16,
+    backgroundColor: "#0c4a6e",
+    paddingVertical: 16,
+    minHeight: 52,
+    borderRadius: 14,
     alignItems: "center",
+    justifyContent: "center",
   },
-  primaryText: { color: "#fff", fontWeight: "700" },
+  primaryText: { color: "#fff", fontWeight: "900", fontSize: 17 },
   card: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
@@ -313,5 +372,19 @@ const styles = StyleSheet.create({
   },
   name: { fontWeight: "700", color: "#0f172a" },
   meta: { marginTop: 2, color: "#64748b", fontSize: 13 },
-  del: { color: "#b91c1c", fontWeight: "600" },
+  delHit: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  del: { color: "#b91c1c", fontWeight: "700" },
+  emptyBox: {
+    padding: 16,
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  emptyTitle: { fontWeight: "800", color: "#0c4a6e", marginBottom: 4 },
 });

@@ -1,4 +1,17 @@
-import type { CostSummary, Expense, ItineraryPlace, Trip } from "../types";
+import type {
+  CostSummary,
+  Expense,
+  ItineraryPlace,
+  Trip,
+  TripStatus,
+} from "../types";
+
+/** 홈·일정 카드용 한국어 상태 라벨 */
+export const STATUS_LABEL: Record<TripStatus, string> = {
+  planning: "계획중",
+  active: "여행중",
+  done: "완료",
+};
 
 export function sumPlanned(places: ItineraryPlace[]): number {
   return places.reduce((a, p) => a + (Number(p.estimatedCost) || 0), 0);

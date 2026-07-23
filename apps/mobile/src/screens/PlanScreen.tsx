@@ -35,7 +35,7 @@ import type {
   TransportOption,
   Trip,
 } from "../types";
-import { CATEGORY_LABEL, formatYen } from "../utils/cost";
+import { CATEGORY_LABEL, formatYen, STATUS_LABEL } from "../utils/cost";
 import { formatLodgingScoreLines } from "../utils/lodgingExplain";
 import { openMapsDirections } from "../utils/mapsNavigation";
 import { formatTravelGlance, getNextAction } from "../utils/nextAction";
@@ -64,6 +64,7 @@ const FILTERS: { id: CatFilter; label: string }[] = [
 const MAP_PANE_HEIGHT = Math.round(Dimensions.get("window").height * 0.37);
 const UNDO_MS = 5000;
 const HANDLE_HIT_SLOP = { top: 14, bottom: 14, left: 14, right: 14 };
+const TOUCH_MIN = 44;
 
 function renumberGlobal(places: ItineraryPlace[]): ItineraryPlace[] {
   const sorted = [...places].sort(
@@ -114,8 +115,10 @@ export function PlanScreen({
   const [timeEditPlace, setTimeEditPlace] = useState<ItineraryPlace | null>(
     null,
   );
+  const [inlineMsg, setInlineMsg] = useState<string | null>(null);
 
   const undoSnapshotRef = useRef<ItineraryPlace[] | null>(null);
+  const inlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useGuideAlarms(trip, trip.guideAlarmsEnabled && trip.status === "active");
@@ -165,6 +168,7 @@ export function PlanScreen({
   useEffect(() => {
     return () => {
       if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      if (inlineTimerRef.current) clearTimeout(inlineTimerRef.current);
     };
   }, []);
 
@@ -173,6 +177,15 @@ export function PlanScreen({
       clearTimeout(undoTimerRef.current);
       undoTimerRef.current = null;
     }
+  };
+
+  const flashInline = (msg: string) => {
+    setInlineMsg(msg);
+    if (inlineTimerRef.current) clearTimeout(inlineTimerRef.current);
+    inlineTimerRef.current = setTimeout(() => {
+      setInlineMsg(null);
+      inlineTimerRef.current = null;
+    }, 3200);
   };
 
   const pushUndoSnapshot = () => {
@@ -350,9 +363,8 @@ export function PlanScreen({
       order: i,
     }));
     void applyPlaces(merged, { preferredLodgingId: cand.id });
-    Alert.alert(
-      "숙소 선택",
-      `${cand.name}\n점수 ${cand.lodgingScore}\n${formatLodgingScoreLines(cand.scoreBreakdown).join("\n")}`,
+    flashInline(
+      `숙소 선택 · ${cand.name} (${cand.lodgingScore}점)`,
     );
   };
 
@@ -371,7 +383,7 @@ export function PlanScreen({
       setSuggestList(res.places ?? []);
       setSuggestSource(res.source ?? "static");
       if (!res.places?.length) {
-        Alert.alert("제안 없음", "이 카테고리 제안이 없습니다.");
+        flashInline("이 카테고리 제안이 없습니다.");
         setSuggestVisible(false);
       }
     } catch (e) {
@@ -387,6 +399,7 @@ export function PlanScreen({
 
   const confirmSuggested = async (pick: ItineraryPlace) => {
     setSuggestVisible(false);
+    pushUndoSnapshot();
     const dayList = trip.places.filter((p) => p.dayIndex === day);
     const maxOrder = dayList.reduce((m, p) => Math.max(m, p.order), -1);
     const neu: ItineraryPlace = {
@@ -396,7 +409,7 @@ export function PlanScreen({
       order: maxOrder + 1,
     };
     await applyPlaces(renumberGlobal([...trip.places, neu]));
-    Alert.alert("장소 추가", `${neu.name} (Day ${day + 1})`);
+    flashInline(`추가됨 · ${neu.name} (Day ${day + 1})`);
   };
 
   const savePlannedTime = (hhmm: string) => {
@@ -606,16 +619,25 @@ export function PlanScreen({
     const selected = selectedPlaceId === item.id;
     return (
       <ScaleDecorator>
-        <View>
+        <View style={styles.placeCard}>
           {travel ? (
             <Pressable
               onPress={() => void openTransportCompare(item)}
               style={styles.compareChip}
               hitSlop={6}
+              accessibilityLabel="이동 비교"
             >
-              <Text style={styles.compareChipText}>{travel}</Text>
+              <Text style={styles.compareChipText}>이동 · 비교 › {travel}</Text>
             </Pressable>
-          ) : null}
+          ) : (
+            <Pressable
+              onPress={() => void openTransportCompare(item)}
+              style={styles.compareChipMuted}
+              accessibilityLabel="이동 비교"
+            >
+              <Text style={styles.compareChipMutedText}>이동 · 비교</Text>
+            </Pressable>
+          )}
           <Pressable
             onPress={() => setSelectedPlaceId(item.id)}
             style={[
@@ -639,7 +661,6 @@ export function PlanScreen({
               <View style={styles.nameRow}>
                 <Pressable
                   onPress={() => setTimeEditPlace(item)}
-                  hitSlop={8}
                   style={styles.timeBtn}
                   accessibilityLabel="예정 시각 편집"
                 >
@@ -659,39 +680,40 @@ export function PlanScreen({
                   : ""}
                 {item.notes ? ` · ${item.notes}` : ""}
               </Text>
+              <View style={styles.actionRow}>
+                <Pressable
+                  onPress={() => openNavToPlace(item)}
+                  style={styles.actionPrimary}
+                  accessibilityLabel="길안내"
+                >
+                  <Text style={styles.actionPrimaryText}>길안내</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => promptMoveDay(item)}
+                  style={styles.actionBtn}
+                  accessibilityLabel="다른 날로 이동"
+                >
+                  <Text style={styles.actionBtnText}>Day▶</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => deletePlace(item)}
+                  style={styles.actionDanger}
+                  accessibilityLabel="장소 삭제"
+                >
+                  <Text style={styles.actionDangerText}>삭제</Text>
+                </Pressable>
+                {trip.status === "active" ? (
+                  <Pressable
+                    onPress={() => markDone(item.id)}
+                    style={styles.actionDone}
+                  >
+                    <Text style={styles.actionDoneText}>
+                      {done ? "✓" : "완료"}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
-            <Pressable
-              onPress={() => openNavToPlace(item)}
-              style={styles.iconBtn}
-              hitSlop={8}
-              accessibilityLabel="길안내"
-            >
-              <Text style={styles.iconBtnText}>길안내</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => promptMoveDay(item)}
-              style={styles.iconBtn}
-              hitSlop={8}
-              accessibilityLabel="다른 날로 이동"
-            >
-              <Text style={styles.iconBtnText}>Day▶</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => deletePlace(item)}
-              style={styles.iconBtnDanger}
-              hitSlop={8}
-              accessibilityLabel="장소 삭제"
-            >
-              <Text style={styles.iconBtnDangerText}>삭제</Text>
-            </Pressable>
-            {trip.status === "active" ? (
-              <Pressable
-                onPress={() => markDone(item.id)}
-                style={styles.doneBtn}
-              >
-                <Text style={styles.doneText}>{done ? "✓" : "완료"}</Text>
-              </Pressable>
-            ) : null}
           </Pressable>
         </View>
       </ScaleDecorator>
@@ -700,19 +722,25 @@ export function PlanScreen({
 
   const listHeader = (
     <View>
-      <Pressable onPress={onBack}>
+      <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
         <Text style={styles.back}>← 목록</Text>
       </Pressable>
       <Text style={styles.title}>
         {trip.cityName} {trip.nights}박 {trip.days}일
       </Text>
       <Text style={styles.sub}>
-        {trip.partySize}명 · 계획 {formatYen(trip.plannedBudget)} · {trip.status}
+        {trip.partySize}명 · 계획 {formatYen(trip.plannedBudget)} ·{" "}
+        {STATUS_LABEL[trip.status] ?? trip.status}
       </Text>
       {enriching ? (
         <View style={styles.enrichBar}>
           <ActivityIndicator size="small" color="#0369a1" />
           <Text style={styles.enrichText}>교통 재계산 중…</Text>
+        </View>
+      ) : null}
+      {inlineMsg ? (
+        <View style={styles.inlineToast}>
+          <Text style={styles.inlineToastText}>{inlineMsg}</Text>
         </View>
       ) : null}
 
@@ -779,7 +807,7 @@ export function PlanScreen({
       {settingsOpen ? (
         <View style={styles.settingsBox}>
           <Text style={styles.settingsHint}>
-            핸들 길게 눌러 순서 · 「이동 · 비교 ›」 · Day▶ · 🕒 시각 편집
+            ≡ 길게 눌러 순서 · 이동·비교 · Day▶ · 🕒 시각 · 하단 실행 취소
           </Text>
           <View style={styles.toggles}>
             <Pressable
@@ -843,6 +871,7 @@ export function PlanScreen({
         </View>
       ) : null}
 
+      <Text style={styles.sectionLabel}>Day 선택</Text>
       <View style={styles.tabs}>
         {days.map((d) => (
           <Pressable
@@ -869,6 +898,7 @@ export function PlanScreen({
         />
       </View>
 
+      <Text style={styles.sectionLabel}>카테고리 · 장소 추가</Text>
       <View style={styles.tabs}>
         {FILTERS.map((f) => (
           <Pressable
@@ -894,7 +924,7 @@ export function PlanScreen({
             onPress={() => void insertSuggested(c)}
           >
             <Text style={styles.insertText}>
-              +{CATEGORY_LABEL[c] || c} 추가
+              +{CATEGORY_LABEL[c] || c}
             </Text>
           </Pressable>
         ))}
@@ -910,6 +940,9 @@ export function PlanScreen({
           <Text style={styles.optimizeBtnText}>동선 최적화</Text>
         )}
       </Pressable>
+      <Text style={styles.sectionLabel}>
+        Day {day + 1} 일정 ({dayPlaces.length})
+      </Text>
     </View>
   );
 
@@ -917,15 +950,21 @@ export function PlanScreen({
     <View style={styles.root}>
       {isFieldMode ? (
         <View style={styles.fieldRoot}>
-          <Pressable onPress={onBack}>
+          <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
             <Text style={styles.back}>← 목록</Text>
           </Pressable>
           <Text style={styles.title}>
             {trip.cityName} · 현장 모드
           </Text>
           <Text style={styles.sub}>
-            Day {day + 1} · 한 손 조작 · {trip.status}
+            Day {day + 1} · 한 손 조작 ·{" "}
+            {STATUS_LABEL[trip.status] ?? trip.status}
           </Text>
+          {inlineMsg ? (
+            <View style={styles.inlineToast}>
+              <Text style={styles.inlineToastText}>{inlineMsg}</Text>
+            </View>
+          ) : null}
           <NextActionBanner
             fieldMode
             next={nextAction}
@@ -952,6 +991,7 @@ export function PlanScreen({
               }}
             />
           ) : null}
+          <Text style={styles.sectionLabel}>Day</Text>
           <View style={styles.tabs}>
             {days.map((d) => (
               <Pressable
@@ -991,7 +1031,13 @@ export function PlanScreen({
           containerStyle={{ flex: 1 }}
           contentContainerStyle={{ paddingBottom: 12 }}
           ListEmptyComponent={
-            <Text style={styles.empty}>이 날 일정이 없습니다.</Text>
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyTitle}>이 날 일정이 비어 있습니다</Text>
+              <Text style={styles.empty}>
+                위에서 +음식 · +관광 · +숙소로 장소를 추가하거나, 다른 Day에서
+                Day▶로 옮겨 오세요.
+              </Text>
+            </View>
           }
         />
       )}
@@ -1006,20 +1052,22 @@ export function PlanScreen({
       ) : null}
 
       <View style={styles.actions}>
-        <Pressable style={styles.btn} onPress={openNavSelectedOrNext}>
-          <Text style={styles.btnText}>길안내</Text>
-        </Pressable>
-        <Pressable style={styles.btn} onPress={onMap}>
-          <Text style={styles.btnText}>전체지도</Text>
-        </Pressable>
-        <Pressable style={styles.btn} onPress={onCapture}>
-          <Text style={styles.btnText}>리뷰</Text>
+        <Pressable style={styles.btnPrimary} onPress={openNavSelectedOrNext}>
+          <Text style={styles.btnPrimaryText}>길안내</Text>
         </Pressable>
         <Pressable style={styles.btn} onPress={onExpenses}>
           <Text style={styles.btnText}>경비</Text>
         </Pressable>
         <Pressable style={styles.btn} onPress={onSummary}>
           <Text style={styles.btnText}>요약</Text>
+        </Pressable>
+      </View>
+      <View style={styles.actions}>
+        <Pressable style={styles.btnGhost} onPress={onMap}>
+          <Text style={styles.btnGhostText}>전체지도</Text>
+        </Pressable>
+        <Pressable style={styles.btnGhost} onPress={onCapture}>
+          <Text style={styles.btnGhostText}>리뷰</Text>
         </Pressable>
       </View>
       <View style={styles.actions}>
@@ -1085,24 +1133,39 @@ export function PlanScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  back: { color: "#0369a1", marginBottom: 6 },
+  backHit: {
+    alignSelf: "flex-start",
+    minHeight: TOUCH_MIN,
+    justifyContent: "center",
+    marginBottom: 2,
+  },
+  back: { color: "#0369a1", fontWeight: "700", fontSize: 15 },
   title: { fontSize: 20, fontWeight: "800", color: "#0c4a6e" },
   sub: { color: "#64748b", marginTop: 2 },
+  sectionLabel: {
+    marginTop: 4,
+    marginBottom: 6,
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0c4a6e",
+  },
   tip: { marginTop: 8, marginBottom: 8, fontSize: 12, color: "#94a3b8" },
   moreBtn: {
     alignSelf: "flex-start",
     marginTop: 8,
     marginBottom: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
     backgroundColor: "#f1f5f9",
+    justifyContent: "center",
   },
-  moreBtnText: { fontSize: 12, fontWeight: "700", color: "#475569" },
+  moreBtnText: { fontSize: 13, fontWeight: "700", color: "#475569" },
   settingsBox: {
     marginBottom: 8,
     padding: 10,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: "#f8fafc",
     borderWidth: 1,
     borderColor: "#e2e8f0",
@@ -1110,10 +1173,14 @@ const styles = StyleSheet.create({
   settingsHint: { fontSize: 11, color: "#94a3b8", marginBottom: 8 },
   nameRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
   timeBtn: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    minHeight: TOUCH_MIN,
+    minWidth: TOUCH_MIN,
+    borderRadius: 10,
     backgroundColor: "#e0f2fe",
+    alignItems: "center",
+    justifyContent: "center",
   },
   timeText: { fontSize: 12, fontWeight: "800", color: "#0369a1" },
   enrichBar: {
@@ -1128,6 +1195,14 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   enrichText: { fontSize: 12, fontWeight: "700", color: "#0369a1" },
+  inlineToast: {
+    marginTop: 8,
+    backgroundColor: "#0f172a",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  inlineToastText: { color: "#e0f2fe", fontSize: 13, fontWeight: "600" },
   mapPane: {
     height: MAP_PANE_HEIGHT,
     marginBottom: 10,
@@ -1135,29 +1210,35 @@ const styles = StyleSheet.create({
   toggles: { flexDirection: "row", gap: 8, marginBottom: 8 },
   toggle: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 12,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
     backgroundColor: "#e0f2fe",
     alignItems: "center",
+    justifyContent: "center",
   },
   toggleOn: { backgroundColor: "#0c4a6e" },
   toggleText: { fontSize: 12, fontWeight: "700", color: "#334155" },
   toggleTextOn: { color: "#fff" },
   tabs: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
   tab: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
     backgroundColor: "#e2e8f0",
+    justifyContent: "center",
   },
   tabOn: { backgroundColor: "#0369a1" },
-  tabText: { color: "#334155", fontWeight: "600" },
+  tabText: { color: "#334155", fontWeight: "700" },
   tabTextOn: { color: "#fff" },
   chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 40,
+    borderRadius: 10,
     backgroundColor: "#e2e8f0",
+    justifyContent: "center",
   },
   chipOn: { backgroundColor: "#0c4a6e" },
   chipText: { color: "#334155", fontSize: 12, fontWeight: "600" },
@@ -1166,36 +1247,42 @@ const styles = StyleSheet.create({
   insertBtn: {
     flex: 1,
     backgroundColor: "#f0f9ff",
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 12,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
     alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: "#bae6fd",
   },
-  insertText: { color: "#0369a1", fontSize: 11, fontWeight: "700" },
+  insertText: { color: "#0369a1", fontSize: 12, fontWeight: "800" },
   optimizeBtn: {
     marginBottom: 10,
-    paddingVertical: 11,
-    borderRadius: 10,
+    paddingVertical: 12,
+    minHeight: TOUCH_MIN,
+    borderRadius: 12,
     backgroundColor: "#ecfeff",
     borderWidth: 1,
     borderColor: "#67e8f9",
     alignItems: "center",
+    justifyContent: "center",
   },
   optimizeBtnText: { color: "#0e7490", fontWeight: "800", fontSize: 13 },
   fieldRoot: { flex: 1, paddingBottom: 4 },
   fieldMap: { flex: 1, minHeight: 180, marginTop: 8, marginBottom: 8 },
   fieldListLink: {
     alignSelf: "center",
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 14,
+    minHeight: TOUCH_MIN,
+    justifyContent: "center",
   },
   fieldListLinkText: { color: "#0369a1", fontWeight: "700", fontSize: 14 },
   lodgingBox: {
     marginBottom: 8,
     padding: 10,
     backgroundColor: "#fff7ed",
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#fed7aa",
     maxHeight: 140,
@@ -1207,36 +1294,57 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   lodgingRow: {
-    paddingVertical: 6,
+    paddingVertical: 8,
+    minHeight: TOUCH_MIN,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#fdba74",
   },
   lodgingOn: { backgroundColor: "#ffedd5" },
   lodgingName: { fontWeight: "700", color: "#7c2d12", fontSize: 12 },
   lodgingMeta: { fontSize: 10, color: "#c2410c", marginTop: 2 },
+  placeCard: { marginBottom: 10 },
   compareChip: {
     alignSelf: "flex-start",
     marginBottom: 4,
     marginLeft: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
     backgroundColor: "#e0f2fe",
     borderWidth: 1,
     borderColor: "#7dd3fc",
+    justifyContent: "center",
   },
   compareChipText: {
-    fontSize: 12,
+    fontSize: 13,
     color: "#0369a1",
+    fontWeight: "800",
+  },
+  compareChipMuted: {
+    alignSelf: "flex-start",
+    marginBottom: 4,
+    marginLeft: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    justifyContent: "center",
+  },
+  compareChipMutedText: {
+    fontSize: 13,
+    color: "#64748b",
     fontWeight: "700",
   },
   row: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     backgroundColor: "#fff",
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 12,
-    marginBottom: 8,
     borderWidth: 1,
     borderColor: "#bae6fd",
   },
@@ -1244,42 +1352,74 @@ const styles = StyleSheet.create({
   rowSelected: { borderColor: "#0284c7", backgroundColor: "#f0f9ff" },
   rowDone: { opacity: 0.55 },
   dragHandle: {
-    paddingVertical: 4,
-    paddingHorizontal: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
     marginRight: 6,
     justifyContent: "center",
     alignItems: "center",
-    minWidth: 36,
-    minHeight: 36,
+    minWidth: TOUCH_MIN,
+    minHeight: TOUCH_MIN,
   },
-  drag: { fontSize: 20, color: "#64748b", width: 22, textAlign: "center" },
-  name: { flex: 1, fontWeight: "700", color: "#0f172a" },
-  meta: { marginTop: 2, fontSize: 12, color: "#64748b" },
-  iconBtn: {
-    marginLeft: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 6,
+  drag: { fontSize: 22, color: "#64748b", width: 22, textAlign: "center" },
+  name: { flex: 1, fontWeight: "700", color: "#0f172a", fontSize: 15 },
+  meta: { marginTop: 4, fontSize: 12, color: "#64748b" },
+  actionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 10,
+  },
+  actionPrimary: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
+    backgroundColor: "#0c4a6e",
+    justifyContent: "center",
+  },
+  actionPrimaryText: { color: "#fff", fontWeight: "800", fontSize: 13 },
+  actionBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
     backgroundColor: "#f1f5f9",
+    justifyContent: "center",
   },
-  iconBtnText: { color: "#475569", fontWeight: "700", fontSize: 11 },
-  iconBtnDanger: {
-    marginLeft: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 6,
+  actionBtnText: { color: "#334155", fontWeight: "700", fontSize: 13 },
+  actionDanger: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
     backgroundColor: "#fef2f2",
+    justifyContent: "center",
   },
-  iconBtnDangerText: { color: "#b91c1c", fontWeight: "700", fontSize: 11 },
-  doneBtn: {
-    marginLeft: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 6,
+  actionDangerText: { color: "#b91c1c", fontWeight: "700", fontSize: 13 },
+  actionDone: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
     backgroundColor: "#ecfdf5",
+    justifyContent: "center",
   },
-  doneText: { color: "#047857", fontWeight: "700", fontSize: 12 },
-  empty: { color: "#94a3b8", padding: 16 },
+  actionDoneText: { color: "#047857", fontWeight: "800", fontSize: 13 },
+  emptyBox: {
+    padding: 16,
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    marginBottom: 8,
+  },
+  emptyTitle: {
+    fontWeight: "800",
+    color: "#0c4a6e",
+    marginBottom: 6,
+    fontSize: 15,
+  },
+  empty: { color: "#64748b", lineHeight: 20, fontSize: 13 },
   undoBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -1287,32 +1427,60 @@ const styles = StyleSheet.create({
     backgroundColor: "#0f172a",
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 12,
     marginTop: 4,
   },
   undoLabel: { color: "#e2e8f0", fontSize: 13, fontWeight: "600" },
   undoBtn: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
+    paddingVertical: 10,
+    minHeight: TOUCH_MIN,
+    borderRadius: 8,
     backgroundColor: "#38bdf8",
+    justifyContent: "center",
   },
   undoBtnText: { color: "#0c4a6e", fontWeight: "800", fontSize: 13 },
   actions: { flexDirection: "row", gap: 8, marginTop: 8 },
+  btnPrimary: {
+    flex: 1.4,
+    backgroundColor: "#0c4a6e",
+    paddingVertical: 14,
+    minHeight: 48,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  btnPrimaryText: { color: "#fff", fontWeight: "900", fontSize: 15 },
   btn: {
     flex: 1,
-    backgroundColor: "#0c4a6e",
-    paddingVertical: 10,
-    borderRadius: 10,
+    backgroundColor: "#0369a1",
+    paddingVertical: 12,
+    minHeight: TOUCH_MIN,
+    borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
   },
   btnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  btnGhost: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+    paddingVertical: 12,
+    minHeight: TOUCH_MIN,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  btnGhostText: { color: "#475569", fontWeight: "700", fontSize: 13 },
   btnAlt: {
     flex: 1,
     backgroundColor: "#e0f2fe",
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingVertical: 12,
+    minHeight: TOUCH_MIN,
+    borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
   },
   btnAltText: { color: "#075985", fontWeight: "700", fontSize: 13 },
 });
