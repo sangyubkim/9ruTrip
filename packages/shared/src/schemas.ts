@@ -9,13 +9,19 @@ export const healthResponseSchema = z.object({
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
 export const itineraryRequestSchema = z.object({
-  cityId: z.literal("tokyo"),
+  cityId: z.enum(["tokyo", "osaka"]),
   nights: z.number().int().min(1).max(14),
   days: z.number().int().min(1).max(15),
   partySize: z.number().int().min(1).max(12),
 });
 
 export type ItineraryRequest = z.infer<typeof itineraryRequestSchema>;
+
+export const lodgingScoreBreakdownSchema = z.object({
+  centrality: z.number(),
+  priceEstimate: z.number(),
+  ratingProxy: z.number(),
+});
 
 export const itineraryPlaceSchema = z.object({
   id: z.string(),
@@ -31,6 +37,20 @@ export const itineraryPlaceSchema = z.object({
   travelFromPrevMinutes: z.number().optional(),
   travelFromPrevCost: z.number().optional(),
   lodgingScore: z.number().optional(),
+  scoreBreakdown: lodgingScoreBreakdownSchema.optional(),
+  transportEngine: z.string().optional(),
+});
+
+export const lodgingCandidateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  category: z.literal("hotel"),
+  lat: z.number(),
+  lng: z.number(),
+  estimatedCost: z.number(),
+  notes: z.string().optional(),
+  lodgingScore: z.number(),
+  scoreBreakdown: lodgingScoreBreakdownSchema,
 });
 
 export const itineraryResponseSchema = z.object({
@@ -38,6 +58,11 @@ export const itineraryResponseSchema = z.object({
   plannedBudget: z.number(),
   summary: z.string(),
   engine: z.string(),
+  lodgingCandidates: z.array(lodgingCandidateSchema).optional(),
+  preferredLodgingId: z.string().nullable().optional(),
+  cityId: z.enum(["tokyo", "osaka"]).optional(),
+  mapProvider: z.enum(["google", "naver"]).optional(),
+  transportEngine: z.string().optional(),
 });
 
 export type ItineraryResponse = z.infer<typeof itineraryResponseSchema>;

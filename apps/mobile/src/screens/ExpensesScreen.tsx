@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   FlatList,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { parseSmsExpense } from "../api/trip";
 import type { Expense, PlaceCategory, Trip } from "../types";
 import { CATEGORY_LABEL, formatYen, sumActual } from "../utils/cost";
@@ -27,6 +29,19 @@ const CATS: (PlaceCategory | "misc")[] = [
   "misc",
   "other",
 ];
+
+function extractSharedText(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    // intent / deep link 쿼리로 전달된 경우
+    const q = url.includes("?") ? url.split("?")[1] : "";
+    const params = new URLSearchParams(q);
+    const text = params.get("text") || params.get("body");
+    return text ? decodeURIComponent(text) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
   const [label, setLabel] = useState("");
@@ -67,6 +82,37 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
       updatedAt: new Date().toISOString(),
     });
   };
+
+  const pasteFromClipboard = useCallback(async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (!text?.trim()) {
+        Alert.alert(
+          "클립보드 비어 있음",
+          "카드 SMS를 복사한 뒤 다시 눌러 주세요.\n(SMS 앱 → 공유로 9ruTrip을 선택하는 방법도 있습니다. 커스텀 빌드 권장)",
+        );
+        return;
+      }
+      setSmsText(text.trim());
+      Alert.alert("붙여넣기 완료", "내용을 확인한 뒤 SMS 파싱을 누르세요.");
+    } catch {
+      Alert.alert("클립보드 오류", "붙여넣기에 실패했습니다. 직접 입력해 주세요.");
+    }
+  }, []);
+
+  useEffect(() => {
+    let sub: { remove: () => void } | undefined;
+    void (async () => {
+      const initial = await Linking.getInitialURL();
+      const shared = extractSharedText(initial);
+      if (shared) setSmsText(shared);
+      sub = Linking.addEventListener("url", ({ url }) => {
+        const t = extractSharedText(url);
+        if (t) setSmsText(t);
+      });
+    })();
+    return () => sub?.remove();
+  }, []);
 
   const parseSms = async () => {
     if (!smsText.trim()) {
@@ -121,13 +167,13 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
       </Pressable>
       <Text style={styles.title}>경비</Text>
       <Text style={styles.hint}>
-        현금 수동 + SMS 붙여넣기 · 합계 {formatYen(sumActual(trip.expenses))}
+        현금 수동 + SMS 붙여넣기/공유 · 합계 {formatYen(sumActual(trip.expenses))}
       </Text>
 
-      <Text style={styles.label}>카드 SMS 붙여넣기 (Android 우선)</Text>
+      <Text style={styles.label}>카드 SMS (붙여넣기 · 공유)</Text>
       <Text style={styles.hint}>
-        Expo Go에서는 SMS 자동 읽기가 제한되므로, 수신 SMS를 복사해 붙여넣으면
-        금액·가맹점을 파싱합니다.
+        Expo Go는 SMS 인박스 자동 읽기 불가. 복사 후 붙여넣거나, 커스텀
+        빌드에서 SMS → 공유 → 9ruTrip. 상세: apps/mobile/docs/SMS.md
       </Text>
       <TextInput
         style={[styles.input, styles.smsBox]}
@@ -137,15 +183,20 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
         placeholder="예: [신한] 03/21 14:22 승인 12,000원 스타벅스강남"
         textAlignVertical="top"
       />
-      <Pressable
-        style={[styles.secondary, parsing && { opacity: 0.6 }]}
-        disabled={parsing}
-        onPress={() => void parseSms()}
-      >
-        <Text style={styles.secondaryText}>
-          {parsing ? "파싱 중…" : "SMS 파싱"}
-        </Text>
-      </Pressable>
+      <View style={styles.smsActions}>
+        <Pressable style={styles.secondary} onPress={() => void pasteFromClipboard()}>
+          <Text style={styles.secondaryText}>클립보드에서 붙여넣기</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.secondary, styles.secondaryPrimary, parsing && { opacity: 0.6 }]}
+          disabled={parsing}
+          onPress={() => void parseSms()}
+        >
+          <Text style={[styles.secondaryText, styles.secondaryPrimaryText]}>
+            {parsing ? "파싱 중…" : "SMS 파싱"}
+          </Text>
+        </Pressable>
+      </View>
 
       <Text style={styles.label}>항목</Text>
       <TextInput
@@ -221,6 +272,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   smsBox: { minHeight: 72 },
+  smsActions: { flexDirection: "row", gap: 8, marginTop: 8 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
   chip: {
     paddingHorizontal: 10,
@@ -232,13 +284,15 @@ const styles = StyleSheet.create({
   chipText: { color: "#334155", fontSize: 12 },
   chipTextOn: { color: "#fff" },
   secondary: {
-    marginTop: 8,
+    flex: 1,
     backgroundColor: "#e0f2fe",
     paddingVertical: 10,
     borderRadius: 10,
     alignItems: "center",
   },
-  secondaryText: { color: "#075985", fontWeight: "700" },
+  secondaryPrimary: { backgroundColor: "#0c4a6e" },
+  secondaryText: { color: "#075985", fontWeight: "700", fontSize: 12 },
+  secondaryPrimaryText: { color: "#fff" },
   primary: {
     marginTop: 14,
     backgroundColor: "#0369a1",

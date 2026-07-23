@@ -58,11 +58,16 @@ function AppInner() {
   }, []);
 
   const handleCreate = useCallback(
-    async (input: { nights: number; days: number; partySize: number }) => {
+    async (input: {
+      cityId: "tokyo" | "osaka";
+      nights: number;
+      days: number;
+      partySize: number;
+    }) => {
       setGenerating(true);
       try {
         const result = await generateItinerary({
-          cityId: "tokyo",
+          cityId: input.cityId,
           nights: input.nights,
           days: input.days,
           partySize: input.partySize,
@@ -72,6 +77,12 @@ function AppInner() {
           ...trip,
           places: result.places,
           plannedBudget: result.plannedBudget,
+          lodgingCandidates: result.lodgingCandidates ?? [],
+          preferredLodgingId: result.preferredLodgingId ?? null,
+          mapProvider: result.mapProvider ?? "google",
+          cityId: result.cityId ?? input.cityId,
+          cityName:
+            (result.cityId ?? input.cityId) === "osaka" ? "오사카" : "도쿄",
           status: "planning",
           updatedAt: new Date().toISOString(),
         };
@@ -79,7 +90,8 @@ function AppInner() {
         setScreen("plan");
         Alert.alert(
           "일정 생성",
-          `${result.summary}\n엔진: ${result.engine} · ${result.places.length}곳`,
+          `${result.summary}\n엔진: ${result.engine} · ${result.places.length}곳` +
+            (result.transportEngine ? `\n교통: ${result.transportEngine}` : ""),
         );
       } catch (e) {
         Alert.alert(

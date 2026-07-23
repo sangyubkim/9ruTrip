@@ -25,6 +25,27 @@ export type PlaceCategory =
   | "transport"
   | "other";
 
+export type LodgingScoreBreakdown = {
+  /** 교통 허브 근접 (1–100) */
+  centrality: number;
+  /** 가격 경쟁력 추정 (1–100, 저렴할수록 높음) */
+  priceEstimate: number;
+  /** 평점 프록시 (1–100) */
+  ratingProxy: number;
+};
+
+export type LodgingCandidate = {
+  id: string;
+  name: string;
+  category: "hotel";
+  lat: number;
+  lng: number;
+  estimatedCost: number;
+  notes?: string;
+  lodgingScore: number;
+  scoreBreakdown: LodgingScoreBreakdown;
+};
+
 export type ItineraryPlace = {
   id: string;
   name: string;
@@ -44,6 +65,9 @@ export type ItineraryPlace = {
   travelFromPrevCost?: number;
   /** 숙소 추천 점수 1–100 */
   lodgingScore?: number;
+  scoreBreakdown?: LodgingScoreBreakdown;
+  /** haversine | directions:transit | directions:walking */
+  transportEngine?: string;
 };
 
 export type Expense = {
@@ -67,7 +91,10 @@ export type PlaceReview = Step & {
 
 export type TripStatus = "planning" | "active" | "done";
 
-export type MvpCityId = "tokyo";
+/** 해외 MVP: tokyo (기본) + osaka (선택). 국내는 추후 naver */
+export type MvpCityId = "tokyo" | "osaka";
+
+export type MapProviderId = "google" | "naver";
 
 export type Trip = {
   id: string;
@@ -79,6 +106,12 @@ export type Trip = {
   places: ItineraryPlace[];
   expenses: Expense[];
   reviews: PlaceReview[];
+  /** 숙소 후보 Top N */
+  lodgingCandidates?: LodgingCandidate[];
+  /** 사용자가 고른 숙소 후보 id */
+  preferredLodgingId?: string | null;
+  /** 지도 프로바이더 (도시 메타에서 파생) */
+  mapProvider?: MapProviderId;
   /** 계획 총예산 (엔) — places estimatedCost 합 또는 수동 */
   plannedBudget: number;
   status: TripStatus;

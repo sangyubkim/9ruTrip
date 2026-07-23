@@ -80,3 +80,5 @@ export function reviewsToSteps(reviews: PlaceReview[]): Step[] {
 export * from "./types.js";
 export * from "./schemas.js";
 export * from "./cities.js";
+export * from "./maps.js";
+export * from "./docs-compat.js";

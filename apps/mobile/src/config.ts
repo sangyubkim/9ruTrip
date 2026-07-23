@@ -1,5 +1,7 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import type { MapProviderId } from "./types";
+import { getCityMeta, type MvpCityId } from "./types";
 
 /** Android 에뮬레이터에서 호스트 PC localhost */
 function defaultApiBase(): string {
@@ -18,4 +20,17 @@ export function getGoogleMapsKey(): string {
       ?.googleMapsApiKey ||
     ""
   );
+}
+
+export function getNaverMapClientId(): string {
+  return (
+    process.env.EXPO_PUBLIC_NAVER_MAP_CLIENT_ID?.trim() ||
+    (Constants.expoConfig?.extra as { naverMapClientId?: string } | undefined)
+      ?.naverMapClientId ||
+    ""
+  );
+}
+
+export function resolveMapProvider(cityId: MvpCityId): MapProviderId {
+  return getCityMeta(cityId).mapProvider;
 }

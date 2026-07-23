@@ -11,10 +11,19 @@ import DraggableFlatList, {
   RenderItemParams,
   ScaleDecorator,
 } from "react-native-draggable-flatlist";
-import { rerouteTrip } from "../api/trip";
+import {
+  enrichTransport,
+  rerouteTrip,
+  suggestPlaces,
+} from "../api/trip";
 import { NextActionBanner } from "../components/NextActionBanner";
 import { useGuideAlarms } from "../hooks/useGuideAlarms";
-import type { ItineraryPlace, Trip } from "../types";
+import type {
+  ItineraryPlace,
+  LodgingCandidate,
+  PlaceCategory,
+  Trip,
+} from "../types";
 import { CATEGORY_LABEL, formatYen } from "../utils/cost";
 import { formatTravelGlance, getNextAction } from "../utils/nextAction";
 
@@ -27,6 +36,15 @@ type Props = {
   onExpenses: () => void;
   onSummary: () => void;
 };
+
+type CatFilter = "all" | "food" | "attraction" | "hotel";
+
+const FILTERS: { id: CatFilter; label: string }[] = [
+  { id: "all", label: "전체" },
+  { id: "food", label: "맛집" },
+  { id: "attraction", label: "관광" },
+  { id: "hotel", label: "숙소" },
+];
 
 export function PlanScreen({
   trip,
@@ -44,7 +62,10 @@ export function PlanScreen({
   }, [trip.places, trip.days]);
 
   const [day, setDay] = useState(0);
+  const [catFilter, setCatFilter] = useState<CatFilter>("all");
   const [rerouting, setRerouting] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const [bannerHidden, setBannerHidden] = useState(false);
 
   useGuideAlarms(trip, trip.guideAlarmsEnabled && trip.status === "active");
@@ -54,15 +75,56 @@ export function PlanScreen({
     [trip],
   );
 
-  const dayPlaces = useMemo(
-    () =>
-      trip.places
-        .filter((p) => p.dayIndex === day)
-        .sort((a, b) => a.order - b.order),
-    [trip.places, day],
-  );
+  const dayPlaces = useMemo(() => {
+    let list = trip.places
+      .filter((p) => p.dayIndex === day)
+      .sort((a, b) => a.order - b.order);
+    if (catFilter !== "all") {
+      list = list.filter((p) => p.category === catFilter);
+    }
+    return list;
+  }, [trip.places, day, catFilter]);
+
+  const lodgingCandidates: LodgingCandidate[] = trip.lodgingCandidates ?? [];
+
+  const applyPlaces = async (
+    places: ItineraryPlace[],
+    extra: Partial<Trip> = {},
+  ) => {
+    setEnriching(true);
+    try {
+      const res = await enrichTransport(places, true);
+      onChangeTrip({
+        ...trip,
+        ...extra,
+        places: res.places,
+        plannedBudget: res.places.reduce(
+          (s, p) => s + (Number(p.estimatedCost) || 0),
+          0,
+        ),
+        updatedAt: new Date().toISOString(),
+      });
+    } catch {
+      onChangeTrip({
+        ...trip,
+        ...extra,
+        places,
+        updatedAt: new Date().toISOString(),
+      });
+    } finally {
+      setEnriching(false);
+    }
+  };
 
   const reorder = (data: ItineraryPlace[]) => {
+    // 필터 중이면 전체 day 순서를 건드리지 않고 필터된 항목만 상대 순서 유지
+    if (catFilter !== "all") {
+      Alert.alert(
+        "필터 해제",
+        "카테고리 필터가 켜져 있으면 전체 Day 순서를 바꿀 수 없습니다. 전체를 선택한 뒤 드래그하세요.",
+      );
+      return;
+    }
     const others = trip.places.filter((p) => p.dayIndex !== day);
     const reordered = data.map((p, i) => ({ ...p, order: i, dayIndex: day }));
     const merged = [...others, ...reordered].sort(
@@ -71,11 +133,7 @@ export function PlanScreen({
     merged.forEach((p, i) => {
       p.order = i;
     });
-    onChangeTrip({
-      ...trip,
-      places: merged,
-      updatedAt: new Date().toISOString(),
-    });
+    void applyPlaces(merged);
   };
 
   const setStatus = (status: Trip["status"]) => {
@@ -98,6 +156,71 @@ export function PlanScreen({
       completedPlaceIds: [...ids],
       updatedAt: new Date().toISOString(),
     });
+  };
+
+  const pickLodging = (cand: LodgingCandidate) => {
+    const withoutHotel = trip.places.filter((p) => p.category !== "hotel");
+    const hotelPlace: ItineraryPlace = {
+      id: cand.id,
+      name: cand.name,
+      category: "hotel",
+      lat: cand.lat,
+      lng: cand.lng,
+      estimatedCost: cand.estimatedCost,
+      notes: cand.notes,
+      dayIndex: 0,
+      order: 0,
+      lodgingScore: cand.lodgingScore,
+      scoreBreakdown: cand.scoreBreakdown,
+    };
+    const merged = [hotelPlace, ...withoutHotel].map((p, i) => ({
+      ...p,
+      order: i,
+    }));
+    void applyPlaces(merged, { preferredLodgingId: cand.id });
+    Alert.alert(
+      "숙소 선택",
+      `${cand.name}\n점수 ${cand.lodgingScore} (허브 ${cand.scoreBreakdown.centrality} · 가격 ${cand.scoreBreakdown.priceEstimate} · 평점프록시 ${cand.scoreBreakdown.ratingProxy})`,
+    );
+  };
+
+  const insertSuggested = async (category: PlaceCategory) => {
+    setSuggesting(true);
+    try {
+      const res = await suggestPlaces({
+        cityId: trip.cityId,
+        category,
+        partySize: trip.partySize,
+      });
+      const pick = res.places[0];
+      if (!pick) {
+        Alert.alert("제안 없음", "이 카테고리 제안이 없습니다.");
+        return;
+      }
+      const dayList = trip.places.filter((p) => p.dayIndex === day);
+      const maxOrder = dayList.reduce((m, p) => Math.max(m, p.order), -1);
+      const neu: ItineraryPlace = {
+        ...pick,
+        id: `place-${Date.now()}`,
+        dayIndex: day,
+        order: maxOrder + 1,
+      };
+      const merged = [...trip.places, neu].sort(
+        (a, b) => a.dayIndex - b.dayIndex || a.order - b.order,
+      );
+      merged.forEach((p, i) => {
+        p.order = i;
+      });
+      await applyPlaces(merged);
+      Alert.alert("장소 추가", `${neu.name} (Day ${day + 1})`);
+    } catch (e) {
+      Alert.alert(
+        "제안 실패",
+        e instanceof Error ? e.message : "API를 확인해 주세요.",
+      );
+    } finally {
+      setSuggesting(false);
+    }
   };
 
   const runReroute = async (reason: string) => {
@@ -145,7 +268,7 @@ export function PlanScreen({
         <View>
           {travel ? <Text style={styles.travel}>{travel}</Text> : null}
           <Pressable
-            onLongPress={drag}
+            onLongPress={catFilter === "all" ? drag : undefined}
             delayLongPress={150}
             style={[
               styles.row,
@@ -192,8 +315,12 @@ export function PlanScreen({
       </Text>
       <Text style={styles.sub}>
         {trip.partySize}명 · 계획 {formatYen(trip.plannedBudget)} · {trip.status}
+        {enriching ? " · 교통 재계산…" : ""}
       </Text>
-      <Text style={styles.tip}>길게 눌러 드래그하면 순서를 바꿀 수 있습니다.</Text>
+      <Text style={styles.tip}>
+        길게 눌러 드래그하면 순서를 바꿉니다. (필터=전체일 때) 이동시간은
+        자동 재계산됩니다.
+      </Text>
 
       {!bannerHidden && trip.status === "active" ? (
         <NextActionBanner
@@ -247,6 +374,63 @@ export function PlanScreen({
           </Pressable>
         ))}
       </View>
+
+      <View style={styles.tabs}>
+        {FILTERS.map((f) => (
+          <Pressable
+            key={f.id}
+            style={[styles.chip, catFilter === f.id && styles.chipOn]}
+            onPress={() => setCatFilter(f.id)}
+          >
+            <Text
+              style={[styles.chipText, catFilter === f.id && styles.chipTextOn]}
+            >
+              {f.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <View style={styles.insertRow}>
+        {(["food", "attraction", "hotel"] as PlaceCategory[]).map((c) => (
+          <Pressable
+            key={c}
+            style={[styles.insertBtn, suggesting && { opacity: 0.6 }]}
+            disabled={suggesting}
+            onPress={() => void insertSuggested(c)}
+          >
+            <Text style={styles.insertText}>
+              +{CATEGORY_LABEL[c] || c} 추가
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {lodgingCandidates.length > 0 ? (
+        <View style={styles.lodgingBox}>
+          <Text style={styles.lodgingTitle}>숙소 후보 (점수 분해)</Text>
+          {lodgingCandidates.map((c) => {
+            const selected = trip.preferredLodgingId === c.id;
+            return (
+              <Pressable
+                key={c.id}
+                style={[styles.lodgingRow, selected && styles.lodgingOn]}
+                onPress={() => pickLodging(c)}
+              >
+                <Text style={styles.lodgingName}>
+                  {selected ? "✓ " : ""}
+                  {c.name} · {c.lodgingScore}점
+                </Text>
+                <Text style={styles.lodgingMeta}>
+                  허브 {c.scoreBreakdown.centrality} · 가격{" "}
+                  {c.scoreBreakdown.priceEstimate} · 평점프록시{" "}
+                  {c.scoreBreakdown.ratingProxy} · {formatYen(c.estimatedCost)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
 
       <DraggableFlatList
         data={dayPlaces}
@@ -326,6 +510,44 @@ const styles = StyleSheet.create({
   tabOn: { backgroundColor: "#0369a1" },
   tabText: { color: "#334155", fontWeight: "600" },
   tabTextOn: { color: "#fff" },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#e2e8f0",
+  },
+  chipOn: { backgroundColor: "#0c4a6e" },
+  chipText: { color: "#334155", fontSize: 12, fontWeight: "600" },
+  chipTextOn: { color: "#fff" },
+  insertRow: { flexDirection: "row", gap: 6, marginBottom: 8 },
+  insertBtn: {
+    flex: 1,
+    backgroundColor: "#f0f9ff",
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#bae6fd",
+  },
+  insertText: { color: "#0369a1", fontSize: 11, fontWeight: "700" },
+  lodgingBox: {
+    marginBottom: 8,
+    padding: 10,
+    backgroundColor: "#fff7ed",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#fed7aa",
+    maxHeight: 140,
+  },
+  lodgingTitle: { fontWeight: "800", color: "#9a3412", marginBottom: 6, fontSize: 12 },
+  lodgingRow: {
+    paddingVertical: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#fdba74",
+  },
+  lodgingOn: { backgroundColor: "#ffedd5" },
+  lodgingName: { fontWeight: "700", color: "#7c2d12", fontSize: 12 },
+  lodgingMeta: { fontSize: 10, color: "#c2410c", marginTop: 2 },
   travel: {
     fontSize: 11,
     color: "#0369a1",

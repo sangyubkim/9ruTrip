@@ -153,7 +153,10 @@ export async function rerouteItinerary(body, env) {
   }
 
   const merged = [...keepPlaces, ...newPlaces];
-  const enriched = enrichPlacesWithTransport(merged);
+  const enriched = await enrichPlacesWithTransport(merged, {
+    mapsApiKey: env.googleMapsApiKey || "",
+    forceRecalc: true,
+  });
   const plannedBudget = enriched.reduce((s, p) => s + (p.estimatedCost || 0), 0);
 
   return {

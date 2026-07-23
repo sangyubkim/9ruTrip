@@ -3,7 +3,10 @@ import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readBody, matchRoute } from "./lib/http-util.mjs";
-import { generateItinerary } from "./lib/itinerary.mjs";
+import {
+  generateItinerary,
+  suggestPlacesByCategory,
+} from "./lib/itinerary.mjs";
 import { buildExportDraft } from "./lib/export-draft.mjs";
 import { rerouteItinerary } from "./lib/reroute.mjs";
 import { publishToWordPress } from "./lib/wordpress.mjs";
@@ -24,9 +27,21 @@ const env = {
   geminiApiKey: process.env.GEMINI_API_KEY?.trim() ?? "",
   geminiModel: process.env.GEMINI_MODEL?.trim() ?? "gemini-flash-lite-latest",
   llmTimeoutMs: Number(process.env.LLM_TIMEOUT_MS ?? 90_000) || 90_000,
-  wpSiteUrl: process.env.WP_SITE_URL?.trim() ?? "",
+  // blog-pipeline 은 WP_BASE_URL, 9ruDocs/9ruTrip 은 WP_SITE_URL
+  wpSiteUrl:
+    process.env.WP_SITE_URL?.trim() ||
+    process.env.WP_BASE_URL?.trim() ||
+    "",
   wpUsername: process.env.WP_USERNAME?.trim() ?? "",
   wpAppPassword: process.env.WP_APP_PASSWORD?.trim() ?? "",
+  googleMapsApiKey:
+    process.env.GOOGLE_MAPS_API_KEY?.trim() ||
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ||
+    "",
+  naverMapClientId:
+    process.env.NAVER_MAP_CLIENT_ID?.trim() ||
+    process.env.EXPO_PUBLIC_NAVER_MAP_CLIENT_ID?.trim() ||
+    "",
 };
 
 function loadEnv(filePath) {
@@ -44,8 +59,7 @@ function loadEnv(filePath) {
 
 function corsHeaders(origin) {
   const allowAll = env.corsOrigins.includes("*");
-  const allow =
-    allowAll || !origin || env.corsOrigins.includes(origin);
+  const allow = allowAll || !origin || env.corsOrigins.includes(origin);
   return {
     "Access-Control-Allow-Origin": allow
       ? origin || "*"
@@ -59,6 +73,14 @@ function corsHeaders(origin) {
 function send(res, status, body, origin) {
   res.writeHead(status, corsHeaders(origin));
   res.end(JSON.stringify(body));
+}
+
+function wpMissingHint() {
+  return (
+    "WordPress credentials missing. Set WP_SITE_URL (또는 WP_BASE_URL), " +
+    "WP_USERNAME, WP_APP_PASSWORD in apps/api/.env " +
+    "(blog-pipeline / 9ruDocs 와 동일 Application Password 패턴)."
+  );
 }
 
 async function handle(req, res) {
@@ -81,10 +103,13 @@ async function handle(req, res) {
           ok: true,
           service: "9rutrip-api",
           mvpCity: "tokyo",
+          cities: ["tokyo", "osaka"],
           geminiConfigured: Boolean(env.geminiApiKey),
           wordpressConfigured: Boolean(
             env.wpSiteUrl && env.wpUsername && env.wpAppPassword,
           ),
+          googleMapsConfigured: Boolean(env.googleMapsApiKey),
+          naverMapsConfigured: Boolean(env.naverMapClientId),
           timestamp: new Date().toISOString(),
         },
         origin,
@@ -106,6 +131,7 @@ async function handle(req, res) {
             "POST /trip/export-draft",
             "POST /trip/parse-sms",
             "POST /trip/enrich-transport",
+            "POST /trip/suggest-places",
             "POST /wordpress/publish",
           ],
         },
@@ -155,14 +181,38 @@ async function handle(req, res) {
 
     if (method === "POST" && matchRoute(url, "/trip/enrich-transport")) {
       const body = await readBody(req);
-      const places = enrichPlacesWithTransport(body?.places ?? []);
+      const places = await enrichPlacesWithTransport(body?.places ?? [], {
+        forceRecalc: Boolean(body?.forceRecalc),
+        mapsApiKey: env.googleMapsApiKey,
+        startHour: Number(body?.startHour) || 9,
+      });
+      send(
+        res,
+        200,
+        {
+          places,
+          transportEngine: env.googleMapsApiKey
+            ? "directions+haversine"
+            : "haversine",
+        },
+        origin,
+      );
+      return;
+    }
+
+    if (method === "POST" && matchRoute(url, "/trip/suggest-places")) {
+      const body = await readBody(req);
+      const places = suggestPlacesByCategory({
+        cityId: body?.cityId === "osaka" ? "osaka" : "tokyo",
+        category: body?.category,
+        partySize: Number(body?.partySize) || 2,
+      });
       send(res, 200, { places }, origin);
       return;
     }
 
     if (method === "POST" && matchRoute(url, "/wordpress/publish")) {
       const body = await readBody(req);
-      // trip이 오면 BlogDraft로 변환 후 발행
       let payload = body;
       if (body?.trip && !body?.title) {
         const draft = buildExportDraft(body.trip);
@@ -178,8 +228,29 @@ async function handle(req, res) {
           appPassword: body.appPassword,
         };
       }
-      const result = await publishToWordPress(payload, env);
-      send(res, 200, result, origin);
+      try {
+        const result = await publishToWordPress(payload, env);
+        send(res, 200, result, origin);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const status =
+          /credentials missing|required/i.test(message) ? 400 : 502;
+        const hint = /credentials missing/i.test(message)
+          ? wpMissingHint()
+          : "WordPress REST 응답 오류. Application Password·사이트 URL·권한을 확인하세요. (9ruDocs와 동일 패턴)";
+        send(
+          res,
+          status,
+          {
+            error: message,
+            hint,
+            configured: Boolean(
+              env.wpSiteUrl && env.wpUsername && env.wpAppPassword,
+            ),
+          },
+          origin,
+        );
+      }
       return;
     }
 
@@ -199,5 +270,7 @@ http.createServer(handle).listen(env.port, () => {
       env.wpSiteUrl && env.wpUsername && env.wpAppPassword,
     )}`,
   );
-  console.log(`MVP city: Tokyo`);
+  console.log(`Google Maps Directions: ${Boolean(env.googleMapsApiKey)}`);
+  console.log(`Naver Maps scaffold: ${Boolean(env.naverMapClientId)}`);
+  console.log(`MVP cities: Tokyo (+ Osaka optional)`);
 });

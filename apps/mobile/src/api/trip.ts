@@ -1,8 +1,14 @@
 import { apiFetch } from "./client";
-import type { ItineraryPlace, Trip } from "../types";
+import type {
+  ItineraryPlace,
+  LodgingCandidate,
+  MvpCityId,
+  PlaceCategory,
+  Trip,
+} from "../types";
 
 export type ItineraryRequest = {
-  cityId: "tokyo";
+  cityId: MvpCityId;
   nights: number;
   days: number;
   partySize: number;
@@ -13,6 +19,11 @@ export type ItineraryResponse = {
   plannedBudget: number;
   summary: string;
   engine: string;
+  lodgingCandidates?: LodgingCandidate[];
+  preferredLodgingId?: string | null;
+  cityId?: MvpCityId;
+  mapProvider?: "google" | "naver";
+  transportEngine?: string;
 };
 
 export async function generateItinerary(
@@ -112,9 +123,15 @@ export async function publishTripToWordPress(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const json = (await res.json()) as PublishResponse & { error?: string };
+  const json = (await res.json()) as PublishResponse & {
+    error?: string;
+    hint?: string;
+  };
   if (!res.ok) {
-    throw new Error(json.error ?? `Publish failed: ${res.status}`);
+    throw new Error(
+      [json.error, json.hint].filter(Boolean).join("\n") ||
+        `Publish failed: ${res.status}`,
+    );
   }
   return json;
 }
@@ -138,15 +155,57 @@ export async function parseSmsExpense(text: string): Promise<ParseSmsResponse> {
   return (await res.json()) as ParseSmsResponse;
 }
 
+export async function enrichTransport(
+  places: ItineraryPlace[],
+  forceRecalc = true,
+): Promise<{ places: ItineraryPlace[]; transportEngine?: string }> {
+  const res = await apiFetch("/trip/enrich-transport", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ places, forceRecalc }),
+  });
+  const json = (await res.json()) as {
+    places: ItineraryPlace[];
+    transportEngine?: string;
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(json.error ?? `Enrich failed: ${res.status}`);
+  }
+  return json;
+}
+
+export async function suggestPlaces(payload: {
+  cityId: MvpCityId;
+  category?: PlaceCategory;
+  partySize?: number;
+}): Promise<{ places: ItineraryPlace[] }> {
+  const res = await apiFetch("/trip/suggest-places", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = (await res.json()) as {
+    places: ItineraryPlace[];
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(json.error ?? `Suggest failed: ${res.status}`);
+  }
+  return json;
+}
+
 export async function checkHealth(): Promise<{
   ok: boolean;
   geminiConfigured?: boolean;
   wordpressConfigured?: boolean;
+  googleMapsConfigured?: boolean;
 }> {
   const res = await apiFetch("/health");
   return (await res.json()) as {
     ok: boolean;
     geminiConfigured?: boolean;
     wordpressConfigured?: boolean;
+    googleMapsConfigured?: boolean;
   };
 }

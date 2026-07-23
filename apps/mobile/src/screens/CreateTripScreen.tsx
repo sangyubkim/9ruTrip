@@ -6,24 +6,32 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { MVP_CITY } from "../types";
+import { CITIES, type MvpCityId } from "../types";
 
 type Props = {
   onBack: () => void;
-  onSubmit: (input: { nights: number; days: number; partySize: number }) => void;
+  onSubmit: (input: {
+    cityId: MvpCityId;
+    nights: number;
+    days: number;
+    partySize: number;
+  }) => void;
   generating?: boolean;
 };
 
 export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
+  const [cityId, setCityId] = useState<MvpCityId>("tokyo");
   const [nights, setNights] = useState("2");
   const [days, setDays] = useState("3");
   const [party, setParty] = useState("2");
+
+  const city = CITIES[cityId];
 
   const submit = () => {
     const n = Math.min(14, Math.max(1, parseInt(nights, 10) || 2));
     const d = Math.min(15, Math.max(1, parseInt(days, 10) || n + 1));
     const p = Math.min(12, Math.max(1, parseInt(party, 10) || 2));
-    onSubmit({ nights: n, days: d, partySize: p });
+    onSubmit({ cityId, nights: n, days: d, partySize: p });
   };
 
   return (
@@ -32,12 +40,32 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
         <Text style={styles.back}>← 뒤로</Text>
       </Pressable>
       <Text style={styles.title}>여행 만들기</Text>
-      <Text style={styles.hint}>MVP 지역은 {MVP_CITY.nameKo} (해외) 고정입니다.</Text>
+      <Text style={styles.hint}>
+        해외 도시 · Google Maps. 국내(네이버)는 스캐폴드만 준비됨.
+      </Text>
 
       <Text style={styles.label}>도시</Text>
+      <View style={styles.cityRow}>
+        {(Object.keys(CITIES) as MvpCityId[]).map((id) => (
+          <Pressable
+            key={id}
+            style={[styles.cityChip, cityId === id && styles.cityChipOn]}
+            onPress={() => setCityId(id)}
+          >
+            <Text
+              style={[
+                styles.cityChipText,
+                cityId === id && styles.cityChipTextOn,
+              ]}
+            >
+              {CITIES[id].nameKo}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
       <View style={styles.locked}>
         <Text style={styles.lockedText}>
-          {MVP_CITY.nameKo} / {MVP_CITY.nameEn} · Google Maps
+          {city.nameKo} / {city.nameEn} · {city.mapProvider === "google" ? "Google Maps" : "Naver"}
         </Text>
       </View>
 
@@ -94,8 +122,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: "#fff",
   },
+  cityRow: { flexDirection: "row", gap: 8, marginTop: 6 },
+  cityChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#e2e8f0",
+  },
+  cityChipOn: { backgroundColor: "#0369a1" },
+  cityChipText: { color: "#334155", fontWeight: "700" },
+  cityChipTextOn: { color: "#fff" },
   locked: {
-    marginTop: 6,
+    marginTop: 8,
     backgroundColor: "#e0f2fe",
     borderRadius: 10,
     padding: 12,

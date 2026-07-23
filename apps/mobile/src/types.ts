@@ -25,6 +25,24 @@ export type PlaceCategory =
   | "transport"
   | "other";
 
+export type LodgingScoreBreakdown = {
+  centrality: number;
+  priceEstimate: number;
+  ratingProxy: number;
+};
+
+export type LodgingCandidate = {
+  id: string;
+  name: string;
+  category: "hotel";
+  lat: number;
+  lng: number;
+  estimatedCost: number;
+  notes?: string;
+  lodgingScore: number;
+  scoreBreakdown: LodgingScoreBreakdown;
+};
+
 export type ItineraryPlace = {
   id: string;
   name: string;
@@ -39,6 +57,8 @@ export type ItineraryPlace = {
   travelFromPrevMinutes?: number;
   travelFromPrevCost?: number;
   lodgingScore?: number;
+  scoreBreakdown?: LodgingScoreBreakdown;
+  transportEngine?: string;
 };
 
 export type Expense = {
@@ -60,7 +80,9 @@ export type PlaceReview = Step & {
 
 export type TripStatus = "planning" | "active" | "done";
 
-export type MvpCityId = "tokyo";
+export type MvpCityId = "tokyo" | "osaka";
+
+export type MapProviderId = "google" | "naver";
 
 export type Trip = {
   id: string;
@@ -72,6 +94,9 @@ export type Trip = {
   places: ItineraryPlace[];
   expenses: Expense[];
   reviews: PlaceReview[];
+  lodgingCandidates?: LodgingCandidate[];
+  preferredLodgingId?: string | null;
+  mapProvider?: MapProviderId;
   plannedBudget: number;
   status: TripStatus;
   aiRerouteEnabled: boolean;
@@ -99,9 +124,25 @@ export type Screen =
   | "summary"
   | "settings";
 
-export const MVP_CITY = {
-  id: "tokyo" as const,
-  nameKo: "도쿄",
-  nameEn: "Tokyo",
-  center: { lat: 35.681236, lng: 139.767125 },
+export const CITIES = {
+  tokyo: {
+    id: "tokyo" as const,
+    nameKo: "도쿄",
+    nameEn: "Tokyo",
+    center: { lat: 35.681236, lng: 139.767125 },
+    mapProvider: "google" as const,
+  },
+  osaka: {
+    id: "osaka" as const,
+    nameKo: "오사카",
+    nameEn: "Osaka",
+    center: { lat: 34.6937, lng: 135.5023 },
+    mapProvider: "google" as const,
+  },
 };
+
+export const MVP_CITY = CITIES.tokyo;
+
+export function getCityMeta(cityId: MvpCityId) {
+  return CITIES[cityId] ?? CITIES.tokyo;
+}

@@ -7,6 +7,7 @@ const KEY = "@9rutrip/trips";
 function normalizeTrip(data: Trip): Trip {
   return {
     ...data,
+    cityId: data.cityId === "osaka" ? "osaka" : "tokyo",
     aiRerouteEnabled: data.aiRerouteEnabled ?? true,
     guideAlarmsEnabled: data.guideAlarmsEnabled ?? true,
     completedPlaceIds: Array.isArray(data.completedPlaceIds)
@@ -15,6 +16,11 @@ function normalizeTrip(data: Trip): Trip {
     places: Array.isArray(data.places) ? data.places : [],
     expenses: Array.isArray(data.expenses) ? data.expenses : [],
     reviews: Array.isArray(data.reviews) ? data.reviews : [],
+    lodgingCandidates: Array.isArray(data.lodgingCandidates)
+      ? data.lodgingCandidates
+      : [],
+    preferredLodgingId: data.preferredLodgingId ?? null,
+    mapProvider: data.mapProvider ?? "google",
   };
 }
 
@@ -67,21 +73,29 @@ export async function deleteTrip(id: string): Promise<Trip[]> {
 }
 
 export function createEmptyTrip(input: {
+  cityId?: import("../types").MvpCityId;
   nights: number;
   days: number;
   partySize: number;
 }): Trip {
   const now = new Date().toISOString();
+  const cityId = input.cityId === "osaka" ? "osaka" : "tokyo";
+  const city = cityId === "osaka"
+    ? { id: "osaka" as const, nameKo: "오사카", mapProvider: "google" as const }
+    : { id: MVP_CITY.id, nameKo: MVP_CITY.nameKo, mapProvider: "google" as const };
   return {
     id: `trip-${Date.now()}`,
-    cityId: MVP_CITY.id,
-    cityName: MVP_CITY.nameKo,
+    cityId: city.id,
+    cityName: city.nameKo,
     nights: input.nights,
     days: input.days,
     partySize: input.partySize,
     places: [],
     expenses: [],
     reviews: [],
+    lodgingCandidates: [],
+    preferredLodgingId: null,
+    mapProvider: city.mapProvider,
     plannedBudget: 0,
     status: "planning",
     aiRerouteEnabled: true,

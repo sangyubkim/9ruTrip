@@ -90,7 +90,7 @@ export async function publishToWordPress(body, env) {
 
   if (!siteUrl || !username || !appPassword) {
     throw new Error(
-      "WordPress credentials missing. Set WP_SITE_URL, WP_USERNAME, WP_APP_PASSWORD in apps/api/.env",
+      "WordPress credentials missing. Set WP_SITE_URL (or WP_BASE_URL), WP_USERNAME, WP_APP_PASSWORD in apps/api/.env",
     );
   }
 
