@@ -114,62 +114,184 @@ function directionsApiMode(mode) {
   return mode;
 }
 
+/** 좌표 반올림 (~11m) — 캐시 히트율↑ */
+function roundCoord(n) {
+  return Math.round(Number(n) * 1e4) / 1e4;
+}
+
+const DIRECTIONS_CACHE_TTL_MS = 20 * 60 * 1000; // 20분
+/** @type {Map<string, { expires: number, value: object }>} */
+const directionsCache = new Map();
+
+export function directionsCacheKey(from, to, mode) {
+  return `${roundCoord(from.lat)},${roundCoord(from.lng)}|${roundCoord(to.lat)},${roundCoord(to.lng)}|${mode}`;
+}
+
+export function clearDirectionsCache() {
+  directionsCache.clear();
+}
+
+function getCachedDirection(key) {
+  const hit = directionsCache.get(key);
+  if (!hit) return null;
+  if (Date.now() > hit.expires) {
+    directionsCache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+
+function setCachedDirection(key, value) {
+  directionsCache.set(key, {
+    expires: Date.now() + DIRECTIONS_CACHE_TTL_MS,
+    value,
+  });
+  // 간단 상한: 오래된 항목 정리
+  if (directionsCache.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of directionsCache) {
+      if (now > v.expires) directionsCache.delete(k);
+    }
+  }
+}
+
+/** 재시도 대상 (일시 오류만 — ZERO_RESULTS는 JP transit처럼 영구 불가인 경우 많음) */
+function shouldRetryDirections(status, httpOk) {
+  if (!httpOk) return true;
+  return status === "UNKNOWN_ERROR" || status === "OVER_QUERY_LIMIT";
+}
+
+/**
+ * Directions JSON 1회 호출
+ * transit은 departure_time 필수 (없으면 INVALID_REQUEST → haversine 폴백이 잦음)
+ */
+async function fetchDirectionsOnce(origin, destination, apiMode, apiKey) {
+  const url = new URL("https://maps.googleapis.com/maps/api/directions/json");
+  url.searchParams.set("origin", origin);
+  url.searchParams.set("destination", destination);
+  url.searchParams.set("mode", apiMode);
+  url.searchParams.set("language", "ko");
+  url.searchParams.set("region", "jp");
+  url.searchParams.set("key", apiKey);
+  // transit: departure_time 필수. driving에도 현재 시각 기준 교통 반영
+  if (apiMode === "transit" || apiMode === "driving") {
+    url.searchParams.set("departure_time", "now");
+  }
+
+  const res = await fetch(url.toString());
+  const httpOk = res.ok;
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = { status: "UNKNOWN_ERROR" };
+  }
+  return { httpOk, data };
+}
+
+function parseDirectionsLeg(leg, mode, apiMode) {
+  const seconds = Number(leg.duration?.value) || 0;
+  const meters = Number(leg.distance?.value) || 0;
+  const minutes = Math.max(3, Math.round(seconds / 60));
+  const km = meters / 1000;
+
+  let cost = 0;
+  if (mode === "walking") {
+    cost = 0;
+  } else if (mode === "taxi") {
+    cost = Math.round(500 + Math.max(0, km) * 120);
+  } else if (leg.fare?.value != null && Number.isFinite(Number(leg.fare.value))) {
+    cost = Math.round(Number(leg.fare.value));
+  } else if (meters > 900) {
+    cost = Math.round(170 + Math.min(km, 25) * 18);
+  }
+
+  return {
+    mode,
+    minutes,
+    estimatedCost: Math.max(0, cost),
+    engine: `directions:${apiMode}`,
+  };
+}
+
 /**
  * Google Directions 단일 모드
  * taxi는 driving 결과를 쓰고 요금은 거리 기반 추정
+ * — language=ko, region=jp, departure_time=now, 1회 재시도, in-memory TTL 캐시
  */
 export async function estimateLegByModeDirections(from, to, mode, apiKey) {
   if (!apiKey || !from || !to) {
     return estimateLegByModeHaversine(from, to, mode);
   }
 
+  const cacheKey = directionsCacheKey(from, to, mode);
+  const cached = getCachedDirection(cacheKey);
+  if (cached) return { ...cached };
+
   const origin = `${Number(from.lat)},${Number(from.lng)}`;
   const destination = `${Number(to.lat)},${Number(to.lng)}`;
   const apiMode = directionsApiMode(mode);
+  const maxAttempts = 2;
 
   try {
-    const url = new URL(
-      "https://maps.googleapis.com/maps/api/directions/json",
-    );
-    url.searchParams.set("origin", origin);
-    url.searchParams.set("destination", destination);
-    url.searchParams.set("mode", apiMode);
-    url.searchParams.set("language", "ko");
-    url.searchParams.set("key", apiKey);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const { httpOk, data } = await fetchDirectionsOnce(
+        origin,
+        destination,
+        apiMode,
+        apiKey,
+      );
+      const status = data?.status;
 
-    const res = await fetch(url.toString());
-    if (!res.ok) return estimateLegByModeHaversine(from, to, mode);
-    const data = await res.json();
-    if (data.status !== "OK" || !data.routes?.[0]?.legs?.[0]) {
-      return estimateLegByModeHaversine(from, to, mode);
+      if (status === "OK" && data.routes?.[0]?.legs?.[0]) {
+        const result = parseDirectionsLeg(
+          data.routes[0].legs[0],
+          mode,
+          apiMode,
+        );
+        setCachedDirection(cacheKey, result);
+        return result;
+      }
+
+      // INVALID_REQUEST 등은 재시도해도 동일 → 즉시 폴백
+      // ZERO_RESULTS(일본 transit 등)도 캐시해 반복 과금·지연 방지
+      if (
+        attempt < maxAttempts &&
+        shouldRetryDirections(status, httpOk)
+      ) {
+        await new Promise((r) => setTimeout(r, 250 * attempt));
+        continue;
+      }
+      break;
     }
-
-    const leg = data.routes[0].legs[0];
-    const seconds = Number(leg.duration?.value) || 0;
-    const meters = Number(leg.distance?.value) || 0;
-    const minutes = Math.max(3, Math.round(seconds / 60));
-    const km = meters / 1000;
-
-    let cost = 0;
-    if (mode === "walking") {
-      cost = 0;
-    } else if (mode === "taxi") {
-      cost = Math.round(500 + Math.max(0, km) * 120);
-    } else if (leg.fare?.value != null && Number.isFinite(Number(leg.fare.value))) {
-      cost = Math.round(Number(leg.fare.value));
-    } else if (meters > 900) {
-      cost = Math.round(170 + Math.min(km, 25) * 18);
-    }
-
-    return {
-      mode,
-      minutes,
-      estimatedCost: Math.max(0, cost),
-      engine: `directions:${apiMode}`,
-    };
   } catch {
-    return estimateLegByModeHaversine(from, to, mode);
+    // network — 한 번 더 시도
+    try {
+      await new Promise((r) => setTimeout(r, 300));
+      const { httpOk, data } = await fetchDirectionsOnce(
+        origin,
+        destination,
+        apiMode,
+        apiKey,
+      );
+      if (httpOk && data?.status === "OK" && data.routes?.[0]?.legs?.[0]) {
+        const result = parseDirectionsLeg(
+          data.routes[0].legs[0],
+          mode,
+          apiMode,
+        );
+        setCachedDirection(cacheKey, result);
+        return result;
+      }
+    } catch {
+      /* fall through */
+    }
   }
+
+  const fallback = estimateLegByModeHaversine(from, to, mode);
+  // Directions 실패 결과도 캐시 (특히 JP transit ZERO_RESULTS)
+  setCachedDirection(cacheKey, fallback);
+  return fallback;
 }
 
 /**

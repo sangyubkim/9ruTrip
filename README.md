@@ -144,7 +144,8 @@ npm run typecheck
 - 네이티브 SMS 인박스 (expo-dev-client + 권한 플러그인)
 - 계정 동기화 / 클라우드 백업
 - 물리 모노레포 병합 / Routes API·Places Nearby 고도화
-- (키 가이드 next) Places로 숙소·관광 후보 자동 보강 — 현재는 정적 POI
+- Places Nearby로 숙소·관광 후보 자동 보강 (키·쿼터 허용 시)
+- 길안내 deep link / 재루트 미리보기 / Plan 설정 정리
 
 ## 최근 보완 (P3+)
 
@@ -153,6 +154,13 @@ npm run typecheck
 - 여행 중 GPS 이탈 시 재루트 배너 (`aiRerouteEnabled`)
 - Plan Day 지도 경로 polyline
 - `npm test` (sms-parse / haversine)
+
+### Directions transit · 캐시
+
+- transit/driving에 `departure_time=now`, `language=ko`, `region=jp` + 일시 오류 재시도
+- from/to/mode in-memory 캐시 (TTL ~20분)
+- **일본 대중교통**: Google Maps Platform Directions/Routes는 JP transit 파트너 **미지원** → 키 있어도 `haversine:transit`이 정상. 도보/택시는 `directions:*`
+- E2E: 엔진 기대값 + DnD UX (`docs/E2E-CHECKLIST.md`)
 
 ### Plan UX (우선 수정)
 
@@ -163,6 +171,7 @@ npm run typecheck
 - **장소 삭제**: 행 `삭제` → 확인 후 enrich
 - **낙관적 enrich**: 로컬 순서 즉시 반영 + 「교통 재계산 중…」 인디케이터
 - **비교 CTA**: glance를 「이동 · 비교 ›」 칩으로 노출
+
 
 ## API
 

@@ -24,13 +24,17 @@
 - [ ] 마커 탭 → 리스트 선택 상태 반영
 - [ ] Maps 키 없어도 크래시 없이 동작 (힌트만)
 
-## 3. 교통 수단 비교 (P3-1)
+## 3. 교통 수단 비교 (P3-1) · Directions 엔진
 
 - [ ] 두 번째 이후 장소의 **「이동 · 비교 ›」** 칩 탭 → 바텀시트
 - [ ] 도보 / 대중교통 / 택시 분·비용 3열 표시
 - [ ] 모드 선택 → glance·`travelFromPrev*` 갱신, 재진입 시 선택 유지
 - [ ] DnD로 순서 변경 → 교통 재계산 후에도 비교 시트 동작
-- [ ] 키 없음: `haversine:*` 추정 / 키 있음: `directions:*` (API `/health`의 `googleMapsConfigured`)
+- [ ] **키 없음** (`googleMapsConfigured: false`): 모든 `engine`이 `haversine:*`
+- [ ] **키 있음 · 도보/택시**: walking → `directions:walking`, taxi → `directions:driving`
+- [ ] **키 있음 · 대중교통(일본)**: Google Maps Platform이 **일본 transit 파트너 제외** → `haversine:transit`이 **정상 기대값** (앱 Maps 소비자 transit과 API는 별개)
+- [ ] PC 스모크: `POST /trip/compare-transport` 응답 `options[].engine`만 확인 (키 값 출력 금지)
+- [ ] 동일 구간 재요청 시 응답이 빠름 (서버 in-memory Directions 캐시 TTL ~20분)
 
 ## 4. 숙소 · 카테고리 · DnD · Day 이동 · Undo
 
@@ -38,6 +42,7 @@
 - [ ] 맛집/관광/숙소 필터 칩 + 「+추가」
 - [ ] **≡ 핸들** 길게 눌러 DnD (행 전체가 아닌 핸들) → 순서·「교통 재계산 중…」
 - [ ] 필터(예: 맛집) ON에서 DnD → 필터 목록만 재정렬, 다른 카테고리 상대 위치 유지
+- [ ] DnD UX: 핸들 hitSlop·힌트, 필터 중 splice, Day▶, 삭제, ~5초 실행 취소 스낵바
 - [ ] `Day▶` → 다른 Day로 이동 → enrich
 - [ ] `삭제` → 확인 후 제거 + enrich
 - [ ] DnD/이동/삭제 직후 「실행 취소」 → 이전 places 복원
@@ -69,12 +74,14 @@ curl -X POST http://localhost:3011/trip/compare-transport ^
 
 - [ ] `options`에 walking / transit / taxi 3개
 - [ ] `googleMapsConfigured: false`이면 engine이 haversine 계열
+- [ ] `googleMapsConfigured: true`이면 walking=`directions:walking`, taxi=`directions:driving`; **일본 transit은 `haversine:transit` 정상** (Platform FAQ: JP transit partners 제외)
 
 ## 블로커 / 알려진 제한
 
 | 항목 | 상태 |
 |------|------|
 | Google Maps / Directions 키 | 로컬에 없으면 추정·기본 지도만 |
+| Directions transit (일본) | Platform이 JP transit 파트너 제외 → 항상 ZERO_RESULTS → haversine 추정. `departure_time`·`region=jp`·캐시는 유지(타 지역·walking/driving용) |
 | Naver Maps SDK | 스캐폴드만 (해외 MVP는 Google) |
-| GPS 이탈 힌트 | P3에서 보류 |
+| GPS 이탈 힌트 | 여행 중 재루트 배너로 일부 반영 |
 | 네이티브 SMS 인박스 | 문서화만 (`apps/mobile/docs/SMS.md`) |

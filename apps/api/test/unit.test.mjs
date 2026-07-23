@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parseKoreanCardSms } from "../lib/sms-parse.mjs";
 import {
+  clearDirectionsCache,
   compareLegTransport,
+  directionsCacheKey,
   haversineKm,
   lodgingScoreBreakdown,
 } from "../lib/transport.mjs";
@@ -57,6 +59,27 @@ describe("haversine + transport compare", () => {
     const walk = options.find((o) => o.mode === "walking");
     const taxi = options.find((o) => o.mode === "taxi");
     assert.ok(walk.minutes > taxi.minutes);
+  });
+
+  it("directionsCacheKey is stable for rounded coords + mode", () => {
+    clearDirectionsCache();
+    const a = directionsCacheKey(
+      { lat: 35.68121, lng: 139.76714 },
+      { lat: 35.65812, lng: 139.70168 },
+      "transit",
+    );
+    const b = directionsCacheKey(
+      { lat: 35.68124, lng: 139.76715 },
+      { lat: 35.65814, lng: 139.70169 },
+      "transit",
+    );
+    const walk = directionsCacheKey(
+      { lat: 35.68121, lng: 139.76714 },
+      { lat: 35.65812, lng: 139.70168 },
+      "walking",
+    );
+    assert.equal(a, b);
+    assert.notEqual(a, walk);
   });
 
   it("lodging hubs are city-aware (osaka namba vs tokyo shinjuku)", () => {
