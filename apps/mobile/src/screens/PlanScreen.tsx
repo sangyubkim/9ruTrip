@@ -15,6 +15,7 @@ import DraggableFlatList, {
 import {
   compareTransport,
   enrichTransport,
+  optimizeDay,
   rerouteTrip,
   suggestPlaces,
 } from "../api/trip";
@@ -35,6 +36,7 @@ import type {
   Trip,
 } from "../types";
 import { CATEGORY_LABEL, formatYen } from "../utils/cost";
+import { formatLodgingScoreLines } from "../utils/lodgingExplain";
 import { openMapsDirections } from "../utils/mapsNavigation";
 import { formatTravelGlance, getNextAction } from "../utils/nextAction";
 import { summarizeRerouteChanges } from "../utils/reroutePreview";
@@ -50,6 +52,7 @@ type Props = {
 };
 
 type CatFilter = "all" | "food" | "attraction" | "hotel";
+type PlanViewMode = "field" | "list";
 
 const FILTERS: { id: CatFilter; label: string }[] = [
   { id: "all", label: "전체" },
@@ -92,8 +95,10 @@ export function PlanScreen({
   const [catFilter, setCatFilter] = useState<CatFilter>("all");
   const [rerouting, setRerouting] = useState(false);
   const [enriching, setEnriching] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [bannerHidden, setBannerHidden] = useState(false);
+  const [viewMode, setViewMode] = useState<PlanViewMode>("list");
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [comparePlace, setComparePlace] = useState<ItineraryPlace | null>(null);
   const [compareOptions, setCompareOptions] = useState<TransportOption[]>([]);
@@ -124,6 +129,18 @@ export function PlanScreen({
     () => (trip.status === "active" ? getNextAction(trip) : null),
     [trip],
   );
+
+  const isFieldMode =
+    trip.status === "active" && viewMode === "field" && !bannerHidden;
+
+  useEffect(() => {
+    if (trip.status === "active") {
+      setViewMode("field");
+      setBannerHidden(false);
+    } else {
+      setViewMode("list");
+    }
+  }, [trip.status]);
 
   const dayPlaces = useMemo(() => {
     let list = trip.places
@@ -335,7 +352,7 @@ export function PlanScreen({
     void applyPlaces(merged, { preferredLodgingId: cand.id });
     Alert.alert(
       "숙소 선택",
-      `${cand.name}\n점수 ${cand.lodgingScore} (허브 ${cand.scoreBreakdown.centrality} · 가격 ${cand.scoreBreakdown.priceEstimate} · 평점프록시 ${cand.scoreBreakdown.ratingProxy})`,
+      `${cand.name}\n점수 ${cand.lodgingScore}\n${formatLodgingScoreLines(cand.scoreBreakdown).join("\n")}`,
     );
   };
 
@@ -440,6 +457,51 @@ export function PlanScreen({
       );
     } finally {
       setRerouting(false);
+    }
+  };
+
+  const runOptimizeDay = async () => {
+    const dayList = trip.places
+      .filter((p) => p.dayIndex === day)
+      .sort((a, b) => a.order - b.order);
+    if (dayList.length <= 1) {
+      Alert.alert("동선 최적화", "이 Day에 최적화할 장소가 부족합니다.");
+      return;
+    }
+    setOptimizing(true);
+    try {
+      const res = await optimizeDay({
+        places: trip.places,
+        dayIndex: day,
+        cityId: trip.cityId,
+      });
+      const before = res.before?.join(" → ") || "(없음)";
+      const after = res.after?.join(" → ") || "(없음)";
+      const kmLine =
+        res.pathKmBefore != null && res.pathKmAfter != null
+          ? `\n경로 ~${res.pathKmBefore}km → ~${res.pathKmAfter}km`
+          : "";
+      Alert.alert(
+        "동선 최적화 미리보기",
+        `${res.summary}\n엔진: ${res.engine}${kmLine}\n\n이전:\n${before}\n\n이후:\n${after}`,
+        [
+          { text: "취소", style: "cancel" },
+          {
+            text: "적용",
+            onPress: () => {
+              pushUndoSnapshot();
+              void applyPlaces(res.places);
+            },
+          },
+        ],
+      );
+    } catch (e) {
+      Alert.alert(
+        "최적화 실패",
+        e instanceof Error ? e.message : "API를 확인해 주세요.",
+      );
+    } finally {
+      setOptimizing(false);
     }
   };
 
@@ -654,14 +716,42 @@ export function PlanScreen({
         </View>
       ) : null}
 
-      {!bannerHidden && trip.status === "active" ? (
+      {!bannerHidden && trip.status === "active" && viewMode === "list" ? (
         <NextActionBanner
           next={nextAction}
           onMarkDone={
             nextAction ? () => markDone(nextAction.place.id) : undefined
           }
-          onDismiss={() => setBannerHidden(true)}
+          onDismiss={() => setViewMode("field")}
         />
+      ) : null}
+
+      {trip.status === "active" ? (
+        <View style={styles.tabs}>
+          <Pressable
+            style={[styles.tab, viewMode === "field" && styles.tabOn]}
+            onPress={() => {
+              setViewMode("field");
+              setBannerHidden(false);
+            }}
+          >
+            <Text
+              style={[styles.tabText, viewMode === "field" && styles.tabTextOn]}
+            >
+              현장
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.tab, viewMode === "list" && styles.tabOn]}
+            onPress={() => setViewMode("list")}
+          >
+            <Text
+              style={[styles.tabText, viewMode === "list" && styles.tabTextOn]}
+            >
+              일정
+            </Text>
+          </Pressable>
+        </View>
       ) : null}
 
       {gpsDev.showBanner ? (
@@ -737,10 +827,12 @@ export function PlanScreen({
                       {selected ? "✓ " : ""}
                       {c.name} · {c.lodgingScore}점
                     </Text>
+                    {formatLodgingScoreLines(c.scoreBreakdown).map((line) => (
+                      <Text key={line} style={styles.lodgingMeta}>
+                        · {line}
+                      </Text>
+                    ))}
                     <Text style={styles.lodgingMeta}>
-                      허브 {c.scoreBreakdown.centrality} · 가격{" "}
-                      {c.scoreBreakdown.priceEstimate} · 평점프록시{" "}
-                      {c.scoreBreakdown.ratingProxy} ·{" "}
                       {formatYen(c.estimatedCost)}
                     </Text>
                   </Pressable>
@@ -807,24 +899,102 @@ export function PlanScreen({
           </Pressable>
         ))}
       </View>
+      <Pressable
+        style={[styles.optimizeBtn, optimizing && { opacity: 0.6 }]}
+        disabled={optimizing}
+        onPress={() => void runOptimizeDay()}
+      >
+        {optimizing ? (
+          <ActivityIndicator color="#0c4a6e" />
+        ) : (
+          <Text style={styles.optimizeBtnText}>동선 최적화</Text>
+        )}
+      </Pressable>
     </View>
   );
 
   return (
     <View style={styles.root}>
-      <DraggableFlatList
-        data={dayPlaces}
-        keyExtractor={(item) => item.id}
-        onDragEnd={({ data }) => reorder(data)}
-        renderItem={renderItem}
-        ListHeaderComponent={listHeader}
-        activationDistance={12}
-        containerStyle={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 12 }}
-        ListEmptyComponent={
-          <Text style={styles.empty}>이 날 일정이 없습니다.</Text>
-        }
-      />
+      {isFieldMode ? (
+        <View style={styles.fieldRoot}>
+          <Pressable onPress={onBack}>
+            <Text style={styles.back}>← 목록</Text>
+          </Pressable>
+          <Text style={styles.title}>
+            {trip.cityName} · 현장 모드
+          </Text>
+          <Text style={styles.sub}>
+            Day {day + 1} · 한 손 조작 · {trip.status}
+          </Text>
+          <NextActionBanner
+            fieldMode
+            next={nextAction}
+            rerouting={rerouting}
+            onMarkDone={
+              nextAction ? () => markDone(nextAction.place.id) : undefined
+            }
+            onNavigate={openNavSelectedOrNext}
+            onReroute={() =>
+              void runReroute("현장: 사용자가 남은 일정 재조정 요청")
+            }
+            onDismiss={() => setViewMode("list")}
+          />
+          {gpsDev.showBanner ? (
+            <DeviationBanner
+              distanceKm={gpsDev.distanceKm}
+              busy={rerouting}
+              onDismiss={gpsDev.dismiss}
+              onReroute={() => {
+                gpsDev.dismiss();
+                void runReroute(
+                  "GPS 이탈: 다음 장소에서 멀리 떨어짐 — 남은 일정 재조정",
+                );
+              }}
+            />
+          ) : null}
+          <View style={styles.tabs}>
+            {days.map((d) => (
+              <Pressable
+                key={d}
+                style={[styles.tab, day === d && styles.tabOn]}
+                onPress={() => setDay(d)}
+              >
+                <Text style={[styles.tabText, day === d && styles.tabTextOn]}>
+                  Day {d + 1}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={styles.fieldMap}>
+            <PlanDayMap
+              cityId={trip.cityId}
+              places={mapPlaces}
+              selectedPlaceId={nextAction?.place.id ?? selectedPlaceId}
+              onSelectPlace={setSelectedPlaceId}
+            />
+          </View>
+          <Pressable
+            style={styles.fieldListLink}
+            onPress={() => setViewMode("list")}
+          >
+            <Text style={styles.fieldListLinkText}>전체 일정·지도 보기</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <DraggableFlatList
+          data={dayPlaces}
+          keyExtractor={(item) => item.id}
+          onDragEnd={({ data }) => reorder(data)}
+          renderItem={renderItem}
+          ListHeaderComponent={listHeader}
+          activationDistance={12}
+          containerStyle={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: 12 }}
+          ListEmptyComponent={
+            <Text style={styles.empty}>이 날 일정이 없습니다.</Text>
+          }
+        />
+      )}
 
       {undoVisible ? (
         <View style={styles.undoBar}>
@@ -883,6 +1053,13 @@ export function PlanScreen({
         engineHint={compareEngine}
         onSelect={applyTransportMode}
         onClose={() => setComparePlace(null)}
+        onOpenMapsTransit={
+          comparePlace
+            ? () => {
+                openNavToPlace(comparePlace);
+              }
+            : undefined
+        }
       />
 
       <PlaceSuggestModal
@@ -996,6 +1173,24 @@ const styles = StyleSheet.create({
     borderColor: "#bae6fd",
   },
   insertText: { color: "#0369a1", fontSize: 11, fontWeight: "700" },
+  optimizeBtn: {
+    marginBottom: 10,
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: "#ecfeff",
+    borderWidth: 1,
+    borderColor: "#67e8f9",
+    alignItems: "center",
+  },
+  optimizeBtnText: { color: "#0e7490", fontWeight: "800", fontSize: 13 },
+  fieldRoot: { flex: 1, paddingBottom: 4 },
+  fieldMap: { flex: 1, minHeight: 180, marginTop: 8, marginBottom: 8 },
+  fieldListLink: {
+    alignSelf: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  fieldListLinkText: { color: "#0369a1", fontWeight: "700", fontSize: 14 },
   lodgingBox: {
     marginBottom: 8,
     padding: 10,

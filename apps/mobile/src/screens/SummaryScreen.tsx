@@ -12,6 +12,7 @@ import {
 import { exportTripDraft, publishTripToWordPress } from "../api/trip";
 import type { Trip } from "../types";
 import { buildCostSummary, CATEGORY_LABEL, formatYen } from "../utils/cost";
+import { buildExpenseInsights } from "../utils/expenseInsights";
 
 type Props = {
   trip: Trip;
@@ -20,6 +21,10 @@ type Props = {
 
 export function SummaryScreen({ trip, onBack }: Props) {
   const summary = useMemo(() => buildCostSummary(trip), [trip]);
+  const insights = useMemo(
+    () => buildExpenseInsights(trip, summary),
+    [trip, summary],
+  );
   const [exporting, setExporting] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [exportedTitle, setExportedTitle] = useState<string | null>(null);
@@ -111,6 +116,15 @@ export function SummaryScreen({ trip, onBack }: Props) {
         </Text>
       </View>
 
+      <Text style={styles.section}>경비 인사이트</Text>
+      <View style={styles.insightBox}>
+        {insights.map((line) => (
+          <Text key={line} style={styles.insightLine}>
+            · {line}
+          </Text>
+        ))}
+      </View>
+
       <Text style={styles.section}>카테고리별</Text>
       {Object.entries(summary.byCategory).map(([key, v]) => (
         <View key={key} style={styles.row}>
@@ -189,6 +203,15 @@ const styles = StyleSheet.create({
   over: { color: "#fda4af" },
   under: { color: "#86efac" },
   section: { marginTop: 20, marginBottom: 8, fontWeight: "700", fontSize: 16 },
+  insightBox: {
+    backgroundColor: "#f0fdf4",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+    gap: 8,
+  },
+  insightLine: { color: "#14532d", fontSize: 13, lineHeight: 20 },
   row: {
     backgroundColor: "#fff",
     borderRadius: 10,

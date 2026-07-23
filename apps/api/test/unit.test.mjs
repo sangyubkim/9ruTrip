@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parseKoreanCardSms } from "../lib/sms-parse.mjs";
 import {
+  nearestNeighborOrder,
+  optimizeDayRoute,
+  pathLengthKm,
+} from "../lib/optimize-day.mjs";
+import {
   clearDirectionsCache,
   compareLegTransport,
   directionsCacheKey,
@@ -95,5 +100,69 @@ describe("haversine + transport compare", () => {
       namba.scoreBreakdown.centrality > nambaAsTokyo.scoreBreakdown.centrality,
       `osaka hub ${namba.scoreBreakdown.centrality} vs tokyo hub ${nambaAsTokyo.scoreBreakdown.centrality}`,
     );
+  });
+});
+
+describe("optimize-day", () => {
+  const sample = [
+    {
+      id: "a",
+      name: "도쿄역",
+      category: "attraction",
+      lat: 35.6812,
+      lng: 139.7671,
+      dayIndex: 0,
+      order: 0,
+      estimatedCost: 0,
+    },
+    {
+      id: "b",
+      name: "시부야",
+      category: "attraction",
+      lat: 35.6581,
+      lng: 139.7017,
+      dayIndex: 0,
+      order: 1,
+      estimatedCost: 0,
+    },
+    {
+      id: "c",
+      name: "아사쿠사",
+      category: "attraction",
+      lat: 35.7148,
+      lng: 139.7967,
+      dayIndex: 0,
+      order: 2,
+      estimatedCost: 0,
+    },
+  ];
+
+  it("nearestNeighborOrder keeps start and visits all", () => {
+    const ordered = nearestNeighborOrder(sample, 0);
+    assert.equal(ordered.length, 3);
+    assert.equal(ordered[0].id, "a");
+    assert.deepEqual(
+      ordered.map((p) => p.id).sort(),
+      ["a", "b", "c"],
+    );
+  });
+
+  it("optimizeDayRoute falls back to nearest-neighbor without Gemini", async () => {
+    const shuffled = [sample[2], sample[0], sample[1]].map((p, i) => ({
+      ...p,
+      order: i,
+    }));
+    const res = await optimizeDayRoute(
+      { places: shuffled, dayIndex: 0, cityId: "tokyo" },
+      { geminiApiKey: "" },
+    );
+    assert.equal(res.engine, "nearest-neighbor");
+    assert.equal(res.after.length, 3);
+    assert.ok(res.pathKmAfter <= res.pathKmBefore + 0.01);
+    assert.equal(res.places.filter((p) => p.dayIndex === 0).length, 3);
+  });
+
+  it("pathLengthKm is positive for multi-stop", () => {
+    assert.ok(pathLengthKm(sample) > 5);
   });
 });

@@ -232,6 +232,35 @@ export async function suggestPlaces(payload: {
   return json;
 }
 
+export type OptimizeDayResponse = {
+  places: ItineraryPlace[];
+  dayIndex: number;
+  before: string[];
+  after: string[];
+  engine: string;
+  summary: string;
+  pathKmBefore?: number;
+  pathKmAfter?: number;
+};
+
+/** 당일 동선 최적화 (Gemini 또는 nearest-neighbor 폴백) */
+export async function optimizeDay(payload: {
+  places: ItineraryPlace[];
+  dayIndex: number;
+  cityId?: MvpCityId;
+}): Promise<OptimizeDayResponse> {
+  const res = await apiFetch("/trip/optimize-day", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = (await res.json()) as OptimizeDayResponse & { error?: string };
+  if (!res.ok) {
+    throw new Error(json.error ?? `Optimize failed: ${res.status}`);
+  }
+  return json;
+}
+
 export async function checkHealth(): Promise<{
   ok: boolean;
   geminiConfigured?: boolean;

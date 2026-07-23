@@ -9,6 +9,7 @@ import {
 } from "./lib/itinerary.mjs";
 import { buildExportDraft } from "./lib/export-draft.mjs";
 import { rerouteItinerary } from "./lib/reroute.mjs";
+import { optimizeDayRoute } from "./lib/optimize-day.mjs";
 import { publishToWordPress } from "./lib/wordpress.mjs";
 import { parseKoreanCardSms } from "./lib/sms-parse.mjs";
 import {
@@ -136,6 +137,7 @@ async function handle(req, res) {
             "POST /trip/enrich-transport",
             "POST /trip/compare-transport",
             "POST /trip/suggest-places",
+            "POST /trip/optimize-day",
             "POST /wordpress/publish",
           ],
         },
@@ -286,6 +288,13 @@ async function handle(req, res) {
         },
         origin,
       );
+      return;
+    }
+
+    if (method === "POST" && matchRoute(url, "/trip/optimize-day")) {
+      const body = await readBody(req);
+      const result = await optimizeDayRoute(body, env);
+      send(res, 200, result, origin);
       return;
     }
 

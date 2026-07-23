@@ -14,6 +14,9 @@ const MODE_LABEL: Record<TransportMode, string> = {
   taxi: "택시",
 };
 
+const JP_TRANSIT_NOTE =
+  "일본 대중교통은 Google Directions 미지원 — 추정값. 정확한 환승은 길안내 앱 사용";
+
 type Props = {
   visible: boolean;
   placeName: string;
@@ -23,6 +26,8 @@ type Props = {
   engineHint?: string;
   onSelect: (mode: TransportMode) => void;
   onClose: () => void;
+  /** Google Maps transit 길안내 */
+  onOpenMapsTransit?: () => void;
 };
 
 export function TransportCompareSheet({
@@ -34,8 +39,13 @@ export function TransportCompareSheet({
   engineHint,
   onSelect,
   onClose,
+  onOpenMapsTransit,
 }: Props) {
   const modes: TransportMode[] = ["walking", "transit", "taxi"];
+  const transitOpt = options.find((o) => o.mode === "transit");
+  const showJpHonesty =
+    Boolean(transitOpt?.engine?.includes("haversine:transit")) ||
+    Boolean(engineHint?.includes("haversine"));
 
   return (
     <Modal
@@ -53,6 +63,12 @@ export function TransportCompareSheet({
           </Text>
           {engineHint ? (
             <Text style={styles.hint}>{engineHint}</Text>
+          ) : null}
+
+          {showJpHonesty ? (
+            <View style={styles.honesty}>
+              <Text style={styles.honestyText}>{JP_TRANSIT_NOTE}</Text>
+            </View>
           ) : null}
 
           {loading ? (
@@ -84,6 +100,10 @@ export function TransportCompareSheet({
                           : "무료"
                         : "—"}
                     </Text>
+                    {mode === "transit" &&
+                    opt?.engine?.includes("haversine:transit") ? (
+                      <Text style={styles.estTag}>추정</Text>
+                    ) : null}
                     {on ? (
                       <Text style={styles.picked}>선택됨</Text>
                     ) : (
@@ -94,6 +114,14 @@ export function TransportCompareSheet({
               })}
             </View>
           )}
+
+          {onOpenMapsTransit ? (
+            <Pressable style={styles.mapsCta} onPress={onOpenMapsTransit}>
+              <Text style={styles.mapsCtaText}>
+                Google Maps 길안내 (transit)
+              </Text>
+            </Pressable>
+          ) : null}
 
           <Pressable style={styles.close} onPress={onClose}>
             <Text style={styles.closeText}>닫기</Text>
@@ -129,6 +157,15 @@ const styles = StyleSheet.create({
   title: { fontSize: 17, fontWeight: "800", color: "#0f172a" },
   sub: { marginTop: 4, color: "#64748b", fontSize: 13 },
   hint: { marginTop: 4, fontSize: 11, color: "#94a3b8" },
+  honesty: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: "#fff7ed",
+    borderWidth: 1,
+    borderColor: "#fed7aa",
+  },
+  honestyText: { fontSize: 12, lineHeight: 18, color: "#9a3412", fontWeight: "600" },
   loading: {
     paddingVertical: 28,
     alignItems: "center",
@@ -161,6 +198,12 @@ const styles = StyleSheet.create({
   minsOn: { color: "#0c4a6e" },
   cost: { marginTop: 4, fontSize: 12, color: "#64748b" },
   costOn: { color: "#0369a1" },
+  estTag: {
+    marginTop: 4,
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#c2410c",
+  },
   pick: { marginTop: 8, fontSize: 10, color: "#94a3b8" },
   picked: {
     marginTop: 8,
@@ -168,8 +211,16 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#0369a1",
   },
+  mapsCta: {
+    marginTop: 14,
+    paddingVertical: 13,
+    borderRadius: 10,
+    backgroundColor: "#0c4a6e",
+    alignItems: "center",
+  },
+  mapsCtaText: { color: "#fff", fontWeight: "800", fontSize: 14 },
   close: {
-    marginTop: 16,
+    marginTop: 10,
     paddingVertical: 12,
     borderRadius: 10,
     backgroundColor: "#e2e8f0",
