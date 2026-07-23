@@ -270,12 +270,22 @@ async function handle(req, res) {
 
     if (method === "POST" && matchRoute(url, "/trip/suggest-places")) {
       const body = await readBody(req);
-      const places = suggestPlacesByCategory({
+      const result = await suggestPlacesByCategory({
         cityId: body?.cityId === "osaka" ? "osaka" : "tokyo",
         category: body?.category,
         partySize: Number(body?.partySize) || 2,
+        mapsApiKey: env.googleMapsApiKey,
       });
-      send(res, 200, { places }, origin);
+      send(
+        res,
+        200,
+        {
+          places: result.places,
+          source: result.source,
+          googleMapsConfigured: Boolean(env.googleMapsApiKey),
+        },
+        origin,
+      );
       return;
     }
 

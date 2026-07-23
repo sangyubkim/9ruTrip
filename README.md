@@ -143,9 +143,8 @@ npm run typecheck
 - 국내 도시 실연동 (Naver Maps SDK 풀 SDK)
 - 네이티브 SMS 인박스 (expo-dev-client + 권한 플러그인)
 - 계정 동기화 / 클라우드 백업
-- 물리 모노레포 병합 / Routes API·Places Nearby 고도화
-- Places Nearby로 숙소·관광 후보 자동 보강 (키·쿼터 허용 시)
-- 길안내 deep link / 재루트 미리보기 / Plan 설정 정리
+- 물리 모노레포 병합 / Routes API 고도화
+- 길안내 deep link / 재루트 미리보기
 
 ## 최근 보완 (P3+)
 
@@ -171,6 +170,9 @@ npm run typecheck
 - **장소 삭제**: 행 `삭제` → 확인 후 enrich
 - **낙관적 enrich**: 로컬 순서 즉시 반영 + 「교통 재계산 중…」 인디케이터
 - **비교 CTA**: glance를 「이동 · 비교 ›」 칩으로 노출
+- **장소 추가**: 후보 모달에서 선택 (Places Text 가능 시 `source=places`, 아니면 정적 POI)
+- **예정 시각**: 🕒 탭 → HH:mm 편집
+- **여행 설정**: 토글·숙소 후보를 「⋯ 더보기」로 접기
 
 
 ## API

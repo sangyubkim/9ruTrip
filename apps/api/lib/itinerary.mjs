@@ -455,13 +455,111 @@ travelFromPrev*는 직전 장소→현재 이동 분/엔(첫 장소는 0).`;
   }
 }
 
-/** 카테고리별 삽입용 제안 장소 (도쿄/오사카 실존 POI 정적 세트) */
-export function suggestPlacesByCategory({
+const PLACES_CATEGORY_TYPE = {
+  food: "restaurant",
+  attraction: "tourist_attraction",
+  hotel: "lodging",
+};
+
+/**
+ * Google Places Text Search (선택) — 키·쿼터 허용 시.
+ * 실패하면 null → 정적 POI 폴백.
+ */
+async function suggestViaGooglePlaces({
+  city,
+  category,
+  partySize = 2,
+  apiKey,
+}) {
+  if (!apiKey || !category) return null;
+  const type = PLACES_CATEGORY_TYPE[category];
+  if (!type) return null;
+
+  const query =
+    category === "food"
+      ? `${city.nameKo} 맛집`
+      : category === "hotel"
+        ? `${city.nameKo} 호텔`
+        : `${city.nameKo} 관광명소`;
+
+  const url = new URL(
+    "https://maps.googleapis.com/maps/api/place/textsearch/json",
+  );
+  url.searchParams.set("query", query);
+  url.searchParams.set("location", `${city.center.lat},${city.center.lng}`);
+  url.searchParams.set("radius", "10000");
+  url.searchParams.set("type", type);
+  url.searchParams.set("language", "ko");
+  url.searchParams.set("region", "jp");
+  url.searchParams.set("key", apiKey);
+
+  const res = await fetch(url.toString());
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.status !== "OK" && data.status !== "ZERO_RESULTS") return null;
+  const results = Array.isArray(data.results) ? data.results : [];
+  if (results.length === 0) return null;
+
+  return results.slice(0, 8).map((r, i) => {
+    const loc = r.geometry?.location;
+    let estimatedCost =
+      category === "hotel"
+        ? 18000
+        : category === "food"
+          ? 2000 * partySize
+          : 1000 * partySize;
+    if (r.price_level != null && Number.isFinite(Number(r.price_level))) {
+      const lvl = Number(r.price_level);
+      estimatedCost =
+        category === "hotel"
+          ? 10000 + lvl * 8000
+          : category === "food"
+            ? Math.round((800 + lvl * 1200) * partySize)
+            : Math.round((500 + lvl * 700) * partySize);
+    }
+    return {
+      id: uid(`places-${i}`),
+      name: String(r.name || "장소"),
+      category,
+      lat: Number(loc?.lat) || city.center.lat,
+      lng: Number(loc?.lng) || city.center.lng,
+      estimatedCost,
+      notes: r.formatted_address
+        ? String(r.formatted_address).slice(0, 80)
+        : r.rating
+          ? `평점 ${r.rating}`
+          : "Places",
+      dayIndex: 0,
+      order: 0,
+    };
+  });
+}
+
+/** 카테고리별 삽입용 제안 장소 (Places 선택 → 정적 POI 폴백) */
+export async function suggestPlacesByCategory({
   cityId = "tokyo",
   category,
   partySize = 2,
-}) {
+  mapsApiKey = "",
+} = {}) {
   const city = resolveCity(cityId);
+
+  if (mapsApiKey) {
+    try {
+      const fromPlaces = await suggestViaGooglePlaces({
+        city,
+        category,
+        partySize,
+        apiKey: mapsApiKey,
+      });
+      if (fromPlaces?.length) {
+        return { places: fromPlaces, source: "places" };
+      }
+    } catch {
+      /* static fallback */
+    }
+  }
+
   const pool =
     city.id === "osaka"
       ? [
@@ -648,10 +746,11 @@ export function suggestPlacesByCategory({
   const filtered = category
     ? pool.filter((p) => p.category === category)
     : pool;
-  return filtered.map((p) => ({
+  const places = filtered.map((p) => ({
     id: uid("suggest"),
     ...p,
     dayIndex: 0,
     order: 0,
   }));
+  return { places, source: "static" };
 }

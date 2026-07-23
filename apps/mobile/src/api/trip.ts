@@ -210,7 +210,11 @@ export async function suggestPlaces(payload: {
   cityId: MvpCityId;
   category?: PlaceCategory;
   partySize?: number;
-}): Promise<{ places: ItineraryPlace[] }> {
+}): Promise<{
+  places: ItineraryPlace[];
+  source?: string;
+  googleMapsConfigured?: boolean;
+}> {
   const res = await apiFetch("/trip/suggest-places", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -218,6 +222,8 @@ export async function suggestPlaces(payload: {
   });
   const json = (await res.json()) as {
     places: ItineraryPlace[];
+    source?: string;
+    googleMapsConfigured?: boolean;
     error?: string;
   };
   if (!res.ok) {

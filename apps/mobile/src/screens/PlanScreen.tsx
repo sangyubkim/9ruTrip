@@ -20,6 +20,8 @@ import {
 } from "../api/trip";
 import { DeviationBanner } from "../components/DeviationBanner";
 import { NextActionBanner } from "../components/NextActionBanner";
+import { PlaceSuggestModal } from "../components/PlaceSuggestModal";
+import { PlannedTimeModal } from "../components/PlannedTimeModal";
 import { PlanDayMap } from "../components/PlanDayMap";
 import { TransportCompareSheet } from "../components/TransportCompareSheet";
 import { useGpsDeviation } from "../hooks/useGpsDeviation";
@@ -96,6 +98,15 @@ export function PlanScreen({
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareEngine, setCompareEngine] = useState<string>("");
   const [undoVisible, setUndoVisible] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [suggestVisible, setSuggestVisible] = useState(false);
+  const [suggestCategory, setSuggestCategory] =
+    useState<PlaceCategory>("food");
+  const [suggestList, setSuggestList] = useState<ItineraryPlace[]>([]);
+  const [suggestSource, setSuggestSource] = useState<string>("");
+  const [timeEditPlace, setTimeEditPlace] = useState<ItineraryPlace | null>(
+    null,
+  );
 
   const undoSnapshotRef = useRef<ItineraryPlace[] | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -327,6 +338,10 @@ export function PlanScreen({
   };
 
   const insertSuggested = async (category: PlaceCategory) => {
+    setSuggestCategory(category);
+    setSuggestVisible(true);
+    setSuggestList([]);
+    setSuggestSource("");
     setSuggesting(true);
     try {
       const res = await suggestPlaces({
@@ -334,22 +349,14 @@ export function PlanScreen({
         category,
         partySize: trip.partySize,
       });
-      const pick = res.places[0];
-      if (!pick) {
+      setSuggestList(res.places ?? []);
+      setSuggestSource(res.source ?? "static");
+      if (!res.places?.length) {
         Alert.alert("제안 없음", "이 카테고리 제안이 없습니다.");
-        return;
+        setSuggestVisible(false);
       }
-      const dayList = trip.places.filter((p) => p.dayIndex === day);
-      const maxOrder = dayList.reduce((m, p) => Math.max(m, p.order), -1);
-      const neu: ItineraryPlace = {
-        ...pick,
-        id: `place-${Date.now()}`,
-        dayIndex: day,
-        order: maxOrder + 1,
-      };
-      await applyPlaces(renumberGlobal([...trip.places, neu]));
-      Alert.alert("장소 추가", `${neu.name} (Day ${day + 1})`);
     } catch (e) {
+      setSuggestVisible(false);
       Alert.alert(
         "제안 실패",
         e instanceof Error ? e.message : "API를 확인해 주세요.",
@@ -357,6 +364,33 @@ export function PlanScreen({
     } finally {
       setSuggesting(false);
     }
+  };
+
+  const confirmSuggested = async (pick: ItineraryPlace) => {
+    setSuggestVisible(false);
+    const dayList = trip.places.filter((p) => p.dayIndex === day);
+    const maxOrder = dayList.reduce((m, p) => Math.max(m, p.order), -1);
+    const neu: ItineraryPlace = {
+      ...pick,
+      id: `place-${Date.now()}`,
+      dayIndex: day,
+      order: maxOrder + 1,
+    };
+    await applyPlaces(renumberGlobal([...trip.places, neu]));
+    Alert.alert("장소 추가", `${neu.name} (Day ${day + 1})`);
+  };
+
+  const savePlannedTime = (hhmm: string) => {
+    if (!timeEditPlace) return;
+    const id = timeEditPlace.id;
+    setTimeEditPlace(null);
+    onChangeTrip({
+      ...trip,
+      places: trip.places.map((p) =>
+        p.id === id ? { ...p, plannedTime: hhmm } : p,
+      ),
+      updatedAt: new Date().toISOString(),
+    });
   };
 
   const runReroute = async (reason: string) => {
@@ -490,10 +524,21 @@ export function PlanScreen({
               <Text style={styles.drag}>≡</Text>
             </Pressable>
             <View style={{ flex: 1 }}>
-              <Text style={styles.name}>
-                {item.plannedTime ? `${item.plannedTime} · ` : ""}
-                {item.name}
-              </Text>
+              <View style={styles.nameRow}>
+                <Pressable
+                  onPress={() => setTimeEditPlace(item)}
+                  hitSlop={8}
+                  style={styles.timeBtn}
+                  accessibilityLabel="예정 시각 편집"
+                >
+                  <Text style={styles.timeText}>
+                    {item.plannedTime ? `🕒 ${item.plannedTime}` : "🕒 --:--"}
+                  </Text>
+                </Pressable>
+                <Text style={styles.name} numberOfLines={2}>
+                  {item.name}
+                </Text>
+              </View>
               <Text style={styles.meta}>
                 {CATEGORY_LABEL[item.category] || item.category} ·{" "}
                 {formatYen(item.estimatedCost)}
@@ -550,10 +595,6 @@ export function PlanScreen({
           <Text style={styles.enrichText}>교통 재계산 중…</Text>
         </View>
       ) : null}
-      <Text style={styles.tip}>
-        핸들을 길게 눌러 순서 변경 · 「이동 · 비교 ›」로 교통 비교 · Day▶로 날짜
-        이동
-      </Text>
 
       {!bannerHidden && trip.status === "active" ? (
         <NextActionBanner
@@ -579,34 +620,78 @@ export function PlanScreen({
         />
       ) : null}
 
-      <View style={styles.toggles}>
-        <Pressable
-          style={[styles.toggle, trip.guideAlarmsEnabled && styles.toggleOn]}
-          onPress={() => toggle("guideAlarmsEnabled")}
-        >
-          <Text
-            style={[
-              styles.toggleText,
-              trip.guideAlarmsEnabled && styles.toggleTextOn,
-            ]}
-          >
-            가이드알람 {trip.guideAlarmsEnabled ? "ON" : "OFF"}
+      <Pressable
+        style={styles.moreBtn}
+        onPress={() => setSettingsOpen((v) => !v)}
+      >
+        <Text style={styles.moreBtnText}>
+          {settingsOpen ? "▾ 여행 설정" : "⋯ 더보기 · 여행 설정"}
+        </Text>
+      </Pressable>
+      {settingsOpen ? (
+        <View style={styles.settingsBox}>
+          <Text style={styles.settingsHint}>
+            핸들 길게 눌러 순서 · 「이동 · 비교 ›」 · Day▶ · 🕒 시각 편집
           </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.toggle, trip.aiRerouteEnabled && styles.toggleOn]}
-          onPress={() => toggle("aiRerouteEnabled")}
-        >
-          <Text
-            style={[
-              styles.toggleText,
-              trip.aiRerouteEnabled && styles.toggleTextOn,
-            ]}
-          >
-            AI재루트 {trip.aiRerouteEnabled ? "ON" : "OFF"}
-          </Text>
-        </Pressable>
-      </View>
+          <View style={styles.toggles}>
+            <Pressable
+              style={[
+                styles.toggle,
+                trip.guideAlarmsEnabled && styles.toggleOn,
+              ]}
+              onPress={() => toggle("guideAlarmsEnabled")}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  trip.guideAlarmsEnabled && styles.toggleTextOn,
+                ]}
+              >
+                가이드알람 {trip.guideAlarmsEnabled ? "ON" : "OFF"}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.toggle, trip.aiRerouteEnabled && styles.toggleOn]}
+              onPress={() => toggle("aiRerouteEnabled")}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  trip.aiRerouteEnabled && styles.toggleTextOn,
+                ]}
+              >
+                AI재루트 {trip.aiRerouteEnabled ? "ON" : "OFF"}
+              </Text>
+            </Pressable>
+          </View>
+          {lodgingCandidates.length > 0 ? (
+            <View style={styles.lodgingBox}>
+              <Text style={styles.lodgingTitle}>숙소 후보 (점수 분해)</Text>
+              {lodgingCandidates.map((c) => {
+                const selected = trip.preferredLodgingId === c.id;
+                return (
+                  <Pressable
+                    key={c.id}
+                    style={[styles.lodgingRow, selected && styles.lodgingOn]}
+                    onPress={() => pickLodging(c)}
+                  >
+                    <Text style={styles.lodgingName}>
+                      {selected ? "✓ " : ""}
+                      {c.name} · {c.lodgingScore}점
+                    </Text>
+                    <Text style={styles.lodgingMeta}>
+                      허브 {c.scoreBreakdown.centrality} · 가격{" "}
+                      {c.scoreBreakdown.priceEstimate} · 평점프록시{" "}
+                      {c.scoreBreakdown.ratingProxy} ·{" "}
+                      {formatYen(c.estimatedCost)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={styles.tabs}>
         {days.map((d) => (
@@ -664,32 +749,6 @@ export function PlanScreen({
           </Pressable>
         ))}
       </View>
-
-      {lodgingCandidates.length > 0 ? (
-        <View style={styles.lodgingBox}>
-          <Text style={styles.lodgingTitle}>숙소 후보 (점수 분해)</Text>
-          {lodgingCandidates.map((c) => {
-            const selected = trip.preferredLodgingId === c.id;
-            return (
-              <Pressable
-                key={c.id}
-                style={[styles.lodgingRow, selected && styles.lodgingOn]}
-                onPress={() => pickLodging(c)}
-              >
-                <Text style={styles.lodgingName}>
-                  {selected ? "✓ " : ""}
-                  {c.name} · {c.lodgingScore}점
-                </Text>
-                <Text style={styles.lodgingMeta}>
-                  허브 {c.scoreBreakdown.centrality} · 가격{" "}
-                  {c.scoreBreakdown.priceEstimate} · 평점프록시{" "}
-                  {c.scoreBreakdown.ratingProxy} · {formatYen(c.estimatedCost)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : null}
     </View>
   );
 
@@ -764,6 +823,24 @@ export function PlanScreen({
         onSelect={applyTransportMode}
         onClose={() => setComparePlace(null)}
       />
+
+      <PlaceSuggestModal
+        visible={suggestVisible}
+        categoryLabel={CATEGORY_LABEL[suggestCategory] || suggestCategory}
+        places={suggestList}
+        source={suggestSource}
+        loading={suggesting}
+        onPick={(p) => void confirmSuggested(p)}
+        onClose={() => setSuggestVisible(false)}
+      />
+
+      <PlannedTimeModal
+        visible={timeEditPlace != null}
+        placeName={timeEditPlace?.name ?? ""}
+        initialTime={timeEditPlace?.plannedTime || "09:00"}
+        onSave={savePlannedTime}
+        onClose={() => setTimeEditPlace(null)}
+      />
     </View>
   );
 }
@@ -774,6 +851,33 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: "800", color: "#0c4a6e" },
   sub: { color: "#64748b", marginTop: 2 },
   tip: { marginTop: 8, marginBottom: 8, fontSize: 12, color: "#94a3b8" },
+  moreBtn: {
+    alignSelf: "flex-start",
+    marginTop: 8,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#f1f5f9",
+  },
+  moreBtnText: { fontSize: 12, fontWeight: "700", color: "#475569" },
+  settingsBox: {
+    marginBottom: 8,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  settingsHint: { fontSize: 11, color: "#94a3b8", marginBottom: 8 },
+  nameRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
+  timeBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: "#e0f2fe",
+  },
+  timeText: { fontSize: 12, fontWeight: "800", color: "#0369a1" },
   enrichBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -893,7 +997,7 @@ const styles = StyleSheet.create({
     minHeight: 36,
   },
   drag: { fontSize: 20, color: "#64748b", width: 22, textAlign: "center" },
-  name: { fontWeight: "700", color: "#0f172a" },
+  name: { flex: 1, fontWeight: "700", color: "#0f172a" },
   meta: { marginTop: 2, fontSize: 12, color: "#64748b" },
   iconBtn: {
     marginLeft: 4,
