@@ -35,7 +35,9 @@ import type {
   Trip,
 } from "../types";
 import { CATEGORY_LABEL, formatYen } from "../utils/cost";
+import { openMapsDirections } from "../utils/mapsNavigation";
 import { formatTravelGlance, getNextAction } from "../utils/nextAction";
+import { summarizeRerouteChanges } from "../utils/reroutePreview";
 
 type Props = {
   trip: Trip;
@@ -406,15 +408,30 @@ export function PlanScreen({
         reason,
         completedPlaceIds: trip.completedPlaceIds ?? [],
       });
-      onChangeTrip({
-        ...trip,
-        places: res.places,
-        plannedBudget: res.plannedBudget,
-        updatedAt: new Date().toISOString(),
-      });
+      const preview = summarizeRerouteChanges(
+        trip.places,
+        res.places,
+        day,
+        trip.completedPlaceIds ?? [],
+      );
       Alert.alert(
-        "재루트 완료",
-        `${res.summary}\n엔진: ${res.engine} · 교체 ${res.replacedCount}곳`,
+        "재루트 미리보기",
+        `${preview.text}\n\n${res.summary}\n엔진: ${res.engine} · 교체 ${res.replacedCount}곳`,
+        [
+          { text: "취소", style: "cancel" },
+          {
+            text: "적용",
+            style: "default",
+            onPress: () => {
+              onChangeTrip({
+                ...trip,
+                places: res.places,
+                plannedBudget: res.plannedBudget,
+                updatedAt: new Date().toISOString(),
+              });
+            },
+          },
+        ],
       );
     } catch (e) {
       Alert.alert(
@@ -424,6 +441,39 @@ export function PlanScreen({
     } finally {
       setRerouting(false);
     }
+  };
+
+  const openNavToPlace = (place: ItineraryPlace) => {
+    const daySorted = trip.places
+      .filter((p) => p.dayIndex === place.dayIndex)
+      .sort((a, b) => a.order - b.order);
+    const idx = daySorted.findIndex((p) => p.id === place.id);
+    const prev = idx > 0 ? daySorted[idx - 1] : null;
+    void openMapsDirections(
+      { lat: place.lat, lng: place.lng, name: place.name },
+      prev ? { lat: prev.lat, lng: prev.lng } : null,
+    ).catch((e) => {
+      Alert.alert(
+        "길안내 실패",
+        e instanceof Error ? e.message : "지도를 열 수 없습니다.",
+      );
+    });
+  };
+
+  const openNavSelectedOrNext = () => {
+    const selected = selectedPlaceId
+      ? trip.places.find((p) => p.id === selectedPlaceId)
+      : null;
+    const target =
+      selected ||
+      nextAction?.place ||
+      dayPlaces.find((p) => !(trip.completedPlaceIds ?? []).includes(p.id)) ||
+      dayPlaces[0];
+    if (!target) {
+      Alert.alert("길안내", "안내할 장소가 없습니다.");
+      return;
+    }
+    openNavToPlace(target);
   };
 
   const openTransportCompare = async (place: ItineraryPlace) => {
@@ -548,6 +598,14 @@ export function PlanScreen({
                 {item.notes ? ` · ${item.notes}` : ""}
               </Text>
             </View>
+            <Pressable
+              onPress={() => openNavToPlace(item)}
+              style={styles.iconBtn}
+              hitSlop={8}
+              accessibilityLabel="길안내"
+            >
+              <Text style={styles.iconBtnText}>길안내</Text>
+            </Pressable>
             <Pressable
               onPress={() => promptMoveDay(item)}
               style={styles.iconBtn}
@@ -778,6 +836,9 @@ export function PlanScreen({
       ) : null}
 
       <View style={styles.actions}>
+        <Pressable style={styles.btn} onPress={openNavSelectedOrNext}>
+          <Text style={styles.btnText}>길안내</Text>
+        </Pressable>
         <Pressable style={styles.btn} onPress={onMap}>
           <Text style={styles.btnText}>전체지도</Text>
         </Pressable>

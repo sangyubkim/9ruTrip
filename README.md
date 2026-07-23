@@ -144,7 +144,7 @@ npm run typecheck
 - 네이티브 SMS 인박스 (expo-dev-client + 권한 플러그인)
 - 계정 동기화 / 클라우드 백업
 - 물리 모노레포 병합 / Routes API 고도화
-- 길안내 deep link / 재루트 미리보기
+- SMS 공유 UX 추가 폴리시
 
 ## 최근 보완 (P3+)
 
@@ -173,6 +173,8 @@ npm run typecheck
 - **장소 추가**: 후보 모달에서 선택 (Places Text 가능 시 `source=places`, 아니면 정적 POI)
 - **예정 시각**: 🕒 탭 → HH:mm 편집
 - **여행 설정**: 토글·숙소 후보를 「⋯ 더보기」로 접기
+- **길안내**: 행/하단 CTA → Google Maps (Android `google.navigation` 또는 https dir, transit)
+- **재루트 미리보기**: AI 재루트 응답 후 장소 변경 요약 Alert → 적용/취소
 
 
 ## API
