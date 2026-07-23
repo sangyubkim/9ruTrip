@@ -10,8 +10,11 @@ import {
   View,
 } from "react-native";
 import { exportTripDraft, publishTripToWordPress } from "../api/trip";
+import { EmptyState } from "../components/EmptyState";
 import { FadeIn } from "../components/FadeIn";
+import { InlineToast } from "../components/InlineToast";
 import { useTheme } from "../theme/ThemeContext";
+import { radius, space } from "../theme/tokens";
 import type { Trip } from "../types";
 import { buildCostSummary, CATEGORY_LABEL, formatYen } from "../utils/cost";
 import { buildExpenseInsights } from "../utils/expenseInsights";
@@ -32,6 +35,7 @@ export function SummaryScreen({ trip, onBack }: Props) {
   const [publishing, setPublishing] = useState(false);
   const [exportedTitle, setExportedTitle] = useState<string | null>(null);
   const [publishLink, setPublishLink] = useState<string | null>(null);
+  const [softMsg, setSoftMsg] = useState<string | null>(null);
 
   const onExport = async () => {
     if (trip.reviews.length === 0) {
@@ -42,10 +46,10 @@ export function SummaryScreen({ trip, onBack }: Props) {
     try {
       const res = await exportTripDraft(trip);
       setExportedTitle(res.draft.title);
-      Alert.alert(
-        "발행 초안 준비됨",
-        `${res.draft.title}\n\n${res.next.note}\n\n본문 ${res.draft.body.length}자 · 단계 ${res.draft.steps.length}개`,
+      setSoftMsg(
+        `초안 준비 · ${res.draft.steps.length}단계 · 본문 ${res.draft.body.length}자`,
       );
+      setTimeout(() => setSoftMsg(null), 4000);
     } catch (e) {
       Alert.alert(
         "내보내기 실패",
@@ -68,21 +72,21 @@ export function SummaryScreen({ trip, onBack }: Props) {
         status: asDraft ? "draft" : "publish",
       });
       setPublishLink(res.link);
-      Alert.alert(
-        asDraft ? "WP 임시글 저장" : "WP 게시 완료",
-        `postId ${res.postId}\n${res.link}`,
-        [
-          { text: "확인" },
-          ...(res.link
-            ? [
-                {
-                  text: "열기",
-                  onPress: () => void Linking.openURL(res.link),
-                },
-              ]
-            : []),
-        ],
-      );
+      setSoftMsg(asDraft ? "WP 임시글 저장됨" : "WP 게시 완료");
+      setTimeout(() => setSoftMsg(null), 4000);
+      if (res.link) {
+        Alert.alert(
+          asDraft ? "WP 임시글 저장" : "WP 게시 완료",
+          res.link,
+          [
+            { text: "확인" },
+            {
+              text: "열기",
+              onPress: () => void Linking.openURL(res.link),
+            },
+          ],
+        );
+      }
     } catch (e) {
       Alert.alert(
         "WordPress 발행 실패",
@@ -98,11 +102,12 @@ export function SummaryScreen({ trip, onBack }: Props) {
   const insightBg = isDark ? "#052e16" : "#f0fdf4";
   const insightBorder = isDark ? "#166534" : "#bbf7d0";
   const insightFg = isDark ? "#86efac" : "#14532d";
+  const overBudget = summary.variance > 0;
 
   return (
     <ScrollView
       style={[styles.root, { backgroundColor: colors.bg }]}
-      contentContainerStyle={{ paddingBottom: 40 }}
+      contentContainerStyle={{ paddingBottom: 48 }}
     >
       <FadeIn>
         <Pressable
@@ -114,38 +119,54 @@ export function SummaryScreen({ trip, onBack }: Props) {
         >
           <Text style={[styles.back, { color: colors.accent }]}>← 일정</Text>
         </Pressable>
-        <Text style={[styles.title, { color: colors.text }]}>계획 vs 실제</Text>
+        <Text style={[styles.title, { color: colors.text }]}>After · 요약</Text>
         <Text style={[styles.sub, { color: colors.textMuted }]}>
           {trip.cityName} · {trip.nights}박 {trip.days}일 · {trip.partySize}명
         </Text>
       </FadeIn>
 
-      <View style={[styles.box, { backgroundColor: colors.primary }]}>
-        <Text style={[styles.metric, { color: colors.primaryFg }]}>
-          계획 {formatYen(summary.plannedTotal)}
+      {softMsg ? (
+        <InlineToast message={softMsg} tone="success" withFade />
+      ) : null}
+
+      <View style={[styles.hero, { backgroundColor: colors.primary }]}>
+        <Text style={[styles.heroKicker, { color: colors.primaryFg }]}>
+          계획 vs 실제
         </Text>
-        <Text style={[styles.metric, { color: colors.primaryFg }]}>
-          실제 {formatYen(summary.actualTotal)}
-        </Text>
+        <View style={styles.heroRow}>
+          <View style={styles.heroCol}>
+            <Text style={[styles.heroLabel, { color: colors.primaryFg }]}>
+              계획
+            </Text>
+            <Text style={[styles.heroValue, { color: colors.primaryFg }]}>
+              {formatYen(summary.plannedTotal)}
+            </Text>
+          </View>
+          <View style={styles.heroCol}>
+            <Text style={[styles.heroLabel, { color: colors.primaryFg }]}>
+              실제
+            </Text>
+            <Text style={[styles.heroValue, { color: colors.primaryFg }]}>
+              {formatYen(summary.actualTotal)}
+            </Text>
+          </View>
+        </View>
         <Text
           style={[
             styles.variance,
             {
-              color:
-                summary.variance > 0
-                  ? isDark
-                    ? "#fda4af"
-                    : "#fecdd3"
-                  : colors.success,
+              color: overBudget
+                ? isDark
+                  ? "#fda4af"
+                  : "#fecdd3"
+                : isDark
+                  ? "#86efac"
+                  : "#bbf7d0",
             },
           ]}
         >
           차이 {formatYen(summary.variance)}
-          {summary.variance > 0
-            ? " (초과)"
-            : summary.variance < 0
-              ? " (절약)"
-              : ""}
+          {overBudget ? " · 초과" : summary.variance < 0 ? " · 절약" : ""}
         </Text>
       </View>
 
@@ -187,83 +208,92 @@ export function SummaryScreen({ trip, onBack }: Props) {
       <Text style={[styles.section, { color: colors.text }]}>
         WordPress 발행
       </Text>
-      <Text style={[styles.hint, { color: colors.textMuted }]}>
-        리뷰 Step → BlogDraft 호환 → 9ruTrip API `/wordpress/publish` (9ruDocs와
-        동일 패턴). 자격증명은 API `.env`에 둡니다.
-      </Text>
-      <Pressable
-        style={[
-          styles.primary,
-          { backgroundColor: colors.primary },
-          exporting && { opacity: 0.6 },
-        ]}
-        onPress={() => void onExport()}
-        disabled={exporting}
-        accessibilityRole="button"
-        accessibilityLabel="발행용 초안 내보내기"
-      >
-        {exporting ? (
-          <ActivityIndicator color={colors.primaryFg} />
-        ) : (
-          <Text style={[styles.primaryText, { color: colors.primaryFg }]}>
-            발행용 초안 내보내기
+      {trip.reviews.length === 0 ? (
+        <EmptyState
+          glyph="✎"
+          title="발행할 리뷰가 없습니다"
+          body="Capture에서 사진·리뷰를 남긴 뒤 초안 내보내기 또는 WP 게시를 하세요."
+        />
+      ) : (
+        <>
+          <Text style={[styles.hint, { color: colors.textMuted }]}>
+            리뷰 → BlogDraft 호환 → `/wordpress/publish`. 자격증명은 API `.env`.
           </Text>
-        )}
-      </Pressable>
-      <View style={styles.wpRow}>
-        <Pressable
-          style={[
-            styles.draftBtn,
-            { backgroundColor: colors.accentMuted },
-            publishing && { opacity: 0.6 },
-          ]}
-          disabled={publishing}
-          onPress={() => void onPublish(true)}
-          accessibilityRole="button"
-          accessibilityLabel="WordPress 임시글"
-        >
-          {publishing ? (
-            <ActivityIndicator color={colors.accent} />
-          ) : (
-            <Text style={[styles.draftText, { color: colors.accent }]}>
-              WP 임시글
+          <Pressable
+            style={[
+              styles.primary,
+              { backgroundColor: colors.primary },
+              exporting && { opacity: 0.6 },
+            ]}
+            onPress={() => void onExport()}
+            disabled={exporting}
+            accessibilityRole="button"
+            accessibilityLabel="발행용 초안 내보내기"
+          >
+            {exporting ? (
+              <ActivityIndicator color={colors.primaryFg} />
+            ) : (
+              <Text style={[styles.primaryText, { color: colors.primaryFg }]}>
+                발행용 초안 내보내기
+              </Text>
+            )}
+          </Pressable>
+          <View style={styles.wpRow}>
+            <Pressable
+              style={[
+                styles.draftBtn,
+                { backgroundColor: colors.accentMuted },
+                publishing && { opacity: 0.6 },
+              ]}
+              disabled={publishing}
+              onPress={() => void onPublish(true)}
+              accessibilityRole="button"
+              accessibilityLabel="WordPress 임시글"
+            >
+              {publishing ? (
+                <ActivityIndicator color={colors.accent} />
+              ) : (
+                <Text style={[styles.draftText, { color: colors.accent }]}>
+                  WP 임시글
+                </Text>
+              )}
+            </Pressable>
+            <Pressable
+              style={[
+                styles.publishBtn,
+                { backgroundColor: colors.success },
+                publishing && { opacity: 0.6 },
+              ]}
+              disabled={publishing}
+              onPress={() => void onPublish(false)}
+              accessibilityRole="button"
+              accessibilityLabel="WordPress 바로 게시"
+            >
+              {publishing ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.publishText}>WP 바로 게시</Text>
+              )}
+            </Pressable>
+          </View>
+          {exportedTitle ? (
+            <Text style={[styles.ok, { color: colors.success }]}>
+              마지막 초안: {exportedTitle}
             </Text>
-          )}
-        </Pressable>
-        <Pressable
-          style={[
-            styles.publishBtn,
-            { backgroundColor: colors.success },
-            publishing && { opacity: 0.6 },
-          ]}
-          disabled={publishing}
-          onPress={() => void onPublish(false)}
-          accessibilityRole="button"
-          accessibilityLabel="WordPress 바로 게시"
-        >
-          {publishing ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.publishText}>WP 바로 게시</Text>
-          )}
-        </Pressable>
-      </View>
-      {exportedTitle ? (
-        <Text style={[styles.ok, { color: colors.success }]}>
-          마지막 초안: {exportedTitle}
-        </Text>
-      ) : null}
-      {publishLink ? (
-        <Pressable
-          onPress={() => void Linking.openURL(publishLink)}
-          accessibilityRole="link"
-          accessibilityLabel="게시물 열기"
-        >
-          <Text style={[styles.link, { color: colors.accent }]}>
-            게시물: {publishLink}
-          </Text>
-        </Pressable>
-      ) : null}
+          ) : null}
+          {publishLink ? (
+            <Pressable
+              onPress={() => void Linking.openURL(publishLink)}
+              accessibilityRole="link"
+              accessibilityLabel="게시물 열기"
+            >
+              <Text style={[styles.link, { color: colors.accent }]}>
+                게시물: {publishLink}
+              </Text>
+            </Pressable>
+          ) : null}
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -277,65 +307,78 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   back: { fontWeight: "700", fontSize: 15 },
-  title: { fontSize: 20, fontWeight: "800" },
-  sub: { marginTop: 4 },
-  box: {
-    marginTop: 16,
-    borderRadius: 14,
-    padding: 16,
+  title: { fontSize: 22, fontWeight: "800", letterSpacing: -0.2 },
+  sub: { marginTop: space.xs, fontSize: 13 },
+  hero: {
+    marginTop: space.lg,
+    borderRadius: radius.lg,
+    padding: space.lg,
   },
-  metric: { fontSize: 18, fontWeight: "700", marginBottom: 4 },
-  variance: { marginTop: 8, fontSize: 16, fontWeight: "800" },
+  heroKicker: {
+    fontSize: 12,
+    fontWeight: "800",
+    opacity: 0.85,
+    marginBottom: space.md,
+  },
+  heroRow: { flexDirection: "row", gap: space.lg },
+  heroCol: { flex: 1 },
+  heroLabel: { fontSize: 12, fontWeight: "700", opacity: 0.8 },
+  heroValue: { marginTop: 4, fontSize: 20, fontWeight: "900" },
+  variance: { marginTop: space.md, fontSize: 15, fontWeight: "800" },
   section: {
-    marginTop: 20,
-    marginBottom: 8,
+    marginTop: space.xl,
+    marginBottom: space.sm,
     fontWeight: "800",
     fontSize: 16,
   },
   insightBox: {
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: radius.md,
+    padding: space.md,
     borderWidth: 1,
-    gap: 8,
+    gap: space.sm,
   },
   insightLine: { fontSize: 13, lineHeight: 20 },
   row: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
+    borderRadius: radius.md,
+    padding: space.md,
+    marginBottom: space.sm,
     borderWidth: 1,
   },
-  cat: { fontWeight: "700" },
+  cat: { fontWeight: "800" },
   nums: { marginTop: 4, fontSize: 13 },
   hint: { fontSize: 13, lineHeight: 20 },
   primary: {
-    marginTop: 12,
-    paddingVertical: 14,
-    minHeight: 48,
-    borderRadius: 12,
+    marginTop: space.md,
+    paddingVertical: 16,
+    minHeight: 52,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryText: { fontWeight: "800" },
-  wpRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+  primaryText: { fontWeight: "800", fontSize: 15 },
+  wpRow: { flexDirection: "row", gap: space.sm, marginTop: space.sm },
   draftBtn: {
     flex: 1,
     paddingVertical: 14,
     minHeight: 48,
-    borderRadius: 12,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  draftText: { fontWeight: "700" },
+  draftText: { fontWeight: "800" },
   publishBtn: {
     flex: 1,
     paddingVertical: 14,
     minHeight: 48,
-    borderRadius: 12,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  publishText: { color: "#fff", fontWeight: "700" },
-  ok: { marginTop: 10 },
-  link: { marginTop: 8, textDecorationLine: "underline" },
+  publishText: { color: "#fff", fontWeight: "800" },
+  ok: { marginTop: space.md, fontWeight: "700" },
+  link: {
+    marginTop: space.sm,
+    textDecorationLine: "underline",
+    fontSize: 13,
+  },
 });

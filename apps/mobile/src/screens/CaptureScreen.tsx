@@ -10,8 +10,11 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { EmptyState } from "../components/EmptyState";
 import { FadeIn } from "../components/FadeIn";
+import { InlineToast } from "../components/InlineToast";
 import { useTheme } from "../theme/ThemeContext";
+import { radius, space } from "../theme/tokens";
 import type { PlaceReview, Trip } from "../types";
 
 type Props = {
@@ -24,8 +27,9 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
   const { colors } = useTheme();
   const [placeId, setPlaceId] = useState(trip.places[0]?.id ?? "");
   const [caption, setCaption] = useState("");
-  const [rating, setRating] = useState("5");
+  const [rating, setRating] = useState(5);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
 
   const selected = useMemo(
     () => trip.places.find((p) => p.id === placeId),
@@ -66,7 +70,7 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
       order: trip.reviews.length,
       placeId: selected?.id,
       placeName: selected?.name,
-      rating: Math.min(5, Math.max(1, parseInt(rating, 10) || 5)),
+      rating,
     };
     onChangeTrip({
       ...trip,
@@ -75,7 +79,8 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
     });
     setCaption("");
     setImageUri(null);
-    Alert.alert("저장됨", "리뷰가 여행에 추가되었습니다.");
+    setSavedMsg("리뷰가 저장되었습니다");
+    setTimeout(() => setSavedMsg(null), 2800);
   };
 
   return (
@@ -83,27 +88,34 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
       <FadeIn>
         <Pressable
           onPress={onBack}
+          style={styles.backHit}
+          hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="일정으로 돌아가기"
         >
           <Text style={[styles.back, { color: colors.accent }]}>← 일정</Text>
         </Pressable>
         <Text style={[styles.title, { color: colors.text }]}>
-          사진 · 리뷰 캡처
+          사진 · 리뷰
         </Text>
         <Text style={[styles.hint, { color: colors.textMuted }]}>
-          9ruDocs Step 모델과 호환 (발행 시 BlogDraft로 변환)
+          현장에서 남긴 기록이 After·WordPress 발행으로 이어집니다.
         </Text>
       </FadeIn>
 
+      {savedMsg ? (
+        <InlineToast message={savedMsg} tone="success" withFade />
+      ) : null}
+
       <Text style={[styles.label, { color: colors.textSecondary }]}>
-        장소 선택
+        장소
       </Text>
       <FlatList
         horizontal
         data={trip.places}
         keyExtractor={(p) => p.id}
-        style={{ maxHeight: 48, marginVertical: 8 }}
+        style={{ maxHeight: 52, marginVertical: space.sm }}
+        showsHorizontalScrollIndicator={false}
         renderItem={({ item }) => {
           const on = placeId === item.id;
           return (
@@ -112,6 +124,7 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
                 styles.chip,
                 {
                   backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                  borderColor: on ? colors.primary : colors.border,
                 },
               ]}
               onPress={() => setPlaceId(item.id)}
@@ -133,27 +146,43 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
         }}
         ListEmptyComponent={
           <Text style={[styles.hint, { color: colors.textMuted }]}>
-            일정이 없습니다.
+            일정이 없습니다. Plan에서 장소를 추가하세요.
           </Text>
         }
       />
 
       <View style={styles.row}>
         <Pressable
-          style={[styles.btn, { backgroundColor: colors.accentMuted }]}
+          style={[
+            styles.mediaBtn,
+            {
+              backgroundColor: colors.accentMuted,
+              borderColor: colors.mapBorder,
+            },
+          ]}
           onPress={() => void pick(true)}
           accessibilityRole="button"
           accessibilityLabel="카메라"
         >
-          <Text style={[styles.btnText, { color: colors.accent }]}>카메라</Text>
+          <Text style={[styles.mediaBtnText, { color: colors.accent }]}>
+            카메라
+          </Text>
         </Pressable>
         <Pressable
-          style={[styles.btn, { backgroundColor: colors.accentMuted }]}
+          style={[
+            styles.mediaBtn,
+            {
+              backgroundColor: colors.accentMuted,
+              borderColor: colors.mapBorder,
+            },
+          ]}
           onPress={() => void pick(false)}
           accessibilityRole="button"
           accessibilityLabel="갤러리"
         >
-          <Text style={[styles.btnText, { color: colors.accent }]}>갤러리</Text>
+          <Text style={[styles.mediaBtnText, { color: colors.accent }]}>
+            갤러리
+          </Text>
         </Pressable>
       </View>
 
@@ -166,7 +195,7 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
         style={[
           styles.input,
           {
-            minHeight: 72,
+            minHeight: 80,
             backgroundColor: colors.bgElevated,
             borderColor: colors.border,
             color: colors.text,
@@ -180,23 +209,37 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
         accessibilityLabel="리뷰 문구"
       />
 
-      <Text style={[styles.label, { color: colors.textSecondary }]}>
-        별점 (1~5)
-      </Text>
-      <TextInput
-        style={[
-          styles.input,
-          {
-            backgroundColor: colors.bgElevated,
-            borderColor: colors.border,
-            color: colors.text,
-          },
-        ]}
-        keyboardType="number-pad"
-        value={rating}
-        onChangeText={setRating}
-        accessibilityLabel="별점"
-      />
+      <Text style={[styles.label, { color: colors.textSecondary }]}>별점</Text>
+      <View style={styles.starRow}>
+        {[1, 2, 3, 4, 5].map((n) => {
+          const on = rating >= n;
+          return (
+            <Pressable
+              key={n}
+              style={[
+                styles.star,
+                {
+                  backgroundColor: on ? colors.primary : colors.bgMuted,
+                  borderColor: on ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => setRating(n)}
+              accessibilityRole="button"
+              accessibilityLabel={`${n}점`}
+              accessibilityState={{ selected: rating === n }}
+            >
+              <Text
+                style={[
+                  styles.starText,
+                  { color: on ? colors.primaryFg : colors.textMuted },
+                ]}
+              >
+                {n}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
 
       <Pressable
         style={[styles.primary, { backgroundColor: colors.primary }]}
@@ -216,6 +259,13 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
         data={[...trip.reviews].sort((a, b) => a.order - b.order)}
         keyExtractor={(r) => r.id}
         style={{ flex: 1 }}
+        ListEmptyComponent={
+          <EmptyState
+            glyph="◎"
+            title="아직 리뷰가 없습니다"
+            body="사진이나 문구를 남기면 After 요약·WP 발행에 바로 쓸 수 있습니다."
+          />
+        }
         renderItem={({ item }) => (
           <View
             style={[
@@ -247,57 +297,89 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  back: { marginBottom: 6, fontWeight: "700" },
-  title: { fontSize: 20, fontWeight: "800" },
-  hint: { fontSize: 12, marginBottom: 4 },
-  label: { marginTop: 10, fontWeight: "600" },
-  input: {
-    marginTop: 6,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  row: { flexDirection: "row", gap: 8, marginTop: 8 },
-  btn: {
-    flex: 1,
-    paddingVertical: 10,
+  backHit: {
+    alignSelf: "flex-start",
     minHeight: 44,
-    borderRadius: 8,
-    alignItems: "center",
     justifyContent: "center",
   },
-  btnText: { fontWeight: "700" },
-  preview: { marginTop: 10, width: "100%", height: 160, borderRadius: 10 },
-  primary: {
-    marginTop: 14,
-    paddingVertical: 12,
+  back: { fontWeight: "700", fontSize: 15 },
+  title: { fontSize: 22, fontWeight: "800", letterSpacing: -0.2 },
+  hint: { fontSize: 13, marginTop: space.xs, marginBottom: space.sm, lineHeight: 19 },
+  label: { marginTop: space.md, fontWeight: "700", fontSize: 13 },
+  input: {
+    marginTop: space.sm,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+    fontSize: 15,
+  },
+  row: { flexDirection: "row", gap: space.sm, marginTop: space.sm },
+  mediaBtn: {
+    flex: 1,
+    paddingVertical: 14,
     minHeight: 48,
-    borderRadius: 10,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  mediaBtnText: { fontWeight: "800", fontSize: 15 },
+  preview: {
+    marginTop: space.md,
+    width: "100%",
+    height: 168,
+    borderRadius: radius.md,
+  },
+  starRow: {
+    flexDirection: "row",
+    gap: space.sm,
+    marginTop: space.sm,
+  },
+  star: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: radius.sm,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryText: { fontWeight: "700" },
-  section: { marginTop: 16, marginBottom: 8, fontWeight: "700" },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    marginRight: 6,
-    maxWidth: 160,
-    minHeight: 40,
+  starText: { fontWeight: "800", fontSize: 16 },
+  primary: {
+    marginTop: space.lg,
+    paddingVertical: 16,
+    minHeight: 52,
+    borderRadius: radius.md,
+    alignItems: "center",
     justifyContent: "center",
   },
-  chipText: { fontSize: 12, fontWeight: "600" },
+  primaryText: { fontWeight: "800", fontSize: 16 },
+  section: {
+    marginTop: space.xl,
+    marginBottom: space.sm,
+    fontWeight: "800",
+    fontSize: 16,
+  },
+  chip: {
+    paddingHorizontal: space.md,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    marginRight: space.sm,
+    maxWidth: 168,
+    minHeight: 44,
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  chipText: { fontSize: 13, fontWeight: "700" },
   card: {
     flexDirection: "row",
-    gap: 10,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
+    gap: space.md,
+    borderRadius: radius.md,
+    padding: space.md,
+    marginBottom: space.sm,
     borderWidth: 1,
   },
-  thumb: { width: 56, height: 56, borderRadius: 8 },
-  name: { fontWeight: "700" },
-  meta: { marginTop: 2, fontSize: 13 },
+  thumb: { width: 56, height: 56, borderRadius: radius.sm },
+  name: { fontWeight: "800" },
+  meta: { marginTop: 2, fontSize: 13, lineHeight: 18 },
 });

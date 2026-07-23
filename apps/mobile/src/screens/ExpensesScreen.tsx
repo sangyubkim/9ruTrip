@@ -182,10 +182,18 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
           <Text style={[styles.back, { color: colors.accent }]}>← 일정</Text>
         </Pressable>
         <Text style={[styles.title, { color: colors.text }]}>경비</Text>
-        <Text style={[styles.topHint, { color: colors.textSecondary }]}>
-          ① SMS 복사 → 붙여넣기 → 파싱 ② 금액 확인 후 「추가」 · 합계{" "}
-          {formatYen(sumActual(trip.expenses))}
-        </Text>
+        <View style={styles.sumRow}>
+          <Text style={[styles.topHint, { color: colors.textSecondary }]}>
+            SMS 붙여넣기 → 파싱 → 확인 후 추가
+          </Text>
+          <View
+            style={[styles.sumChip, { backgroundColor: colors.accentMuted }]}
+          >
+            <Text style={[styles.sumChipText, { color: colors.accent }]}>
+              {formatYen(sumActual(trip.expenses))}
+            </Text>
+          </View>
+        </View>
       </FadeIn>
 
       {inlineMsg ? (
@@ -372,15 +380,31 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   back: { fontWeight: "700", fontSize: 15 },
-  title: { fontSize: 20, fontWeight: "800" },
+  title: { fontSize: 22, fontWeight: "800", letterSpacing: -0.2 },
+  sumRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: space.sm,
+    marginTop: space.sm,
+    flexWrap: "wrap",
+  },
   topHint: {
+    flex: 1,
     fontSize: 13,
-    marginTop: 6,
-    lineHeight: 20,
+    lineHeight: 19,
     fontWeight: "600",
   },
+  sumChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    minHeight: 36,
+    justifyContent: "center",
+  },
+  sumChipText: { fontSize: 14, fontWeight: "900" },
   hint: { fontSize: 12, marginTop: 4, lineHeight: 18 },
-  label: { marginTop: 12, fontWeight: "700" },
+  label: { marginTop: space.md, fontWeight: "700", fontSize: 13 },
   divider: {
     height: StyleSheet.hairlineWidth,
     marginTop: 16,
