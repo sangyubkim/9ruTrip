@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "9ruTrip",
+    "slug": "9rutrip",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0c4a6e"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.nineru.trip",
+      "infoPlist": {
+        "NSCameraUsageDescription": "여행지 리뷰 사진을 촬영합니다.",
+        "NSPhotoLibraryUsageDescription": "갤러리에서 여행 사진을 선택합니다.",
+        "NSLocationWhenInUseUsageDescription": "지도에서 일정을 표시합니다."
+      },
+      "config": {
+        "googleMapsApiKey": ""
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0c4a6e"
+      },
+      "package": "com.nineru.trip",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": ""
+        }
+      }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "갤러리에서 여행 사진을 선택합니다.",
+          "cameraPermission": "카메라로 여행 사진을 촬영합니다."
+        }
+      ],
+      "react-native-maps"
+    ]
+  }
+}

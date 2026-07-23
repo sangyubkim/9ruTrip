@@ -1,0 +1,18 @@
+{
+  "name": "9rutrip",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "api": "node apps/api/server.mjs",
+    "install:mobile": "npm install --prefix apps/mobile",
+    "mobile": "npm run start --prefix apps/mobile",
+    "shared:build": "npm run build --prefix packages/shared",
+    "typecheck": "npm run build --prefix packages/shared && npx tsc -p apps/mobile --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2"
+  }
+}

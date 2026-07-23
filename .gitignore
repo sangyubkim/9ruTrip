@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+build/
+
+# Expo
+.expo/
+.expo-shared/
+apps/mobile/.expo/
+
+# Env & secrets (never commit)
+.env
+.env.*
+!.env.example
+apps/api/.env
+
+# OS & editors
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+*.swp
+
+# npm debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
