@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import MapView, { Marker } from "react-native-maps";
+import MapView, { Marker, Polyline } from "react-native-maps";
 import type { ItineraryPlace, MvpCityId } from "../types";
 import { getCityMeta } from "../types";
 import { getMapViewConfig } from "../maps/provider";
@@ -58,6 +58,15 @@ export function PlanDayMap({
     };
   }, [coords, city.center.lat, city.center.lng]);
 
+  const polylineCoords = useMemo(
+    () =>
+      coords.map((p) => ({
+        latitude: p.lat,
+        longitude: p.lng,
+      })),
+    [coords],
+  );
+
   useEffect(() => {
     const sel = coords.find((p) => p.id === selectedPlaceId);
     if (!sel || !mapRef.current) return;
@@ -93,6 +102,15 @@ export function PlanDayMap({
           mapRef.current?.animateToRegion(region, 0);
         }}
       >
+        {polylineCoords.length >= 2 ? (
+          <Polyline
+            coordinates={polylineCoords}
+            strokeColor="#0369a1"
+            strokeWidth={3}
+            lineCap="round"
+            lineJoin="round"
+          />
+        ) : null}
         {coords.map((p, i) => {
           const selected = p.id === selectedPlaceId;
           return (
@@ -101,7 +119,7 @@ export function PlanDayMap({
               coordinate={{ latitude: p.lat, longitude: p.lng }}
               title={`${i + 1}. ${p.name}`}
               description={p.plannedTime ? `${p.plannedTime}` : undefined}
-              pinColor={selected ? "#0284c7" : undefined}
+              pinColor={selected ? "#0284c7" : "#0c4a6e"}
               onPress={() => onSelectPlace?.(p.id)}
             />
           );
@@ -124,39 +142,39 @@ export function PlanDayMap({
 const styles = StyleSheet.create({
   wrap: {
     height: "100%",
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#e2e8f0",
+    borderColor: "#bae6fd",
+    backgroundColor: "#e0f2fe",
   },
   map: { width: "100%", height: "100%" },
   stub: {
     height: "100%",
-    borderRadius: 12,
-    backgroundColor: "#f1f5f9",
+    borderRadius: 14,
+    backgroundColor: "#f0f9ff",
     borderWidth: 1,
-    borderColor: "#e2e8f0",
+    borderColor: "#bae6fd",
     alignItems: "center",
     justifyContent: "center",
     padding: 12,
   },
-  stubText: { color: "#64748b", fontSize: 12, textAlign: "center" },
+  stubText: { color: "#0369a1", fontSize: 12, textAlign: "center" },
   emptyOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(241,245,249,0.55)",
+    backgroundColor: "rgba(224,242,254,0.55)",
   },
-  emptyText: { color: "#64748b", fontSize: 12, fontWeight: "600" },
+  emptyText: { color: "#0369a1", fontSize: 12, fontWeight: "600" },
   keyHint: {
     position: "absolute",
     left: 8,
     bottom: 8,
-    backgroundColor: "rgba(15,23,42,0.65)",
+    backgroundColor: "rgba(12,74,110,0.75)",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
-  keyHintText: { color: "#f8fafc", fontSize: 10, fontWeight: "600" },
+  keyHintText: { color: "#f0f9ff", fontSize: 10, fontWeight: "600" },
 });

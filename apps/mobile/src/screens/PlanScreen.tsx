@@ -18,9 +18,11 @@ import {
   rerouteTrip,
   suggestPlaces,
 } from "../api/trip";
+import { DeviationBanner } from "../components/DeviationBanner";
 import { NextActionBanner } from "../components/NextActionBanner";
 import { PlanDayMap } from "../components/PlanDayMap";
 import { TransportCompareSheet } from "../components/TransportCompareSheet";
+import { useGpsDeviation } from "../hooks/useGpsDeviation";
 import { useGuideAlarms } from "../hooks/useGuideAlarms";
 import type {
   ItineraryPlace,
@@ -83,6 +85,11 @@ export function PlanScreen({
 
   useGuideAlarms(trip, trip.guideAlarmsEnabled && trip.status === "active");
 
+  const gpsDev = useGpsDeviation(
+    trip,
+    trip.status === "active" && trip.aiRerouteEnabled,
+  );
+
   const nextAction = useMemo(
     () => (trip.status === "active" ? getNextAction(trip) : null),
     [trip],
@@ -114,7 +121,7 @@ export function PlanScreen({
   ) => {
     setEnriching(true);
     try {
-      const res = await enrichTransport(places, true);
+      const res = await enrichTransport(places, true, trip.cityId);
       onChangeTrip({
         ...trip,
         ...extra,
@@ -417,6 +424,20 @@ export function PlanScreen({
         />
       ) : null}
 
+      {gpsDev.showBanner ? (
+        <DeviationBanner
+          distanceKm={gpsDev.distanceKm}
+          busy={rerouting}
+          onDismiss={gpsDev.dismiss}
+          onReroute={() => {
+            gpsDev.dismiss();
+            void runReroute(
+              "GPS 이탈: 다음 장소에서 멀리 떨어짐 — 남은 일정 재조정",
+            );
+          }}
+        />
+      ) : null}
+
       <View style={styles.toggles}>
         <Pressable
           style={[styles.toggle, trip.guideAlarmsEnabled && styles.toggleOn]}
@@ -599,7 +620,7 @@ export function PlanScreen({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   back: { color: "#0369a1", marginBottom: 6 },
-  title: { fontSize: 20, fontWeight: "800", color: "#0f172a" },
+  title: { fontSize: 20, fontWeight: "800", color: "#0c4a6e" },
   sub: { color: "#64748b", marginTop: 2 },
   tip: { marginTop: 8, marginBottom: 8, fontSize: 12, color: "#94a3b8" },
   mapPane: {
@@ -611,7 +632,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: "#e2e8f0",
+    backgroundColor: "#e0f2fe",
     alignItems: "center",
   },
   toggleOn: { backgroundColor: "#0c4a6e" },
@@ -685,7 +706,7 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: "#e2e8f0",
+    borderColor: "#bae6fd",
   },
   rowActive: { backgroundColor: "#e0f2fe", borderColor: "#38bdf8" },
   rowSelected: { borderColor: "#0284c7", backgroundColor: "#f0f9ff" },
@@ -707,7 +728,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#0c4a6e",
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: "center",
   },
   btnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
@@ -715,7 +736,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#e0f2fe",
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: "center",
   },
   btnAltText: { color: "#075985", fontWeight: "700", fontSize: 13 },

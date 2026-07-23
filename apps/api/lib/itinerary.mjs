@@ -188,61 +188,12 @@ export function buildFallbackItinerary({
         },
       ];
 
-  const lodgingCandidates = isOsaka
-    ? [
-        {
-          id: "lodging-cand-1",
-          name: "난바 호텔 (추천)",
-          category: "hotel",
-          lat: 34.6661,
-          lng: 135.5005,
-          estimatedCost: 16000 * nights,
-          notes: `${nights}박 · 도톤보리 접근`,
-          dayIndex: 0,
-          order: 0,
-          lodgingScore: 88,
-          scoreBreakdown: {
-            centrality: 90,
-            priceEstimate: 78,
-            ratingProxy: 85,
-          },
-        },
-        {
-          id: "lodging-cand-2",
-          name: "우메다 비즈니스 호텔",
-          category: "hotel",
-          lat: 34.7055,
-          lng: 135.4983,
-          estimatedCost: 14000 * nights,
-          notes: `${nights}박 · JR 허브`,
-          dayIndex: 0,
-          order: 0,
-          lodgingScore: 82,
-          scoreBreakdown: {
-            centrality: 86,
-            priceEstimate: 85,
-            ratingProxy: 75,
-          },
-        },
-        {
-          id: "lodging-cand-3",
-          name: "신사이바시 스테이",
-          category: "hotel",
-          lat: 34.6748,
-          lng: 135.5015,
-          estimatedCost: 18000 * nights,
-          notes: `${nights}박 · 쇼핑 중심`,
-          dayIndex: 0,
-          order: 0,
-          lodgingScore: 80,
-          scoreBreakdown: {
-            centrality: 84,
-            priceEstimate: 70,
-            ratingProxy: 82,
-          },
-        },
-      ]
-    : buildLodgingCandidates({ nights, partySize, topN: 5 });
+  const lodgingCandidates = buildLodgingCandidates({
+    nights,
+    partySize,
+    topN: 5,
+    cityId: city.id,
+  });
 
   const preferred = lodgingCandidates[0];
   const perDay = Math.max(2, Math.ceil(templates.length / days));
@@ -346,13 +297,12 @@ export async function generateItinerary(body, env) {
     const enriched = await enrichPlacesWithTransport(base.places, {
       mapsApiKey,
       forceRecalc: false,
+      cityId,
     });
     const lodgingCandidates =
       Array.isArray(base.lodgingCandidates) && base.lodgingCandidates.length
         ? base.lodgingCandidates
-        : cityId === "tokyo"
-          ? buildLodgingCandidates({ nights, partySize, topN: 5 })
-          : base.lodgingCandidates || [];
+        : buildLodgingCandidates({ nights, partySize, topN: 5, cityId });
     const preferredLodgingId =
       base.preferredLodgingId || lodgingCandidates[0]?.id || null;
     const plannedBudget =
@@ -478,8 +428,13 @@ travelFromPrev*는 직전 장소→현재 이동 분/엔(첫 장소는 0).`;
           }))
       : [];
 
-    if (lodgingCandidates.length === 0 && cityId === "tokyo") {
-      lodgingCandidates = buildLodgingCandidates({ nights, partySize, topN: 5 });
+    if (lodgingCandidates.length === 0) {
+      lodgingCandidates = buildLodgingCandidates({
+        nights,
+        partySize,
+        topN: 5,
+        cityId,
+      });
     }
 
     return finish({
@@ -500,8 +455,12 @@ travelFromPrev*는 직전 장소→현재 이동 분/엔(첫 장소는 0).`;
   }
 }
 
-/** 카테고리별 삽입용 제안 장소 (도쿄 MVP + 오사카) */
-export function suggestPlacesByCategory({ cityId = "tokyo", category, partySize = 2 }) {
+/** 카테고리별 삽입용 제안 장소 (도쿄/오사카 실존 POI 정적 세트) */
+export function suggestPlacesByCategory({
+  cityId = "tokyo",
+  category,
+  partySize = 2,
+}) {
   const city = resolveCity(cityId);
   const pool =
     city.id === "osaka"
@@ -515,6 +474,30 @@ export function suggestPlacesByCategory({ cityId = "tokyo", category, partySize 
             notes: "한식·거리음식",
           },
           {
+            name: "구로몬 시장",
+            category: "food",
+            lat: 34.6668,
+            lng: 135.5061,
+            estimatedCost: 3000 * partySize,
+            notes: "해산물·아침",
+          },
+          {
+            name: "타코야키 도톤보리 본점 거리",
+            category: "food",
+            lat: 34.6687,
+            lng: 135.5013,
+            estimatedCost: 800 * partySize,
+            notes: "간식",
+          },
+          {
+            name: "아베노하루카스 전망대",
+            category: "attraction",
+            lat: 34.6456,
+            lng: 135.5135,
+            estimatedCost: 1800 * partySize,
+            notes: "초고층 전망",
+          },
+          {
             name: "스미요시타이샤",
             category: "attraction",
             lat: 34.6126,
@@ -523,12 +506,44 @@ export function suggestPlacesByCategory({ cityId = "tokyo", category, partySize 
             notes: "신사",
           },
           {
-            name: "난바 파크스 인근 호텔",
+            name: "오사카성 공원",
+            category: "attraction",
+            lat: 34.6873,
+            lng: 135.5262,
+            estimatedCost: 600 * partySize,
+            notes: "성·산책",
+          },
+          {
+            name: "우메다 스카이빌딩",
+            category: "attraction",
+            lat: 34.7055,
+            lng: 135.4904,
+            estimatedCost: 1500 * partySize,
+            notes: "공중정원",
+          },
+          {
+            name: "스위소텔 난카이 오사카",
             category: "hotel",
-            lat: 34.6615,
-            lng: 135.5028,
-            estimatedCost: 15000,
-            notes: "숙소 후보",
+            lat: 34.6638,
+            lng: 135.5019,
+            estimatedCost: 28000,
+            notes: "난바 직결 숙소",
+          },
+          {
+            name: "호텔 닛코 오사카",
+            category: "hotel",
+            lat: 34.6725,
+            lng: 135.5012,
+            estimatedCost: 24000,
+            notes: "신사이바시",
+          },
+          {
+            name: "호텔 한큐 리스파이어 오사카",
+            category: "hotel",
+            lat: 34.7058,
+            lng: 135.4988,
+            estimatedCost: 22000,
+            notes: "우메다 허브",
           },
         ]
       : [
@@ -541,12 +556,28 @@ export function suggestPlacesByCategory({ cityId = "tokyo", category, partySize 
             notes: "모노자야키",
           },
           {
-            name: "긴자 스시",
+            name: "이치란 라멘 시부야",
             category: "food",
-            lat: 35.6717,
-            lng: 139.7649,
-            estimatedCost: 8000 * partySize,
-            notes: "고급 식사",
+            lat: 35.6598,
+            lng: 139.7004,
+            estimatedCost: 1200 * partySize,
+            notes: "돈코츠 라멘",
+          },
+          {
+            name: "스시 잔마이 토요스",
+            category: "food",
+            lat: 35.645,
+            lng: 139.7845,
+            estimatedCost: 4500 * partySize,
+            notes: "회전·단품 스시",
+          },
+          {
+            name: "긴자 교자 로쿠포쿠",
+            category: "food",
+            lat: 35.6712,
+            lng: 139.7645,
+            estimatedCost: 2200 * partySize,
+            notes: "교자",
           },
           {
             name: "도쿄타워",
@@ -557,6 +588,30 @@ export function suggestPlacesByCategory({ cityId = "tokyo", category, partySize 
             notes: "전망",
           },
           {
+            name: "센소지 (아사쿠사)",
+            category: "attraction",
+            lat: 35.714765,
+            lng: 139.796655,
+            estimatedCost: 0,
+            notes: "사찰",
+          },
+          {
+            name: "도쿄 스카이트리",
+            category: "attraction",
+            lat: 35.710063,
+            lng: 139.8107,
+            estimatedCost: 2300 * partySize,
+            notes: "전망대",
+          },
+          {
+            name: "메이지진구",
+            category: "attraction",
+            lat: 35.676398,
+            lng: 139.699325,
+            estimatedCost: 0,
+            notes: "숲길 산책",
+          },
+          {
             name: "오모테산도 힐즈",
             category: "attraction",
             lat: 35.6672,
@@ -565,12 +620,28 @@ export function suggestPlacesByCategory({ cityId = "tokyo", category, partySize 
             notes: "산책·쇼핑",
           },
           {
-            name: "시부야 엑셀 호텔",
+            name: "시부야 엑셀 호텔 도큐",
             category: "hotel",
             lat: 35.6585,
             lng: 139.7013,
-            estimatedCost: 20000,
-            notes: "숙소 후보",
+            estimatedCost: 26000,
+            notes: "시부야역 숙소",
+          },
+          {
+            name: "호텔 그라치에 신주쿠",
+            category: "hotel",
+            lat: 35.6942,
+            lng: 139.7006,
+            estimatedCost: 18000,
+            notes: "신주쿠 허브",
+          },
+          {
+            name: "리치몬드 호텔 아사쿠사",
+            category: "hotel",
+            lat: 35.7129,
+            lng: 139.7938,
+            estimatedCost: 15000,
+            notes: "아사쿠사",
           },
         ];
 

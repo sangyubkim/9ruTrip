@@ -277,14 +277,38 @@ export function applyTransportOption(place, options, preferredMode) {
   };
 }
 
-/** 숙소 점수 분해 (centrality / price / rating proxy) */
-export function lodgingScoreBreakdown(place, { nights = 2 } = {}) {
-  const hubs = [
-    { name: "shinjuku", lat: 35.6938, lng: 139.7034, w: 1 },
-    { name: "tokyo", lat: 35.6812, lng: 139.7671, w: 0.95 },
-    { name: "shibuya", lat: 35.6595, lng: 139.7005, w: 0.92 },
-    { name: "ueno", lat: 35.7138, lng: 139.777, w: 0.85 },
-  ];
+const TOKYO_HUBS = [
+  { name: "shinjuku", lat: 35.6938, lng: 139.7034, w: 1 },
+  { name: "tokyo", lat: 35.6812, lng: 139.7671, w: 0.95 },
+  { name: "shibuya", lat: 35.6595, lng: 139.7005, w: 0.92 },
+  { name: "ueno", lat: 35.7138, lng: 139.777, w: 0.85 },
+];
+
+const OSAKA_HUBS = [
+  { name: "namba", lat: 34.6661, lng: 135.5005, w: 1 },
+  { name: "umeda", lat: 34.7055, lng: 135.4983, w: 0.95 },
+  { name: "shinsaibashi", lat: 34.6748, lng: 135.5015, w: 0.92 },
+  { name: "tennoji", lat: 34.6472, lng: 135.506, w: 0.85 },
+];
+
+/** lat로 대략 도시 추정 (명시 cityId 없을 때) */
+function inferCityIdFromLat(lat) {
+  const n = Number(lat);
+  if (!Number.isFinite(n)) return "tokyo";
+  // 오사카(~34.6) vs 도쿄(~35.7)
+  return n < 35.2 ? "osaka" : "tokyo";
+}
+
+/** 숙소 점수 분해 (centrality / price / rating proxy) — 허브는 cityId별 */
+export function lodgingScoreBreakdown(
+  place,
+  { nights = 2, cityId } = {},
+) {
+  const resolved =
+    cityId === "osaka" || cityId === "tokyo"
+      ? cityId
+      : inferCityIdFromLat(place?.lat);
+  const hubs = resolved === "osaka" ? OSAKA_HUBS : TOKYO_HUBS;
 
   let centrality = 40;
   for (const h of hubs) {
@@ -331,57 +355,117 @@ export function lodgingScoreBreakdown(place, { nights = 2 } = {}) {
   };
 }
 
-/** 숙소 추천 점수 (도쿄 교통 허브 근접도 중심, 1–100) */
-export function lodgingRecommendScore(place) {
-  return lodgingScoreBreakdown(place).lodgingScore;
+/** 숙소 추천 점수 (도시 교통 허브 근접도 중심, 1–100) */
+export function lodgingRecommendScore(place, opts = {}) {
+  return lodgingScoreBreakdown(place, opts).lodgingScore;
 }
 
-/** 도쿄 숙소 후보 Top N */
-export function buildLodgingCandidates({ nights = 2, partySize = 2, topN = 5 } = {}) {
-  const catalog = [
-    {
-      name: "신주쿠 호텔 (추천 구역)",
-      lat: 35.6938,
-      lng: 139.7034,
-      basePerNight: 18000,
-      notes: "교통 허브 · 추천",
-    },
-    {
-      name: "시부야 스트림 인근 호텔",
-      lat: 35.6581,
-      lng: 139.7017,
-      basePerNight: 22000,
-      notes: "쇼핑·야경 편리",
-    },
-    {
-      name: "도쿄역 야에스 호텔",
-      lat: 35.6812,
-      lng: 139.7671,
-      basePerNight: 24000,
-      notes: "JR·신칸센 접근",
-    },
-    {
-      name: "우에노 스테이 인",
-      lat: 35.7126,
-      lng: 139.7765,
-      basePerNight: 14000,
-      notes: "저렴 · 공원 인근",
-    },
-    {
-      name: "아사쿠사 료칸풍 호텔",
-      lat: 35.7145,
-      lng: 139.7945,
-      basePerNight: 16000,
-      notes: "전통 분위기",
-    },
-    {
-      name: "이케부쿠로 비즈니스 호텔",
-      lat: 35.7295,
-      lng: 139.7109,
-      basePerNight: 12000,
-      notes: "저렴 · 조용",
-    },
-  ];
+const TOKYO_LODGING_CATALOG = [
+  {
+    name: "호텔 그라치에 신주쿠",
+    lat: 35.6942,
+    lng: 139.7006,
+    basePerNight: 18000,
+    notes: "신주쿠역 도보권 · 추천",
+  },
+  {
+    name: "시부야 엑셀 호텔 도큐",
+    lat: 35.6585,
+    lng: 139.7013,
+    basePerNight: 26000,
+    notes: "시부야역 직결 · 쇼핑·야경",
+  },
+  {
+    name: "호텔 메츠 도쿄역 야에스",
+    lat: 35.6798,
+    lng: 139.7695,
+    basePerNight: 24000,
+    notes: "도쿄역·신칸센 접근",
+  },
+  {
+    name: "미츠이 가든 호텔 우에노",
+    lat: 35.7112,
+    lng: 139.7778,
+    basePerNight: 16000,
+    notes: "우에노 공원·박물관 인근",
+  },
+  {
+    name: "리치몬드 호텔 아사쿠사",
+    lat: 35.7129,
+    lng: 139.7938,
+    basePerNight: 15000,
+    notes: "센소지·스카이트리 접근",
+  },
+  {
+    name: "호텔 메츠 이케부쿠로",
+    lat: 35.7298,
+    lng: 139.7115,
+    basePerNight: 13000,
+    notes: "JR 이케부쿠로 · 가성비",
+  },
+  {
+    name: "세라톤 미야코 호텔 도쿄",
+    lat: 35.6365,
+    lng: 139.7372,
+    basePerNight: 32000,
+    notes: "시로카네다이 · 조용",
+  },
+];
+
+const OSAKA_LODGING_CATALOG = [
+  {
+    name: "호텔 한큐 리스파이어 오사카",
+    lat: 34.7058,
+    lng: 135.4988,
+    basePerNight: 22000,
+    notes: "오사카/우메다역 · JR 허브",
+  },
+  {
+    name: "스위소텔 난카이 오사카",
+    lat: 34.6638,
+    lng: 135.5019,
+    basePerNight: 28000,
+    notes: "난바역 직결 · 도톤보리",
+  },
+  {
+    name: "호텔 닛코 오사카",
+    lat: 34.6725,
+    lng: 135.5012,
+    basePerNight: 24000,
+    notes: "신사이바시 · 쇼핑 중심",
+  },
+  {
+    name: "크로스 호텔 오사카",
+    lat: 34.6695,
+    lng: 135.5018,
+    basePerNight: 20000,
+    notes: "도톤보리 도보 · 야경",
+  },
+  {
+    name: "신오사카 워싱턴 호텔 플라자",
+    lat: 34.7335,
+    lng: 135.5002,
+    basePerNight: 14000,
+    notes: "신오사카 · 신칸센",
+  },
+  {
+    name: "호텔 아가라 신세카이",
+    lat: 34.6528,
+    lng: 135.5055,
+    basePerNight: 12000,
+    notes: "츠텐카쿠·신세카이 · 가성비",
+  },
+];
+
+/** 도쿄/오사카 숙소 후보 Top N (실존 호텔 좌표 기반 정적 카탈로그) */
+export function buildLodgingCandidates({
+  nights = 2,
+  partySize = 2,
+  topN = 5,
+  cityId = "tokyo",
+} = {}) {
+  const catalog =
+    cityId === "osaka" ? OSAKA_LODGING_CATALOG : TOKYO_LODGING_CATALOG;
 
   const partyFactor = 1 + Math.max(0, partySize - 2) * 0.15;
   const scored = catalog.map((c, i) => {
@@ -399,6 +483,7 @@ export function buildLodgingCandidates({ nights = 2, partySize = 2, topN = 5 } =
     };
     const { lodgingScore, scoreBreakdown } = lodgingScoreBreakdown(place, {
       nights,
+      cityId,
     });
     return { ...place, lodgingScore, scoreBreakdown };
   });
@@ -414,7 +499,12 @@ export function buildLodgingCandidates({ nights = 2, partySize = 2, topN = 5 } =
  */
 export async function enrichPlacesWithTransport(
   places,
-  { startHour = 9, forceRecalc = false, mapsApiKey = "" } = {},
+  {
+    startHour = 9,
+    forceRecalc = false,
+    mapsApiKey = "",
+    cityId,
+  } = {},
 ) {
   if (!Array.isArray(places) || places.length === 0) return [];
 
@@ -480,7 +570,7 @@ export async function enrichPlacesWithTransport(
         p.category === "food" ? 60 : p.category === "hotel" ? 15 : 75;
 
       if (p.category === "hotel") {
-        const bd = lodgingScoreBreakdown(p);
+        const bd = lodgingScoreBreakdown(p, { cityId });
         if (forceRecalc || !(Number(p.lodgingScore) > 0)) {
           p.lodgingScore = bd.lodgingScore;
         }

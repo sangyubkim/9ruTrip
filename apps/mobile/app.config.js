@@ -25,7 +25,7 @@ const expoConfig = {
       NSCameraUsageDescription: "여행지 리뷰 사진을 촬영합니다.",
       NSPhotoLibraryUsageDescription: "갤러리에서 여행 사진을 선택합니다.",
       NSLocationWhenInUseUsageDescription:
-        "지도에서 일정을 표시합니다.",
+        "일정 지도 표시와 경로 이탈 시 재루트 안내에 사용합니다.",
     },
     config: {
       googleMapsApiKey: mapsKey,
@@ -66,6 +66,13 @@ const expoConfig = {
       {
         photosPermission: "갤러리에서 여행 사진을 선택합니다.",
         cameraPermission: "카메라로 여행 사진을 촬영합니다.",
+      },
+    ],
+    [
+      "expo-location",
+      {
+        locationWhenInUsePermission:
+          "일정 지도 표시와 경로 이탈 시 재루트 안내에 사용합니다.",
       },
     ],
     [

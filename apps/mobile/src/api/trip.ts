@@ -159,11 +159,12 @@ export async function parseSmsExpense(text: string): Promise<ParseSmsResponse> {
 export async function enrichTransport(
   places: ItineraryPlace[],
   forceRecalc = true,
+  cityId?: MvpCityId,
 ): Promise<{ places: ItineraryPlace[]; transportEngine?: string }> {
   const res = await apiFetch("/trip/enrich-transport", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ places, forceRecalc }),
+    body: JSON.stringify({ places, forceRecalc, cityId }),
   });
   const json = (await res.json()) as {
     places: ItineraryPlace[];

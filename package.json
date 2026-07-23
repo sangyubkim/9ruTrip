@@ -10,7 +10,8 @@
     "install:mobile": "npm install --prefix apps/mobile",
     "mobile": "npm run start --prefix apps/mobile",
     "shared:build": "npm run build --prefix packages/shared",
-    "typecheck": "npm run build --prefix packages/shared && npx tsc -p apps/mobile --noEmit"
+    "typecheck": "npm run build --prefix packages/shared && npx tsc -p apps/mobile --noEmit",
+    "test": "npm run test --prefix apps/api"
   },
   "devDependencies": {
     "typescript": "~5.9.2"

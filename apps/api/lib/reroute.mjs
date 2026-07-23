@@ -156,6 +156,7 @@ export async function rerouteItinerary(body, env) {
   const enriched = await enrichPlacesWithTransport(merged, {
     mapsApiKey: env.googleMapsApiKey || "",
     forceRecalc: true,
+    cityId: trip.cityId === "osaka" ? "osaka" : "tokyo",
   });
   const plannedBudget = enriched.reduce((s, p) => s + (p.estimatedCost || 0), 0);
 

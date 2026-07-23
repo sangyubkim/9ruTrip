@@ -189,6 +189,7 @@ async function handle(req, res) {
         forceRecalc: Boolean(body?.forceRecalc),
         mapsApiKey: env.googleMapsApiKey,
         startHour: Number(body?.startHour) || 9,
+        cityId: body?.cityId === "osaka" ? "osaka" : body?.cityId === "tokyo" ? "tokyo" : undefined,
       });
       send(
         res,

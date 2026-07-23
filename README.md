@@ -59,19 +59,22 @@ npm start
 
 ### Google Maps
 
+**키 발급·제한·검증 단계별 가이드:** [`docs/GOOGLE-MAPS-API-KEY.md`](docs/GOOGLE-MAPS-API-KEY.md)
+
 `apps/mobile/app.config.js`가 `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`를
 `android.config.googleMaps.apiKey` / `ios.config.googleMapsApiKey` / `extra.googleMapsApiKey`로 주입합니다.
 
 ```bash
-# apps/mobile/.env (gitignored)
-EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_key
+# apps/mobile/.env (gitignored) — Maps SDK 전용 키 권장
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_mobile_key
 
-# API Directions용 (선택, 동일 키 가능)
-# apps/api/.env
-GOOGLE_MAPS_API_KEY=your_key
+# apps/api/.env — Directions 전용 서버 키 권장 (Android 제한 없음)
+GOOGLE_MAPS_API_KEY=your_server_key
 ```
 
-키가 없으면 지도는 graceful degrade(힌트 표시 + 기본 지도/제한 모드), 교통 추정은 **모드별 하버사인 폴백**(도보/대중교통/택시). Directions 실측이 필요하면 `GOOGLE_MAPS_API_KEY`를 `apps/api/.env`에 설정하세요. 가짜 키를 넣지 마세요.
+키가 없으면 지도는 graceful degrade(힌트 표시 + 기본 지도/제한 모드), 교통 추정은 **모드별 하버사인 폴백**(도보/대중교통/택시). Directions 실측이 필요하면 `GOOGLE_MAPS_API_KEY`를 `apps/api/.env`에 설정하세요. **가짜 키·실키 커밋 금지.**
+
+검증: API 재시작 후 `GET /health` → `googleMapsConfigured: true` · Expo 재시작 후 지도 확인.
 
 실기기 전체 사이클: [`docs/E2E-CHECKLIST.md`](docs/E2E-CHECKLIST.md).
 
@@ -123,12 +126,33 @@ GOOGLE_MAPS_API_KEY=your_key
 4. Plan: 상단 지도 마커 ↔ 리스트 선택 연동
 5. DnD 후 enrich → `transportOptions` 유지/재계산
 
+## 테스트
+
+```bash
+# API 단위 테스트 (sms-parse · haversine 교통 비교)
+npm test
+# 또는
+npm run test --prefix apps/api
+
+# shared 빌드 + 모바일 tsc
+npm run typecheck
+```
+
 ## 이후 (보류)
 
-- 국내 도시 실연동 (Naver Maps SDK)
+- 국내 도시 실연동 (Naver Maps SDK 풀 SDK)
 - 네이티브 SMS 인박스 (expo-dev-client + 권한 플러그인)
-- 물리 모노레포 병합 / Routes API 고도화
-- GPS 이탈(deviation) 힌트 (선택)
+- 계정 동기화 / 클라우드 백업
+- 물리 모노레포 병합 / Routes API·Places Nearby 고도화
+- (키 가이드 next) Places로 숙소·관광 후보 자동 보강 — 현재는 정적 POI
+
+## 최근 보완 (P3+)
+
+- Google Maps 키 발급 문서 + `.env.example` 안내
+- 도쿄/오사카 숙소·장소 정적 POI 보강, 숙소 점수 허브 도시별
+- 여행 중 GPS 이탈 시 재루트 배너 (`aiRerouteEnabled`)
+- Plan Day 지도 경로 polyline
+- `npm test` (sms-parse / haversine)
 
 ## API
 
