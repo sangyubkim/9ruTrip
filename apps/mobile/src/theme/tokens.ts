@@ -1,5 +1,22 @@
 export type ThemeMode = "system" | "light" | "dark";
 
+/** 화면 공통 여백 — 폴리시 일관성 */
+export const space = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
+} as const;
+
+export const radius = {
+  sm: 10,
+  md: 14,
+  lg: 18,
+  pill: 999,
+} as const;
+
 export type ColorTokens = {
   bg: string;
   bgElevated: string;

@@ -26,6 +26,7 @@ import {
 } from "../api/trip";
 import { ChecklistSection } from "../components/ChecklistSection";
 import { DeviationBanner } from "../components/DeviationBanner";
+import { EmptyState } from "../components/EmptyState";
 import { FadeIn } from "../components/FadeIn";
 import { NextActionBanner } from "../components/NextActionBanner";
 import { PlaceSuggestModal } from "../components/PlaceSuggestModal";
@@ -1641,13 +1642,16 @@ export function PlanScreen({
           <View
             style={[
               styles.gestureHintBar,
-              { backgroundColor: colors.chipOnBg },
+              {
+                backgroundColor: colors.accentMuted,
+                borderBottomColor: colors.border,
+              },
             ]}
             accessibilityRole="summary"
             accessibilityLabel={GESTURE_HINT}
           >
             <Text
-              style={[styles.gestureHintText, { color: colors.chipOnFg }]}
+              style={[styles.gestureHintText, { color: colors.textSecondary }]}
               numberOfLines={2}
             >
               {GESTURE_HINT}
@@ -1702,12 +1706,16 @@ export function PlanScreen({
             containerStyle={{ flex: 1 }}
             contentContainerStyle={{ paddingBottom: 12 }}
             ListEmptyComponent={
-              <View style={styles.emptyBox}>
-                <Text style={styles.emptyTitle}>이 날 일정이 비어 있습니다</Text>
-                <Text style={styles.empty}>
-                  위에서 +음식 · +관광 · +숙소로 장소를 추가하거나, 다른 Day에서
-                  Day▶로 옮겨 오세요.
-                </Text>
+              <View style={{ paddingHorizontal: 4, paddingTop: 8 }}>
+                <EmptyState
+                  glyph="＋"
+                  title="이 날 일정이 비어 있습니다"
+                  body={
+                    isEasy
+                      ? "「자세히」로 전환한 뒤 +음식 · +관광으로 장소를 추가하거나, 다른 Day에서 Day▶로 옮겨 오세요."
+                      : "위에서 +음식 · +관광 · +숙소로 장소를 추가하거나, 다른 Day에서 Day▶로 옮겨 오세요."
+                  }
+                />
               </View>
             }
           />
