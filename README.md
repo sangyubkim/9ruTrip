@@ -79,21 +79,31 @@ set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_key
 - 현금 수동 경비 + 계획 vs 실제 요약
 - `/trip/export-draft` → 9ruDocs BlogDraft 호환 초안
 
-## P1+ (미구현)
+## P1 (구현됨)
+
+- **가이드 알람 / 다음 액션**: 여행 중(`active`) 다음 미완료 장소 배너 + 임박 시 인앱 Alert · Android 로컬 알림(`expo-notifications`, 권한 허용 시)
+- **AI 재루트 ON/OFF**: Trip에 `aiRerouteEnabled` 저장 · `이탈·재루트` → `POST /trip/reroute`로 당일 남은 일정 재생성
+- **SMS 경비 파싱 (Android-first)**: 카드 SMS 붙여넣기 → 금액/가맹점 파싱 (`POST /trip/parse-sms` + 로컬 폴백). 네이티브 SMS 인박스 자동 읽기는 Expo 제한으로 보류
+- **WordPress 직접 발행**: 요약 화면에서 WP 임시글 / 바로 게시 → `POST /wordpress/publish` (9ruDocs와 동일 Application Password 패턴)
+- **교통 glance + 숙소 점수**: 장소 간 `travelFromPrevMinutes` / `travelFromPrevCost`, hotel `lodgingScore` (하버사인 추정 보강)
+
+## 이후 (보류)
 
 - 국내(네이버 맵) / 다도시
-- 교통 시간·비용, 숙소·맛집 DnD 고도화
-- 가이드 알람, AI 재루트 ON/OFF
-- SMS 경비 파싱
-- WordPress 직접 발행 UI (현재는 초안 훅만; 9ruDocs API로 이어가기)
+- 네이티브 SMS 인박스 권한(커스텀 dev client)
+- 실시간 교통 API · 맛집 DnD 고도화
 
 ## API
 
 | Method | Path | 설명 |
 |--------|------|------|
-| GET | `/health` | 헬스 + Gemini 설정 여부 |
+| GET | `/health` | 헬스 + Gemini/WP 설정 여부 |
 | POST | `/trip/itinerary` | `{ cityId, nights, days, partySize }` → 일정 |
+| POST | `/trip/reroute` | `{ trip, dayIndex, completedPlaceIds?, reason? }` → 남은 일정 재생성 |
 | POST | `/trip/export-draft` | `{ trip }` → BlogDraft 호환 JSON |
+| POST | `/trip/parse-sms` | `{ text }` → 카드 SMS 파싱 |
+| POST | `/trip/enrich-transport` | `{ places }` → 이동시간/비용 보강 |
+| POST | `/wordpress/publish` | BlogDraft 또는 `{ trip, status }` → WP 발행 |
 
 ## 환경 변수 (비밀 제외)
 
@@ -102,6 +112,16 @@ set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_key
 | `GEMINI_API_KEY` | `apps/api/.env` | Google AI Studio |
 | `GEMINI_MODEL` | `apps/api/.env` | 기본 `gemini-flash-lite-latest` |
 | `PORT` | `apps/api/.env` | 기본 `3011` |
-| `WP_*` | 선택 | 향후 직접 발행용 |
+| `WP_SITE_URL` / `WP_USERNAME` / `WP_APP_PASSWORD` | `apps/api/.env` | WordPress 직접 발행 |
 | `EXPO_PUBLIC_API_BASE_URL` | 모바일 | API 주소 오버라이드 |
 | `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` | 모바일 | Google Maps |
+
+### P1 빠른 테스트
+
+1. API: `npm run api` → `GET http://localhost:3011/health`
+2. 일정: `POST /trip/itinerary` 후 장소의 `plannedTime` / `travelFromPrev*` 확인
+3. 앱: 여행 시작 → 가이드알람 ON → 다음 액션 배너 / 완료 버튼
+4. AI재루트 ON → **이탈·재루트** (완료 장소는 유지)
+5. 경비: SMS 예문 붙여넣기 → 파싱 → 경비 추가
+6. 요약: 리뷰 1개 이상 → WP 임시글 (`.env` WP 자격증명 필요)
+

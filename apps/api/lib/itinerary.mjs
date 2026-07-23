@@ -1,4 +1,5 @@
 import { geminiComplete, parseJsonLoose } from "./gemini.mjs";
+import { enrichPlacesWithTransport } from "./transport.mjs";
 
 const TOKYO_CENTER = { lat: 35.681236, lng: 139.767125 };
 
@@ -141,10 +142,11 @@ export function buildTokyoFallback({ nights, days, partySize }) {
     p.order = i;
   });
 
-  const plannedBudget = places.reduce((s, p) => s + p.estimatedCost, 0);
+  const enriched = enrichPlacesWithTransport(places);
+  const plannedBudget = enriched.reduce((s, p) => s + p.estimatedCost, 0);
 
   return {
-    places,
+    places: enriched,
     plannedBudget,
     summary: `도쿄 ${nights}박 ${days}일 · ${partySize}명 기본 코스 (오프라인 폴백)`,
     engine: "fallback",
@@ -172,6 +174,17 @@ function normalizePlaces(rawPlaces, { days, partySize }) {
       notes: p.notes ? String(p.notes) : undefined,
       dayIndex,
       order: Number.isFinite(Number(p.order)) ? Number(p.order) : i,
+      plannedTime: p.plannedTime ? String(p.plannedTime) : undefined,
+      travelFromPrevMinutes:
+        Number(p.travelFromPrevMinutes) >= 0
+          ? Number(p.travelFromPrevMinutes)
+          : undefined,
+      travelFromPrevCost:
+        Number(p.travelFromPrevCost) >= 0
+          ? Number(p.travelFromPrevCost)
+          : undefined,
+      lodgingScore:
+        Number(p.lodgingScore) > 0 ? Number(p.lodgingScore) : undefined,
     };
   });
 }
@@ -212,12 +225,19 @@ export async function generateItinerary(body, env) {
       "estimatedCost": number,
       "notes": "짧은 팁",
       "dayIndex": 0,
-      "order": 0
+      "order": 0,
+      "plannedTime": "HH:mm",
+      "travelFromPrevMinutes": number,
+      "travelFromPrevCost": number,
+      "lodgingScore": number
     }
   ]
 }
 
-dayIndex는 0부터 ${days - 1}까지. hotel은 보통 dayIndex 0에 1개, estimatedCost는 ${nights}박 총액.`;
+dayIndex는 0부터 ${days - 1}까지. hotel은 보통 dayIndex 0에 1개, estimatedCost는 ${nights}박 총액.
+plannedTime은 하루 일정 순서에 맞는 도착/시작 시각.
+travelFromPrev*는 직전 장소→현재 이동 분/엔(첫 장소는 0).
+hotel이면 lodgingScore(1-100, 교통편의·위치 추천).`;
 
   try {
     const { text, engine } = await geminiComplete({
@@ -238,14 +258,15 @@ dayIndex는 0부터 ${days - 1}까지. hotel은 보통 dayIndex 0에 1개, estim
     places.forEach((p, i) => {
       p.order = i;
     });
+    const enriched = enrichPlacesWithTransport(places);
 
     const plannedBudget =
       Number(parsed.plannedBudget) > 0
         ? Number(parsed.plannedBudget)
-        : places.reduce((s, p) => s + p.estimatedCost, 0);
+        : enriched.reduce((s, p) => s + p.estimatedCost, 0);
 
     return {
-      places,
+      places: enriched,
       plannedBudget,
       summary: String(parsed.summary || `도쿄 ${nights}박 ${days}일 AI 일정`),
       engine,

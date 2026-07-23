@@ -32,7 +32,9 @@ export function SettingsScreen({ onClose }: Props) {
       const h = await checkHealth();
       setStatus(
         h.ok
-          ? `OK · Gemini ${h.geminiConfigured ? "설정됨" : "미설정(폴백)"}`
+          ? `OK · Gemini ${h.geminiConfigured ? "설정됨" : "미설정(폴백)"} · WP ${
+              h.wordpressConfigured ? "설정됨" : "미설정"
+            }`
           : "응답 이상",
       );
     } catch (e) {

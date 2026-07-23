@@ -8,8 +8,10 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { parseSmsExpense } from "../api/trip";
 import type { Expense, PlaceCategory, Trip } from "../types";
 import { CATEGORY_LABEL, formatYen, sumActual } from "../utils/cost";
+import { parseKoreanCardSmsLocal } from "../utils/smsParse";
 
 type Props = {
   trip: Trip;
@@ -30,20 +32,24 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState<PlaceCategory | "misc">("food");
+  const [smsText, setSmsText] = useState("");
+  const [parsing, setParsing] = useState(false);
 
-  const add = () => {
-    const n = Number(amount);
-    if (!label.trim() || !Number.isFinite(n) || n <= 0) {
+  const add = (override?: Partial<Expense> & { label: string; amount: number }) => {
+    const n = override?.amount ?? Number(amount);
+    const lab = (override?.label ?? label).trim();
+    if (!lab || !Number.isFinite(n) || n <= 0) {
       Alert.alert("입력 확인", "항목명과 금액(엔)을 입력해 주세요.");
       return;
     }
     const expense: Expense = {
       id: `exp-${Date.now()}`,
-      label: label.trim(),
+      label: lab,
       amount: n,
-      currency: "JPY",
-      category,
+      currency: override?.currency ?? "JPY",
+      category: override?.category ?? category,
       createdAt: new Date().toISOString(),
+      sourceSms: override?.sourceSms,
     };
     onChangeTrip({
       ...trip,
@@ -62,15 +68,84 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
     });
   };
 
+  const parseSms = async () => {
+    if (!smsText.trim()) {
+      Alert.alert("SMS 붙여넣기", "카드 결제 SMS 전문을 붙여넣어 주세요.");
+      return;
+    }
+    setParsing(true);
+    try {
+      let parsed = parseKoreanCardSmsLocal(smsText);
+      try {
+        const remote = await parseSmsExpense(smsText);
+        if (remote.ok) parsed = remote;
+      } catch {
+        // 로컬 파서 유지
+      }
+      if (!parsed.ok || !parsed.amountKrw) {
+        Alert.alert("파싱 실패", parsed.error || "금액/가맹점을 찾지 못했습니다.");
+        return;
+      }
+      const jpy =
+        parsed.amountJpyEstimate ?? Math.round(parsed.amountKrw * 0.11);
+      setLabel(parsed.merchant || "카드결제");
+      setAmount(String(jpy));
+      setCategory("misc");
+      Alert.alert(
+        "SMS 파싱됨",
+        `가맹점: ${parsed.merchant}\nKRW ${parsed.amountKrw.toLocaleString()}\n추정 JPY ¥${jpy.toLocaleString()}\n\n금액을 확인한 뒤 경비 추가를 누르세요.\n(환율은 추정값 · 수정 가능)`,
+        [
+          { text: "확인" },
+          {
+            text: "바로 추가(JPY)",
+            onPress: () =>
+              add({
+                label: parsed.merchant || "카드결제",
+                amount: jpy,
+                currency: "JPY",
+                category: "misc",
+                sourceSms: smsText.trim(),
+              }),
+          },
+        ],
+      );
+    } finally {
+      setParsing(false);
+    }
+  };
+
   return (
     <View style={styles.root}>
       <Pressable onPress={onBack}>
         <Text style={styles.back}>← 일정</Text>
       </Pressable>
-      <Text style={styles.title}>경비 (현금 수동)</Text>
+      <Text style={styles.title}>경비</Text>
       <Text style={styles.hint}>
-        SMS 파싱은 P1 · 현재 합계 {formatYen(sumActual(trip.expenses))}
+        현금 수동 + SMS 붙여넣기 · 합계 {formatYen(sumActual(trip.expenses))}
       </Text>
+
+      <Text style={styles.label}>카드 SMS 붙여넣기 (Android 우선)</Text>
+      <Text style={styles.hint}>
+        Expo Go에서는 SMS 자동 읽기가 제한되므로, 수신 SMS를 복사해 붙여넣으면
+        금액·가맹점을 파싱합니다.
+      </Text>
+      <TextInput
+        style={[styles.input, styles.smsBox]}
+        multiline
+        value={smsText}
+        onChangeText={setSmsText}
+        placeholder="예: [신한] 03/21 14:22 승인 12,000원 스타벅스강남"
+        textAlignVertical="top"
+      />
+      <Pressable
+        style={[styles.secondary, parsing && { opacity: 0.6 }]}
+        disabled={parsing}
+        onPress={() => void parseSms()}
+      >
+        <Text style={styles.secondaryText}>
+          {parsing ? "파싱 중…" : "SMS 파싱"}
+        </Text>
+      </Pressable>
 
       <Text style={styles.label}>항목</Text>
       <TextInput
@@ -101,7 +176,7 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
         ))}
       </View>
 
-      <Pressable style={styles.primary} onPress={add}>
+      <Pressable style={styles.primary} onPress={() => add()}>
         <Text style={styles.primaryText}>경비 추가</Text>
       </Pressable>
 
@@ -114,7 +189,9 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{item.label}</Text>
               <Text style={styles.meta}>
-                {CATEGORY_LABEL[item.category] || item.category} · {formatYen(item.amount)}
+                {CATEGORY_LABEL[item.category] || item.category} ·{" "}
+                {formatYen(item.amount)}
+                {item.sourceSms ? " · SMS" : ""}
               </Text>
             </View>
             <Pressable onPress={() => remove(item.id)}>
@@ -143,6 +220,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: "#fff",
   },
+  smsBox: { minHeight: 72 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
   chip: {
     paddingHorizontal: 10,
@@ -153,6 +231,14 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: "#0369a1" },
   chipText: { color: "#334155", fontSize: 12 },
   chipTextOn: { color: "#fff" },
+  secondary: {
+    marginTop: 8,
+    backgroundColor: "#e0f2fe",
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  secondaryText: { color: "#075985", fontWeight: "700" },
   primary: {
     marginTop: 14,
     backgroundColor: "#0369a1",

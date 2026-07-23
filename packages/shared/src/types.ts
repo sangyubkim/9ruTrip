@@ -36,6 +36,14 @@ export type ItineraryPlace = {
   notes?: string;
   dayIndex: number;
   order: number;
+  /** 예정 시각 HH:mm (가이드 알람용) */
+  plannedTime?: string;
+  /** 직전 장소 → 현재 이동 분 */
+  travelFromPrevMinutes?: number;
+  /** 직전 장소 → 현재 이동 비용(엔) */
+  travelFromPrevCost?: number;
+  /** 숙소 추천 점수 1–100 */
+  lodgingScore?: number;
 };
 
 export type Expense = {
@@ -46,6 +54,8 @@ export type Expense = {
   category: PlaceCategory | "misc";
   placeId?: string;
   createdAt: string;
+  /** SMS 파싱 원문 (선택) */
+  sourceSms?: string;
 };
 
 /** Step + 장소 메타 (여행 중 리뷰 캡처) */
@@ -72,6 +82,12 @@ export type Trip = {
   /** 계획 총예산 (엔) — places estimatedCost 합 또는 수동 */
   plannedBudget: number;
   status: TripStatus;
+  /** AI 재루트 어시스트 ON/OFF */
+  aiRerouteEnabled: boolean;
+  /** 일정 기반 가이드 알람 */
+  guideAlarmsEnabled: boolean;
+  /** 방문 완료로 표시한 장소 id */
+  completedPlaceIds: string[];
   createdAt: string;
   updatedAt: string;
 };

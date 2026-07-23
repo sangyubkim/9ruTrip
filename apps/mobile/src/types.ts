@@ -35,6 +35,10 @@ export type ItineraryPlace = {
   notes?: string;
   dayIndex: number;
   order: number;
+  plannedTime?: string;
+  travelFromPrevMinutes?: number;
+  travelFromPrevCost?: number;
+  lodgingScore?: number;
 };
 
 export type Expense = {
@@ -45,6 +49,7 @@ export type Expense = {
   category: PlaceCategory | "misc";
   placeId?: string;
   createdAt: string;
+  sourceSms?: string;
 };
 
 export type PlaceReview = Step & {
@@ -69,6 +74,9 @@ export type Trip = {
   reviews: PlaceReview[];
   plannedBudget: number;
   status: TripStatus;
+  aiRerouteEnabled: boolean;
+  guideAlarmsEnabled: boolean;
+  completedPlaceIds: string[];
   createdAt: string;
   updatedAt: string;
 };

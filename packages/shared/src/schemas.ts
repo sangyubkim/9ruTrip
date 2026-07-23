@@ -27,6 +27,10 @@ export const itineraryPlaceSchema = z.object({
   notes: z.string().optional(),
   dayIndex: z.number().int().min(0),
   order: z.number().int().min(0),
+  plannedTime: z.string().optional(),
+  travelFromPrevMinutes: z.number().optional(),
+  travelFromPrevCost: z.number().optional(),
+  lodgingScore: z.number().optional(),
 });
 
 export const itineraryResponseSchema = z.object({
