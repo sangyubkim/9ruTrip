@@ -32,6 +32,12 @@ export type TransportOption = {
   minutes: number;
   estimatedCost: number;
   engine: string;
+  deepLink?: string;
+  deepLinks?: {
+    google?: string;
+    yahoo?: string;
+  };
+  note?: string;
 };
 
 export type LodgingScoreBreakdown = {

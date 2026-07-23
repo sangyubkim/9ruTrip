@@ -32,6 +32,14 @@ export const transportOptionSchema = z.object({
   minutes: z.number(),
   estimatedCost: z.number(),
   engine: z.string(),
+  deepLink: z.string().optional(),
+  deepLinks: z
+    .object({
+      google: z.string().optional(),
+      yahoo: z.string().optional(),
+    })
+    .optional(),
+  note: z.string().optional(),
 });
 
 export const itineraryPlaceSchema = z.object({

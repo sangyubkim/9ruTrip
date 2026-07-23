@@ -61,6 +61,8 @@ npm start
 
 **키 발급·제한·검증 단계별 가이드:** [`docs/GOOGLE-MAPS-API-KEY.md`](docs/GOOGLE-MAPS-API-KEY.md)
 
+**일본 대중교통 파트너 (NAVITIME / Yahoo deep link):** [`docs/JP-TRANSIT-PARTNER.md`](docs/JP-TRANSIT-PARTNER.md)
+
 `apps/mobile/app.config.js`가 `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`를
 `android.config.googleMaps.apiKey` / `ios.config.googleMapsApiKey` / `extra.googleMapsApiKey`로 주입합니다.
 
@@ -146,7 +148,7 @@ npm run typecheck
 - 물리 모노레포 병합 / Routes API 고도화
 - SMS 공유 UX 추가 폴리시
 - Places API (New) 전면 재작성
-- 외부 Yahoo/NAVITIME 등 유료 JP 대중교통 파트너 API
+- NAVITIME 실계약 HOST/CID 운영 튜닝 (어댑터·딥링크는 구현됨 — `docs/JP-TRANSIT-PARTNER.md`)
 
 ## 최근 보완 (P3+)
 
@@ -161,7 +163,7 @@ npm run typecheck
 - **현장 모드**: `status===active` 시 큰 NextAction 패널(길안내·완료·재루트) + 현장/일정 탭
 - **동선 최적화**: `POST /trip/optimize-day` (Gemini 재배치, 폴백 nearest-neighbor) → Plan 「동선 최적화」미리보기 후 enrich
 - **숙소 설명**: scoreBreakdown → 「역세권 근접 / 가격 경쟁력 / 평점」한국어 라인
-- **JP transit 정직성**: 비교 시트에서 `haversine:transit` 안내 + Google Maps `travelmode=transit` CTA
+- **JP transit**: 비교 시트 추정 안내 + **Yahoo 환승** / **Google 환승** deep link. 파트너 키 시 `partner:navitime` (`docs/JP-TRANSIT-PARTNER.md`)
 - **경비 인사이트**: Summary에 계획 대비·식비/교통 비중 한국어 1–3줄
 
 ### UX polish (Sprint B)
@@ -228,6 +230,9 @@ npm run typecheck
 | `WP_SITE_URL` / `WP_BASE_URL` | `apps/api/.env` | WordPress (둘 다 허용) |
 | `WP_USERNAME` / `WP_APP_PASSWORD` | `apps/api/.env` | Application Password |
 | `GOOGLE_MAPS_API_KEY` | `apps/api/.env` | Directions (선택) |
+| `JP_TRANSIT_PROVIDER` | `apps/api/.env` | `navitime` 시 파트너 시도 (선택) |
+| `NAVITIME_API_KEY` | `apps/api/.env` | NAVITIME/RapidAPI 키 (선택) |
+| `NAVITIME_API_HOST` | `apps/api/.env` | 파트너 HOST (없으면 딥링크 폴백) |
 | `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` | `apps/mobile/.env` | 지도 + app.config 주입 |
 | `EXPO_PUBLIC_API_BASE_URL` | 모바일 | API 주소 오버라이드 |
 | `NAVER_MAP_CLIENT_ID` | API/모바일 | 국내 맵 스캐폴드 |

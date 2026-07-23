@@ -15,7 +15,7 @@ const MODE_LABEL: Record<TransportMode, string> = {
 };
 
 const JP_TRANSIT_NOTE =
-  "일본 대중교통은 Google Directions 미지원 — 추정값. 정확한 환승은 길안내 앱 사용";
+  "파트너 API 키가 없으면 추정 시간·요금입니다. 정확한 환승은 Yahoo/Google 앱에서 확인하세요. (Google Directions API는 일본 대중교통 미지원)";
 
 type Props = {
   visible: boolean;
@@ -28,6 +28,8 @@ type Props = {
   onClose: () => void;
   /** Google Maps transit 길안내 */
   onOpenMapsTransit?: () => void;
+  /** Yahoo!乗換案内 */
+  onOpenYahooTransit?: () => void;
 };
 
 export function TransportCompareSheet({
@@ -40,12 +42,20 @@ export function TransportCompareSheet({
   onSelect,
   onClose,
   onOpenMapsTransit,
+  onOpenYahooTransit,
 }: Props) {
   const modes: TransportMode[] = ["walking", "transit", "taxi"];
   const transitOpt = options.find((o) => o.mode === "transit");
+  const isPartner = Boolean(transitOpt?.engine?.startsWith("partner:"));
   const showJpHonesty =
-    Boolean(transitOpt?.engine?.includes("haversine:transit")) ||
-    Boolean(engineHint?.includes("haversine"));
+    !isPartner &&
+    (Boolean(transitOpt?.engine?.includes("haversine:transit")) ||
+      Boolean(transitOpt?.note) ||
+      Boolean(engineHint?.includes("haversine")));
+  const honestyText = transitOpt?.note || JP_TRANSIT_NOTE;
+  const showTransitLinks =
+    Boolean(onOpenMapsTransit || onOpenYahooTransit) &&
+    (selectedMode === "transit" || selectedMode == null);
 
   return (
     <Modal
@@ -67,7 +77,14 @@ export function TransportCompareSheet({
 
           {showJpHonesty ? (
             <View style={styles.honesty}>
-              <Text style={styles.honestyText}>{JP_TRANSIT_NOTE}</Text>
+              <Text style={styles.honestyText}>{honestyText}</Text>
+            </View>
+          ) : null}
+          {isPartner ? (
+            <View style={styles.partner}>
+              <Text style={styles.partnerText}>
+                {transitOpt?.note || "NAVITIME 파트너 API 실측"}
+              </Text>
             </View>
           ) : null}
 
@@ -104,6 +121,10 @@ export function TransportCompareSheet({
                     opt?.engine?.includes("haversine:transit") ? (
                       <Text style={styles.estTag}>추정</Text>
                     ) : null}
+                    {mode === "transit" &&
+                    opt?.engine?.startsWith("partner:") ? (
+                      <Text style={styles.partnerTag}>파트너</Text>
+                    ) : null}
                     {on ? (
                       <Text style={styles.picked}>선택됨</Text>
                     ) : (
@@ -115,12 +136,25 @@ export function TransportCompareSheet({
             </View>
           )}
 
-          {onOpenMapsTransit ? (
-            <Pressable style={styles.mapsCta} onPress={onOpenMapsTransit}>
-              <Text style={styles.mapsCtaText}>
-                Google Maps 길안내 (transit)
-              </Text>
-            </Pressable>
+          {showTransitLinks ? (
+            <View style={styles.linkRow}>
+              {onOpenYahooTransit ? (
+                <Pressable
+                  style={[styles.linkCta, styles.linkYahoo]}
+                  onPress={onOpenYahooTransit}
+                >
+                  <Text style={styles.linkCtaText}>Yahoo 환승</Text>
+                </Pressable>
+              ) : null}
+              {onOpenMapsTransit ? (
+                <Pressable
+                  style={[styles.linkCta, styles.linkGoogle]}
+                  onPress={onOpenMapsTransit}
+                >
+                  <Text style={styles.linkCtaText}>Google 환승</Text>
+                </Pressable>
+              ) : null}
+            </View>
           ) : null}
 
           <Pressable style={styles.close} onPress={onClose}>
@@ -166,6 +200,15 @@ const styles = StyleSheet.create({
     borderColor: "#fed7aa",
   },
   honestyText: { fontSize: 12, lineHeight: 18, color: "#9a3412", fontWeight: "600" },
+  partner: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: "#ecfdf5",
+    borderWidth: 1,
+    borderColor: "#a7f3d0",
+  },
+  partnerText: { fontSize: 12, lineHeight: 18, color: "#065f46", fontWeight: "600" },
   loading: {
     paddingVertical: 28,
     alignItems: "center",
@@ -204,6 +247,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#c2410c",
   },
+  partnerTag: {
+    marginTop: 4,
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#047857",
+  },
   pick: { marginTop: 8, fontSize: 10, color: "#94a3b8" },
   picked: {
     marginTop: 8,
@@ -211,14 +260,16 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#0369a1",
   },
-  mapsCta: {
-    marginTop: 14,
+  linkRow: { flexDirection: "row", gap: 8, marginTop: 14 },
+  linkCta: {
+    flex: 1,
     paddingVertical: 13,
     borderRadius: 10,
-    backgroundColor: "#0c4a6e",
     alignItems: "center",
   },
-  mapsCtaText: { color: "#fff", fontWeight: "800", fontSize: 14 },
+  linkYahoo: { backgroundColor: "#ff0033" },
+  linkGoogle: { backgroundColor: "#0c4a6e" },
+  linkCtaText: { color: "#fff", fontWeight: "800", fontSize: 14 },
   close: {
     marginTop: 10,
     paddingVertical: 12,

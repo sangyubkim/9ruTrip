@@ -50,7 +50,10 @@ import {
 import { useTheme } from "../theme/ThemeContext";
 import { CATEGORY_LABEL, formatYen, STATUS_LABEL } from "../utils/cost";
 import { formatLodgingScoreLines } from "../utils/lodgingExplain";
-import { openMapsDirections } from "../utils/mapsNavigation";
+import {
+  openMapsDirections,
+  openTransitDeepLink,
+} from "../utils/mapsNavigation";
 import { formatTravelGlance, getNextAction } from "../utils/nextAction";
 import { summarizeRerouteChanges } from "../utils/reroutePreview";
 
@@ -620,21 +623,69 @@ export function PlanScreen({
     }
   };
 
-  const openNavToPlace = (place: ItineraryPlace) => {
+  const resolveNavEndpoints = (place: ItineraryPlace) => {
     const daySorted = trip.places
       .filter((p) => p.dayIndex === place.dayIndex)
       .sort((a, b) => a.order - b.order);
     const idx = daySorted.findIndex((p) => p.id === place.id);
     const prev = idx > 0 ? daySorted[idx - 1] : null;
-    void openMapsDirections(
-      { lat: place.lat, lng: place.lng, name: place.name },
-      prev ? { lat: prev.lat, lng: prev.lng } : null,
-    ).catch((e) => {
+    return {
+      dest: { lat: place.lat, lng: place.lng, name: place.name },
+      origin: prev
+        ? { lat: prev.lat, lng: prev.lng, name: prev.name }
+        : null,
+      transitOpt: place.transportOptions?.find((o) => o.mode === "transit"),
+    };
+  };
+
+  const openNavToPlace = (place: ItineraryPlace) => {
+    const { dest, origin, transitOpt } = resolveNavEndpoints(place);
+    const preferTransit =
+      place.preferredTransportMode === "transit" ||
+      !place.preferredTransportMode;
+
+    const onFail = (e: unknown) => {
       Alert.alert(
         "길안내 실패",
         e instanceof Error ? e.message : "지도를 열 수 없습니다.",
       );
-    });
+    };
+
+    // 대중교통: Google Maps transit URL 기본 + Yahoo 선택
+    if (preferTransit) {
+      Alert.alert(
+        "환승 길안내",
+        "정확한 환승은 외부 앱에서 확인하세요. (추정만으로는 환승 불가)",
+        [
+          {
+            text: "Google 환승",
+            onPress: () => {
+              void openTransitDeepLink(
+                "google",
+                dest,
+                origin,
+                transitOpt?.deepLinks,
+              ).catch(onFail);
+            },
+          },
+          {
+            text: "Yahoo 환승",
+            onPress: () => {
+              void openTransitDeepLink(
+                "yahoo",
+                dest,
+                origin,
+                transitOpt?.deepLinks,
+              ).catch(onFail);
+            },
+          },
+          { text: "취소", style: "cancel" },
+        ],
+      );
+      return;
+    }
+
+    void openMapsDirections(dest, origin).catch(onFail);
   };
 
   const openNavSelectedOrNext = () => {
@@ -1307,7 +1358,42 @@ export function PlanScreen({
         onOpenMapsTransit={
           comparePlace
             ? () => {
-                openNavToPlace(comparePlace);
+                const { dest, origin, transitOpt } =
+                  resolveNavEndpoints(comparePlace);
+                void openTransitDeepLink(
+                  "google",
+                  dest,
+                  origin,
+                  transitOpt?.deepLinks ??
+                    compareOptions.find((o) => o.mode === "transit")?.deepLinks,
+                ).catch((e) => {
+                  Alert.alert(
+                    "길안내 실패",
+                    e instanceof Error ? e.message : "지도를 열 수 없습니다.",
+                  );
+                });
+              }
+            : undefined
+        }
+        onOpenYahooTransit={
+          comparePlace
+            ? () => {
+                const { dest, origin, transitOpt } =
+                  resolveNavEndpoints(comparePlace);
+                void openTransitDeepLink(
+                  "yahoo",
+                  dest,
+                  origin,
+                  transitOpt?.deepLinks ??
+                    compareOptions.find((o) => o.mode === "transit")?.deepLinks,
+                ).catch((e) => {
+                  Alert.alert(
+                    "길안내 실패",
+                    e instanceof Error
+                      ? e.message
+                      : "Yahoo 환승을 열 수 없습니다.",
+                  );
+                });
               }
             : undefined
         }

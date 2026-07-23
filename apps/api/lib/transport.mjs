@@ -1,3 +1,5 @@
+import { estimateTransitLeg } from "./jp-transit.mjs";
+
 /** 하버사인 거리(km) */
 export function haversineKm(a, b) {
   const R = 6371;
@@ -339,6 +341,7 @@ export function pickDefaultTransportMode(options) {
 /**
  * 도보 / 대중교통 / 택시 비교
  * Maps 키 있으면 Directions 병렬, 없으면 모드별 haversine
+ * transit은 JP 파트너 어댑터로 deepLink / partner:navitime 보강
  */
 export async function compareLegTransport(from, to, apiKey) {
   if (!from || !to) {
@@ -361,17 +364,29 @@ export async function compareLegTransport(from, to, apiKey) {
     ),
   );
 
+  const transitIdx = options.findIndex((o) => o.mode === "transit");
+  if (transitIdx >= 0) {
+    options[transitIdx] = await estimateTransitLeg(from, to, {
+      baseEstimate: options[transitIdx],
+    });
+  }
+
   const anyDirections = options.some((o) =>
     String(o.engine).startsWith("directions:"),
+  );
+  const anyPartner = options.some((o) =>
+    String(o.engine).startsWith("partner:"),
   );
 
   return {
     options,
-    engine: apiKey
-      ? anyDirections
-        ? "directions+haversine"
-        : "haversine"
-      : "haversine",
+    engine: anyPartner
+      ? "partner+haversine"
+      : apiKey
+        ? anyDirections
+          ? "directions+haversine"
+          : "haversine"
+        : "haversine",
   };
 }
 

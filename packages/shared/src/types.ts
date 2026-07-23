@@ -34,8 +34,18 @@ export type TransportOption = {
   minutes: number;
   /** 예상 비용(엔) */
   estimatedCost: number;
-  /** haversine:walking | directions:transit | directions:driving 등 */
+  /**
+   * haversine:transit | directions:transit | partner:navitime | deeplink:yahoo 등
+   */
   engine: string;
+  /** 기본 환승 deep link (보통 Yahoo) */
+  deepLink?: string;
+  deepLinks?: {
+    google?: string;
+    yahoo?: string;
+  };
+  /** JP transit 안내 (한국어) */
+  note?: string;
 };
 
 export type LodgingScoreBreakdown = {

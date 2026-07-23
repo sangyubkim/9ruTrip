@@ -71,7 +71,7 @@
 - [ ] 홈 카드 길게 누르기 또는 ⋯ → **복제** / **삭제**(확인)
 - [ ] 「+맛집/관광 추가」 → Places 응답 시 카드 **Google Places** 뱃지
 - [ ] 숙소 후보: 「역세권 근접 / 가격 경쟁력 / 평점」한국어 라인
-- [ ] 이동 비교 시트: `haversine:transit` 시 JP Directions 미지원 안내 + Maps transit CTA
+- [ ] 이동 비교 시트: `haversine:transit` 시 추정 안내 + **Yahoo 환승** / **Google 환승** CTA
 
 ## 6. API 스모크 (PC)
 
@@ -104,5 +104,5 @@ curl -X POST http://localhost:3011/trip/optimize-day ^
 | Naver Maps SDK | 스캐폴드만 (해외 MVP는 Google) |
 | GPS 이탈 힌트 | 여행 중 재루트 배너로 일부 반영 |
 | 네이티브 SMS 인박스 | 문서화만 (`apps/mobile/docs/SMS.md`) |
-| Yahoo / NAVITIME 등 JP 대중교통 파트너 | 유료 제휴 전까지 앱 길안내(transit)로 보완 |
+| Yahoo / NAVITIME 등 JP 대중교통 파트너 | 어댑터+딥링크 구현 (`docs/JP-TRANSIT-PARTNER.md`). 키/HOST 없으면 추정+외부 앱 |
 | Places API (New) 전면 재작성 | 보류 — 기존 Places 검색 유지 |
