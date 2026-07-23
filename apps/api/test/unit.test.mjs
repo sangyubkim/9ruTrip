@@ -13,6 +13,10 @@ import {
   haversineKm,
   lodgingScoreBreakdown,
 } from "../lib/transport.mjs";
+import {
+  buildFallbackItinerary,
+  buildMultiCityFallbackItinerary,
+} from "../lib/itinerary.mjs";
 
 describe("parseKoreanCardSms", () => {
   it("parses amount and merchant from typical card SMS", () => {
@@ -164,5 +168,57 @@ describe("optimize-day", () => {
 
   it("pathLengthKm is positive for multi-stop", () => {
     assert.ok(pathLengthKm(sample) > 5);
+  });
+});
+
+describe("multi-city itinerary", () => {
+  it("buildMultiCityFallbackItinerary splits days across tokyo+osaka", () => {
+    const res = buildMultiCityFallbackItinerary({
+      nights: 3,
+      days: 4,
+      partySize: 2,
+      cityIds: ["tokyo", "osaka"],
+    });
+    assert.equal(res.engine, "fallback-multicity");
+    assert.ok(Array.isArray(res.cities) && res.cities.length === 2);
+    assert.equal(res.cities[0].cityId, "tokyo");
+    assert.equal(res.cities[1].cityId, "osaka");
+    const tokyoDays = new Set(res.cities[0].dayIndexes);
+    const osakaDays = new Set(res.cities[1].dayIndexes);
+    assert.ok(tokyoDays.size >= 1 && osakaDays.size >= 1);
+    assert.ok(res.places.length > 0);
+    assert.ok(res.places.every((p) => p.cityId === "tokyo" || p.cityId === "osaka"));
+    const hasTokyo = res.places.some((p) => p.cityId === "tokyo");
+    const hasOsaka = res.places.some((p) => p.cityId === "osaka");
+    assert.ok(hasTokyo && hasOsaka);
+  });
+
+  it("single-city request still works via buildFallbackItinerary", () => {
+    const res = buildFallbackItinerary({
+      nights: 2,
+      days: 3,
+      partySize: 2,
+      cityId: "osaka",
+    });
+    assert.equal(res.cityId, "osaka");
+    assert.ok(res.places.every((p) => p.cityId === "osaka"));
+  });
+});
+
+/** crowd hour heuristic mirrored from mobile utils/weather.ts */
+function crowdHintForHour(hour) {
+  if (hour >= 11 && hour <= 13) return "점심 혼잡 가능";
+  if (hour >= 17 && hour <= 19) return "저녁 혼잡 가능";
+  if (hour >= 9 && hour <= 10) return "오전 이동 여유";
+  if (hour >= 14 && hour <= 16) return "오후 관광 피크";
+  return "비교적 여유";
+}
+
+describe("crowd hint heuristic", () => {
+  it("returns lunch crowd at noon", () => {
+    assert.equal(crowdHintForHour(12), "점심 혼잡 가능");
+  });
+  it("returns evening crowd at 18", () => {
+    assert.equal(crowdHintForHour(18), "저녁 혼잡 가능");
   });
 });

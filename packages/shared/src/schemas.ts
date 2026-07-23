@@ -10,6 +10,8 @@ export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
 export const itineraryRequestSchema = z.object({
   cityId: z.enum(["tokyo", "osaka"]),
+  /** 멀티시티: 주 도시 외 추가 도시 (예: ["osaka"]) */
+  cityIds: z.array(z.enum(["tokyo", "osaka"])).min(1).max(2).optional(),
   nights: z.number().int().min(1).max(14),
   days: z.number().int().min(1).max(15),
   partySize: z.number().int().min(1).max(12),
@@ -50,6 +52,19 @@ export const itineraryPlaceSchema = z.object({
   transportEngine: z.string().optional(),
   preferredTransportMode: transportModeSchema.optional(),
   transportOptions: z.array(transportOptionSchema).optional(),
+  cityId: z.enum(["tokyo", "osaka"]).optional(),
+});
+
+export const tripCityLegSchema = z.object({
+  cityId: z.enum(["tokyo", "osaka"]),
+  cityName: z.string(),
+  dayIndexes: z.array(z.number().int().min(0)),
+});
+
+export const checklistItemSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  checked: z.boolean(),
 });
 
 export const lodgingCandidateSchema = z.object({
@@ -72,6 +87,7 @@ export const itineraryResponseSchema = z.object({
   lodgingCandidates: z.array(lodgingCandidateSchema).optional(),
   preferredLodgingId: z.string().nullable().optional(),
   cityId: z.enum(["tokyo", "osaka"]).optional(),
+  cities: z.array(tripCityLegSchema).optional(),
   mapProvider: z.enum(["google", "naver"]).optional(),
   transportEngine: z.string().optional(),
 });

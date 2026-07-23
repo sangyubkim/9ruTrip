@@ -59,6 +59,11 @@ export type LodgingCandidate = {
   scoreBreakdown: LodgingScoreBreakdown;
 };
 
+/** 해외 MVP: tokyo (기본) + osaka (선택). 국내는 추후 naver */
+export type MvpCityId = "tokyo" | "osaka";
+
+export type MapProviderId = "google" | "naver";
+
 export type ItineraryPlace = {
   id: string;
   name: string;
@@ -70,6 +75,8 @@ export type ItineraryPlace = {
   notes?: string;
   dayIndex: number;
   order: number;
+  /** 멀티시티: 장소가 속한 도시 (없으면 Trip.cityId) */
+  cityId?: MvpCityId;
   /** 예정 시각 HH:mm (가이드 알람용) */
   plannedTime?: string;
   /** 직전 장소 → 현재 이동 분 */
@@ -85,6 +92,20 @@ export type ItineraryPlace = {
   preferredTransportMode?: TransportMode;
   /** 도보/대중교통/택시 비교 옵션 */
   transportOptions?: TransportOption[];
+};
+
+/** 멀티시티 여행의 도시별 Day 할당 */
+export type TripCityLeg = {
+  cityId: MvpCityId;
+  cityName: string;
+  dayIndexes: number[];
+};
+
+/** 체크인·준비 체크리스트 항목 */
+export type ChecklistItem = {
+  id: string;
+  label: string;
+  checked: boolean;
 };
 
 export type Expense = {
@@ -108,15 +129,16 @@ export type PlaceReview = Step & {
 
 export type TripStatus = "planning" | "active" | "done";
 
-/** 해외 MVP: tokyo (기본) + osaka (선택). 국내는 추후 naver */
-export type MvpCityId = "tokyo" | "osaka";
-
-export type MapProviderId = "google" | "naver";
-
 export type Trip = {
   id: string;
+  /** 주 도시 (하위 호환 · cities[0]과 동기) */
   cityId: MvpCityId;
   cityName: string;
+  /**
+   * 멀티시티 (선택). 없으면 단일 cityId만 사용.
+   * 예: 도쿄 Day0–1 + 오사카 Day2–3
+   */
+  cities?: TripCityLeg[];
   nights: number;
   days: number;
   partySize: number;
@@ -138,6 +160,8 @@ export type Trip = {
   guideAlarmsEnabled: boolean;
   /** 방문 완료로 표시한 장소 id */
   completedPlaceIds: string[];
+  /** 체크인 체크리스트 (예약번호·여권 등) */
+  checklist?: ChecklistItem[];
   createdAt: string;
   updatedAt: string;
 };

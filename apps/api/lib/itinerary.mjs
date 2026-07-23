@@ -229,6 +229,7 @@ export function buildFallbackItinerary({
   places.sort((a, b) => a.dayIndex - b.dayIndex || a.order - b.order);
   places.forEach((p, i) => {
     p.order = i;
+    p.cityId = city.id;
   });
 
   return {
@@ -239,7 +240,97 @@ export function buildFallbackItinerary({
     summary: `${city.nameKo} ${nights}박 ${days}일 · ${partySize}명 기본 코스 (오프라인 폴백)`,
     engine: "fallback",
     cityId: city.id,
+    cities: [
+      {
+        cityId: city.id,
+        cityName: city.nameKo,
+        dayIndexes: Array.from({ length: days }, (_, i) => i),
+      },
+    ],
     mapProvider: city.mapProvider,
+  };
+}
+
+/**
+ * 멀티시티 폴백: Day를 도시별로 나눠 각 도시 코스를 이어 붙임.
+ * cityIds 예: ["tokyo","osaka"] → 전반 도쿄, 후반 오사카
+ */
+export function buildMultiCityFallbackItinerary({
+  nights,
+  days,
+  partySize,
+  cityIds = ["tokyo", "osaka"],
+}) {
+  const unique = [...new Set(cityIds)].filter(
+    (id) => id === "tokyo" || id === "osaka",
+  );
+  if (unique.length <= 1) {
+    return buildFallbackItinerary({
+      nights,
+      days,
+      partySize,
+      cityId: unique[0] || "tokyo",
+    });
+  }
+
+  const split = Math.max(1, Math.ceil(days / unique.length));
+  const legs = [];
+  let cursor = 0;
+  for (let i = 0; i < unique.length; i++) {
+    const id = unique[i];
+    const isLast = i === unique.length - 1;
+    const count = isLast ? days - cursor : Math.min(split, days - cursor);
+    const dayIndexes = Array.from({ length: Math.max(0, count) }, (_, j) => cursor + j);
+    cursor += count;
+    const city = resolveCity(id);
+    legs.push({ cityId: city.id, cityName: city.nameKo, dayIndexes });
+  }
+
+  const allPlaces = [];
+  let lodgingCandidates = [];
+  let preferredLodgingId = null;
+
+  for (const leg of legs) {
+    const legDays = Math.max(1, leg.dayIndexes.length);
+    const legNights = Math.max(1, legDays - (leg === legs[legs.length - 1] ? 0 : 0));
+    const part = buildFallbackItinerary({
+      nights: Math.max(1, Math.min(nights, legNights || 1)),
+      days: legDays,
+      partySize,
+      cityId: leg.cityId,
+    });
+    if (!lodgingCandidates.length) {
+      lodgingCandidates = part.lodgingCandidates || [];
+      preferredLodgingId = part.preferredLodgingId;
+    }
+    const dayMap = leg.dayIndexes;
+    for (const p of part.places) {
+      const mappedDay = dayMap[Math.min(p.dayIndex, dayMap.length - 1)] ?? dayMap[0];
+      allPlaces.push({
+        ...p,
+        id: uid("place"),
+        dayIndex: mappedDay,
+        cityId: leg.cityId,
+      });
+    }
+  }
+
+  allPlaces.sort((a, b) => a.dayIndex - b.dayIndex || a.order - b.order);
+  allPlaces.forEach((p, i) => {
+    p.order = i;
+  });
+
+  const names = legs.map((l) => l.cityName).join(" · ");
+  return {
+    places: allPlaces,
+    lodgingCandidates,
+    preferredLodgingId,
+    plannedBudget: 0,
+    summary: `${names} ${nights}박 ${days}일 · ${partySize}명 멀티시티 폴백`,
+    engine: "fallback-multicity",
+    cityId: legs[0].cityId,
+    cities: legs,
+    mapProvider: "google",
   };
 }
 
@@ -281,6 +372,8 @@ function normalizePlaces(rawPlaces, { days, partySize, center }) {
       lodgingScore:
         Number(p.lodgingScore) > 0 ? Number(p.lodgingScore) : undefined,
       scoreBreakdown: p.scoreBreakdown ?? undefined,
+      cityId:
+        p.cityId === "osaka" || p.cityId === "tokyo" ? p.cityId : undefined,
     };
   });
 }
@@ -289,9 +382,19 @@ export async function generateItinerary(body, env) {
   const nights = Math.min(14, Math.max(1, Number(body?.nights) || 2));
   const days = Math.min(15, Math.max(1, Number(body?.days) || nights + 1));
   const partySize = Math.min(12, Math.max(1, Number(body?.partySize) || 2));
-  const cityId = body?.cityId === "osaka" ? "osaka" : "tokyo";
+  const rawCityIds = Array.isArray(body?.cityIds) ? body.cityIds : [];
+  const cityIds = [
+    ...new Set(
+      [body?.cityId, ...rawCityIds].filter(
+        (id) => id === "tokyo" || id === "osaka",
+      ),
+    ),
+  ];
+  if (cityIds.length === 0) cityIds.push("tokyo");
+  const cityId = cityIds[0] === "osaka" ? "osaka" : "tokyo";
   const city = resolveCity(cityId);
   const mapsApiKey = env.googleMapsApiKey || "";
+  const isMulti = cityIds.length > 1;
 
   const finish = async (base) => {
     const enriched = await enrichPlacesWithTransport(base.places, {
@@ -316,33 +419,49 @@ export async function generateItinerary(body, env) {
       plannedBudget,
       summary: base.summary,
       engine: base.engine,
-      cityId: city.id,
+      cityId: base.cityId || city.id,
+      cities: base.cities,
       mapProvider: city.mapProvider,
       transportEngine: mapsApiKey ? "directions+haversine" : "haversine",
     };
   };
 
   if (!env.geminiApiKey) {
-    return finish(buildFallbackItinerary({ nights, days, partySize, cityId }));
+    return finish(
+      isMulti
+        ? buildMultiCityFallbackItinerary({
+            nights,
+            days,
+            partySize,
+            cityIds,
+          })
+        : buildFallbackItinerary({ nights, days, partySize, cityId }),
+    );
   }
 
-  const prompt = `당신은 일본 ${city.nameKo} 여행 플래너입니다. 아래 조건으로 현실적인 일정 JSON을 만드세요.
+  const multiHint = isMulti
+    ? `\n- 멀티시티: ${cityIds.join(" → ")}. Day를 도시별로 나눠 배치하고 각 place에 cityId를 넣으세요.`
+    : "";
+
+  const prompt = `당신은 일본 ${isMulti ? cityIds.map((id) => resolveCity(id).nameKo).join("·") : city.nameKo} 여행 플래너입니다. 아래 조건으로 현실적인 일정 JSON을 만드세요.
 
 조건:
 - cityId: ${cityId}
+- cityIds: ${JSON.stringify(cityIds)}
 - nights: ${nights}
 - days: ${days}
 - partySize: ${partySize}
 - 통화: JPY
 - 하루 3~5개 장소, 이동 동선이 합리적이게
 - 음식/관광/숙소 균형
-- lat/lng는 실제 ${city.nameKo} 좌표
+- lat/lng는 해당 도시 실제 좌표${multiHint}
 
 반드시 이 JSON 스키마만 반환:
 {
   "summary": "한 줄 요약 (한국어)",
   "plannedBudget": number,
   "preferredLodgingId": "string",
+  "cities": [{"cityId":"tokyo|osaka","cityName":"문자열","dayIndexes":[0]}],
   "lodgingCandidates": [
     {
       "id": "string",
@@ -367,6 +486,7 @@ export async function generateItinerary(body, env) {
       "notes": "짧은 팁",
       "dayIndex": 0,
       "order": 0,
+      "cityId": "tokyo|osaka",
       "plannedTime": "HH:mm",
       "travelFromPrevMinutes": number,
       "travelFromPrevCost": number,
@@ -397,13 +517,21 @@ travelFromPrev*는 직전 장소→현재 이동 분/엔(첫 장소는 0).`;
     });
     if (places.length === 0) {
       return finish(
-        buildFallbackItinerary({ nights, days, partySize, cityId }),
+        isMulti
+          ? buildMultiCityFallbackItinerary({
+              nights,
+              days,
+              partySize,
+              cityIds,
+            })
+          : buildFallbackItinerary({ nights, days, partySize, cityId }),
       );
     }
 
     places.sort((a, b) => a.dayIndex - b.dayIndex || a.order - b.order);
     places.forEach((p, i) => {
       p.order = i;
+      if (!p.cityId) p.cityId = cityId;
     });
 
     let lodgingCandidates = Array.isArray(parsed.lodgingCandidates)
@@ -437,21 +565,63 @@ travelFromPrev*는 직전 장소→현재 이동 분/엔(첫 장소는 0).`;
       });
     }
 
+    const citiesFromParsed = Array.isArray(parsed.cities)
+      ? parsed.cities
+          .filter((c) => c && (c.cityId === "tokyo" || c.cityId === "osaka"))
+          .map((c) => ({
+            cityId: c.cityId,
+            cityName: String(c.cityName || resolveCity(c.cityId).nameKo),
+            dayIndexes: Array.isArray(c.dayIndexes)
+              ? c.dayIndexes.map(Number).filter((n) => n >= 0)
+              : [],
+          }))
+      : undefined;
+
     return finish({
       places,
       lodgingCandidates,
       preferredLodgingId:
         parsed.preferredLodgingId || lodgingCandidates[0]?.id || null,
       plannedBudget: parsed.plannedBudget,
-      summary: String(parsed.summary || `${city.nameKo} ${nights}박 ${days}일 AI 일정`),
+      summary: String(
+        parsed.summary ||
+          `${city.nameKo} ${nights}박 ${days}일 AI 일정`,
+      ),
       engine,
+      cityId,
+      cities:
+        citiesFromParsed?.length
+          ? citiesFromParsed
+          : isMulti
+            ? buildMultiCityFallbackItinerary({
+                nights,
+                days,
+                partySize,
+                cityIds,
+              }).cities
+            : [
+                {
+                  cityId,
+                  cityName: city.nameKo,
+                  dayIndexes: Array.from({ length: days }, (_, i) => i),
+                },
+              ],
     });
   } catch (err) {
     console.error(
       "[itinerary] Gemini failed, using fallback:",
       err?.message || err,
     );
-    return finish(buildFallbackItinerary({ nights, days, partySize, cityId }));
+    return finish(
+      isMulti
+        ? buildMultiCityFallbackItinerary({
+            nights,
+            days,
+            partySize,
+            cityIds,
+          })
+        : buildFallbackItinerary({ nights, days, partySize, cityId }),
+    );
   }
 }
 

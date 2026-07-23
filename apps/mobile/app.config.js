@@ -13,7 +13,7 @@ const expoConfig = {
   slug: "9rutrip",
   version: "1.0.0",
   orientation: "portrait",
-  userInterfaceStyle: "light",
+  userInterfaceStyle: "automatic",
   splash: {
     resizeMode: "contain",
     backgroundColor: "#0c4a6e",

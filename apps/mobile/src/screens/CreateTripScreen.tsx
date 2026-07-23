@@ -7,11 +7,13 @@ import {
   View,
 } from "react-native";
 import { CITIES, type MvpCityId } from "../types";
+import { useTheme } from "../theme/ThemeContext";
 
 type Props = {
   onBack: () => void;
   onSubmit: (input: {
     cityId: MvpCityId;
+    cityIds: MvpCityId[];
     nights: number;
     days: number;
     partySize: number;
@@ -20,85 +22,158 @@ type Props = {
 };
 
 export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
-  const [cityId, setCityId] = useState<MvpCityId>("tokyo");
+  const { colors } = useTheme();
+  const [selected, setSelected] = useState<MvpCityId[]>(["tokyo"]);
   const [nights, setNights] = useState("2");
   const [days, setDays] = useState("3");
   const [party, setParty] = useState("2");
 
-  const city = CITIES[cityId];
+  const toggleCity = (id: MvpCityId) => {
+    setSelected((prev) => {
+      if (prev.includes(id)) {
+        if (prev.length === 1) return prev;
+        return prev.filter((c) => c !== id);
+      }
+      return [...prev, id];
+    });
+  };
 
   const submit = () => {
     const n = Math.min(14, Math.max(1, parseInt(nights, 10) || 2));
     const d = Math.min(15, Math.max(1, parseInt(days, 10) || n + 1));
     const p = Math.min(12, Math.max(1, parseInt(party, 10) || 2));
-    onSubmit({ cityId, nights: n, days: d, partySize: p });
+    const cityIds = selected.length ? selected : (["tokyo"] as MvpCityId[]);
+    onSubmit({
+      cityId: cityIds[0],
+      cityIds,
+      nights: n,
+      days: d,
+      partySize: p,
+    });
   };
+
+  const label =
+    selected.length > 1
+      ? selected.map((id) => CITIES[id].nameKo).join(" · ")
+      : CITIES[selected[0] ?? "tokyo"].nameKo;
 
   return (
     <View style={styles.root}>
-      <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
-        <Text style={styles.back}>← 뒤로</Text>
+      <Pressable
+        onPress={onBack}
+        style={styles.backHit}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="뒤로"
+      >
+        <Text style={[styles.back, { color: colors.accent }]}>← 뒤로</Text>
       </Pressable>
-      <Text style={styles.title}>여행 만들기</Text>
-      <Text style={styles.hint}>
-        해외 도시 · Google Maps. 국내(네이버)는 스캐폴드만 준비됨.
+      <Text style={[styles.title, { color: colors.text }]}>여행 만들기</Text>
+      <Text style={[styles.hint, { color: colors.textMuted }]}>
+        도쿄·오사카 복수 선택 가능(멀티시티). 국내(네이버)는 스캐폴드만.
       </Text>
 
-      <Text style={styles.label}>도시</Text>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>
+        도시 (복수 선택)
+      </Text>
       <View style={styles.cityRow}>
-        {(Object.keys(CITIES) as MvpCityId[]).map((id) => (
-          <Pressable
-            key={id}
-            style={[styles.cityChip, cityId === id && styles.cityChipOn]}
-            onPress={() => setCityId(id)}
-          >
-            <Text
+        {(Object.keys(CITIES) as MvpCityId[]).map((id) => {
+          const on = selected.includes(id);
+          return (
+            <Pressable
+              key={id}
               style={[
-                styles.cityChipText,
-                cityId === id && styles.cityChipTextOn,
+                styles.cityChip,
+                { backgroundColor: on ? colors.chipOnBg : colors.chipBg },
               ]}
+              onPress={() => toggleCity(id)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={`${CITIES[id].nameKo} 선택`}
             >
-              {CITIES[id].nameKo}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={[
+                  styles.cityChipText,
+                  { color: on ? colors.chipOnFg : colors.chipFg },
+                ]}
+              >
+                {CITIES[id].nameKo}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
-      <View style={styles.locked}>
-        <Text style={styles.lockedText}>
-          {city.nameKo} / {city.nameEn} · {city.mapProvider === "google" ? "Google Maps" : "Naver"}
+      <View style={[styles.locked, { backgroundColor: colors.accentMuted }]}>
+        <Text style={[styles.lockedText, { color: colors.accent }]}>
+          {label}
+          {selected.length > 1 ? " · Day 균등 분할" : ""} · Google Maps
         </Text>
       </View>
 
-      <Text style={styles.label}>박수 (nights)</Text>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>
+        박수 (nights)
+      </Text>
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input,
+          {
+            borderColor: colors.border,
+            backgroundColor: colors.bgElevated,
+            color: colors.textSecondary,
+          },
+        ]}
         keyboardType="number-pad"
         value={nights}
         onChangeText={setNights}
+        accessibilityLabel="박수"
       />
 
-      <Text style={styles.label}>일수 (days)</Text>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>
+        일수 (days)
+      </Text>
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input,
+          {
+            borderColor: colors.border,
+            backgroundColor: colors.bgElevated,
+            color: colors.textSecondary,
+          },
+        ]}
         keyboardType="number-pad"
         value={days}
         onChangeText={setDays}
+        accessibilityLabel="일수"
       />
 
-      <Text style={styles.label}>인원</Text>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>인원</Text>
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input,
+          {
+            borderColor: colors.border,
+            backgroundColor: colors.bgElevated,
+            color: colors.textSecondary,
+          },
+        ]}
         keyboardType="number-pad"
         value={party}
         onChangeText={setParty}
+        accessibilityLabel="인원"
       />
 
       <Pressable
-        style={[styles.primary, generating && { opacity: 0.6 }]}
+        style={[
+          styles.primary,
+          { backgroundColor: colors.primary },
+          generating && { opacity: 0.6 },
+        ]}
         onPress={submit}
         disabled={generating}
+        accessibilityRole="button"
+        accessibilityLabel="AI 일정 생성"
       >
-        <Text style={styles.primaryText}>
+        <Text style={[styles.primaryText, { color: colors.primaryFg }]}>
           {generating ? "AI 일정 생성 중…" : "AI 일정 생성"}
         </Text>
       </Pressable>
@@ -114,20 +189,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 2,
   },
-  back: { color: "#0369a1", fontSize: 15, fontWeight: "700" },
-  title: { fontSize: 22, fontWeight: "800", color: "#0c4a6e" },
-  hint: { marginTop: 6, color: "#64748b", marginBottom: 16 },
-  label: { marginTop: 12, fontWeight: "600", color: "#334155" },
+  back: { fontSize: 15, fontWeight: "700" },
+  title: { fontSize: 22, fontWeight: "800" },
+  hint: { marginTop: 6, marginBottom: 16 },
+  label: { marginTop: 12, fontWeight: "600" },
   input: {
     marginTop: 6,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 12,
     minHeight: 44,
     fontSize: 16,
-    backgroundColor: "#fff",
   },
   cityRow: { flexDirection: "row", gap: 8, marginTop: 6 },
   cityChip: {
@@ -135,27 +208,22 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     minHeight: 44,
     borderRadius: 10,
-    backgroundColor: "#e2e8f0",
     justifyContent: "center",
   },
-  cityChipOn: { backgroundColor: "#0369a1" },
-  cityChipText: { color: "#334155", fontWeight: "700" },
-  cityChipTextOn: { color: "#fff" },
+  cityChipText: { fontWeight: "700" },
   locked: {
     marginTop: 8,
-    backgroundColor: "#e0f2fe",
     borderRadius: 12,
     padding: 12,
   },
-  lockedText: { color: "#075985", fontWeight: "600" },
+  lockedText: { fontWeight: "600" },
   primary: {
     marginTop: 24,
-    backgroundColor: "#0c4a6e",
     paddingVertical: 14,
     minHeight: 48,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  primaryText: { fontWeight: "700", fontSize: 16 },
 });

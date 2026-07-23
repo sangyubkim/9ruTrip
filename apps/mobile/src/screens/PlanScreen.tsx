@@ -3,15 +3,19 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  LayoutAnimation,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
+  UIManager,
   View,
 } from "react-native";
 import DraggableFlatList, {
   RenderItemParams,
   ScaleDecorator,
 } from "react-native-draggable-flatlist";
+import { Swipeable } from "react-native-gesture-handler";
 import {
   compareTransport,
   enrichTransport,
@@ -19,22 +23,31 @@ import {
   rerouteTrip,
   suggestPlaces,
 } from "../api/trip";
+import { ChecklistSection } from "../components/ChecklistSection";
 import { DeviationBanner } from "../components/DeviationBanner";
 import { NextActionBanner } from "../components/NextActionBanner";
 import { PlaceSuggestModal } from "../components/PlaceSuggestModal";
 import { PlannedTimeModal } from "../components/PlannedTimeModal";
 import { PlanDayMap } from "../components/PlanDayMap";
 import { TransportCompareSheet } from "../components/TransportCompareSheet";
+import { WeatherCrowdChip } from "../components/WeatherCrowdChip";
 import { useGpsDeviation } from "../hooks/useGpsDeviation";
 import { useGuideAlarms } from "../hooks/useGuideAlarms";
-import type {
-  ItineraryPlace,
-  LodgingCandidate,
-  PlaceCategory,
-  TransportMode,
-  TransportOption,
-  Trip,
+import {
+  buildCityLegs,
+  CITIES,
+  cityIdForDay,
+  createDefaultChecklist,
+  tripCitiesLabel,
+  type ItineraryPlace,
+  type LodgingCandidate,
+  type MvpCityId,
+  type PlaceCategory,
+  type TransportMode,
+  type TransportOption,
+  type Trip,
 } from "../types";
+import { useTheme } from "../theme/ThemeContext";
 import { CATEGORY_LABEL, formatYen, STATUS_LABEL } from "../utils/cost";
 import { formatLodgingScoreLines } from "../utils/lodgingExplain";
 import { openMapsDirections } from "../utils/mapsNavigation";
@@ -63,7 +76,12 @@ const FILTERS: { id: CatFilter; label: string }[] = [
 
 const MAP_PANE_HEIGHT = Math.round(Dimensions.get("window").height * 0.37);
 const UNDO_MS = 5000;
+const UNDO_MAX = 5;
 const HANDLE_HIT_SLOP = { top: 14, bottom: 14, left: 14, right: 14 };
+
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 const TOUCH_MIN = 44;
 
 function renumberGlobal(places: ItineraryPlace[]): ItineraryPlace[] {
@@ -106,6 +124,7 @@ export function PlanScreen({
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareEngine, setCompareEngine] = useState<string>("");
   const [undoVisible, setUndoVisible] = useState(false);
+  const [undoDepth, setUndoDepth] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [suggestVisible, setSuggestVisible] = useState(false);
   const [suggestCategory, setSuggestCategory] =
@@ -117,9 +136,11 @@ export function PlanScreen({
   );
   const [inlineMsg, setInlineMsg] = useState<string | null>(null);
 
-  const undoSnapshotRef = useRef<ItineraryPlace[] | null>(null);
+  const undoStackRef = useRef<ItineraryPlace[][]>([]);
   const inlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { colors } = useTheme();
 
   useGuideAlarms(trip, trip.guideAlarmsEnabled && trip.status === "active");
 
@@ -135,6 +156,18 @@ export function PlanScreen({
 
   const isFieldMode =
     trip.status === "active" && viewMode === "field" && !bannerHidden;
+
+  const dayCityId = useMemo(() => cityIdForDay(trip, day), [trip, day]);
+  const isMultiCity = (trip.cities?.length ?? 0) > 1;
+  const checklist = trip.checklist?.length
+    ? trip.checklist
+    : createDefaultChecklist();
+  const existingCityIds =
+    trip.cities?.map((c) => c.cityId) ?? ([trip.cityId] as MvpCityId[]);
+  const hasTokyo = existingCityIds.includes("tokyo");
+  const hasOsaka = existingCityIds.includes("osaka");
+  const secondaryCityToAdd: MvpCityId | null =
+    hasTokyo && hasOsaka ? null : hasTokyo ? "osaka" : "tokyo";
 
   useEffect(() => {
     if (trip.status === "active") {
@@ -188,15 +221,24 @@ export function PlanScreen({
     }, 3200);
   };
 
-  const pushUndoSnapshot = () => {
-    undoSnapshotRef.current = trip.places.map((p) => ({ ...p }));
-    setUndoVisible(true);
+  const resetUndoTimer = () => {
     clearUndoTimer();
     undoTimerRef.current = setTimeout(() => {
       setUndoVisible(false);
-      undoSnapshotRef.current = null;
+      undoStackRef.current = [];
+      setUndoDepth(0);
       undoTimerRef.current = null;
     }, UNDO_MS);
+  };
+
+  const pushUndoSnapshot = () => {
+    undoStackRef.current = [
+      trip.places.map((p) => ({ ...p })),
+      ...undoStackRef.current,
+    ].slice(0, UNDO_MAX);
+    setUndoDepth(undoStackRef.current.length);
+    setUndoVisible(true);
+    resetUndoTimer();
   };
 
   /** 로컬 순서를 즉시 반영한 뒤 enrich (낙관적 업데이트). */
@@ -229,11 +271,18 @@ export function PlanScreen({
   };
 
   const undoLastChange = () => {
-    const snap = undoSnapshotRef.current;
-    if (!snap) return;
-    undoSnapshotRef.current = null;
-    setUndoVisible(false);
-    clearUndoTimer();
+    const stack = undoStackRef.current;
+    if (!stack.length) return;
+    const snap = stack[0];
+    undoStackRef.current = stack.slice(1);
+    const nextDepth = undoStackRef.current.length;
+    setUndoDepth(nextDepth);
+    if (nextDepth === 0) {
+      setUndoVisible(false);
+      clearUndoTimer();
+    } else {
+      resetUndoTimer();
+    }
     void applyPlaces(snap);
   };
 
@@ -321,6 +370,59 @@ export function PlanScreen({
     ]);
   };
 
+  const deletePlaceSwipe = (place: ItineraryPlace) => {
+    pushUndoSnapshot();
+    const next = trip.places.filter((p) => p.id !== place.id);
+    if (selectedPlaceId === place.id) setSelectedPlaceId(null);
+    void applyPlaces(renumberGlobal(next));
+  };
+
+  const movePlaceInDay = (placeId: string, direction: "up" | "down") => {
+    const dayFull = trip.places
+      .filter((p) => p.dayIndex === day)
+      .sort((a, b) => a.order - b.order);
+    const idx = dayFull.findIndex((p) => p.id === placeId);
+    if (idx < 0) return;
+    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= dayFull.length) return;
+    const next = [...dayFull];
+    [next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
+    pushUndoSnapshot();
+    const others = trip.places.filter((p) => p.dayIndex !== day);
+    const reorderedDay = next.map((p, i) => ({ ...p, order: i, dayIndex: day }));
+    void applyPlaces(renumberGlobal([...others, ...reorderedDay]));
+  };
+
+  const toggleChecklist = (id: string) => {
+    const base = trip.checklist?.length ? trip.checklist : createDefaultChecklist();
+    onChangeTrip({
+      ...trip,
+      checklist: base.map((item) =>
+        item.id === id ? { ...item, checked: !item.checked } : item,
+      ),
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const addSecondaryCity = (cityId: MvpCityId) => {
+    const existing = trip.cities?.map((c) => c.cityId) ?? [trip.cityId];
+    if (existing.includes(cityId)) return;
+    const cityIds = [...existing, cityId] as MvpCityId[];
+    const legs = buildCityLegs(cityIds, trip.days);
+    const places = trip.places.map((p) => {
+      const leg = legs.find((l) => l.dayIndexes.includes(p.dayIndex));
+      return { ...p, cityId: leg?.cityId ?? p.cityId };
+    });
+    onChangeTrip({
+      ...trip,
+      cities: legs,
+      cityName: legs.map((l) => l.cityName).join(" · "),
+      places,
+      updatedAt: new Date().toISOString(),
+    });
+    flashInline(`도시 추가 · ${CITIES[cityId].nameKo}`);
+  };
+
   const setStatus = (status: Trip["status"]) => {
     onChangeTrip({ ...trip, status, updatedAt: new Date().toISOString() });
   };
@@ -376,7 +478,7 @@ export function PlanScreen({
     setSuggesting(true);
     try {
       const res = await suggestPlaces({
-        cityId: trip.cityId,
+        cityId: dayCityId,
         category,
         partySize: trip.partySize,
       });
@@ -486,7 +588,7 @@ export function PlanScreen({
       const res = await optimizeDay({
         places: trip.places,
         dayIndex: day,
-        cityId: trip.cityId,
+        cityId: dayCityId,
       });
       const before = res.before?.join(" → ") || "(없음)";
       const after = res.after?.join(" → ") || "(없음)";
@@ -619,7 +721,19 @@ export function PlanScreen({
     const selected = selectedPlaceId === item.id;
     return (
       <ScaleDecorator>
-        <View style={styles.placeCard}>
+        <Swipeable
+          overshootRight={false}
+          renderRightActions={() => (
+            <Pressable
+              style={styles.swipeDelete}
+              onPress={() => deletePlaceSwipe(item)}
+              accessibilityLabel="스와이프 삭제"
+            >
+              <Text style={styles.swipeDeleteText}>삭제</Text>
+            </Pressable>
+          )}
+        >
+          <View style={styles.placeCard}>
           {travel ? (
             <Pressable
               onPress={() => void openTransportCompare(item)}
@@ -716,6 +830,7 @@ export function PlanScreen({
             </View>
           </Pressable>
         </View>
+        </Swipeable>
       </ScaleDecorator>
     );
   };
@@ -723,15 +838,16 @@ export function PlanScreen({
   const listHeader = (
     <View>
       <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
-        <Text style={styles.back}>← 목록</Text>
+        <Text style={[styles.back, { color: colors.accent }]}>← 목록</Text>
       </Pressable>
-      <Text style={styles.title}>
-        {trip.cityName} {trip.nights}박 {trip.days}일
+      <Text style={[styles.title, { color: colors.text }]}>
+        {tripCitiesLabel(trip)} {trip.nights}박 {trip.days}일
       </Text>
       <Text style={styles.sub}>
         {trip.partySize}명 · 계획 {formatYen(trip.plannedBudget)} ·{" "}
         {STATUS_LABEL[trip.status] ?? trip.status}
       </Text>
+      <WeatherCrowdChip cityId={dayCityId} />
       {enriching ? (
         <View style={styles.enrichBar}>
           <ActivityIndicator size="small" color="#0369a1" />
@@ -757,11 +873,17 @@ export function PlanScreen({
       {trip.status === "active" ? (
         <View style={styles.tabs}>
           <Pressable
-            style={[styles.tab, viewMode === "field" && styles.tabOn]}
+            style={[
+              styles.tab,
+              viewMode === "field" && [styles.tabOn, { backgroundColor: colors.chipOnBg }],
+            ]}
             onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setViewMode("field");
               setBannerHidden(false);
             }}
+            accessibilityRole="button"
+            accessibilityLabel="현장"
           >
             <Text
               style={[styles.tabText, viewMode === "field" && styles.tabTextOn]}
@@ -770,8 +892,16 @@ export function PlanScreen({
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.tab, viewMode === "list" && styles.tabOn]}
-            onPress={() => setViewMode("list")}
+            style={[
+              styles.tab,
+              viewMode === "list" && [styles.tabOn, { backgroundColor: colors.chipOnBg }],
+            ]}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setViewMode("list");
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="일정"
           >
             <Text
               style={[styles.tabText, viewMode === "list" && styles.tabTextOn]}
@@ -840,6 +970,17 @@ export function PlanScreen({
               </Text>
             </Pressable>
           </View>
+          <ChecklistSection items={checklist} onToggle={toggleChecklist} />
+          {secondaryCityToAdd ? (
+            <Pressable
+              style={styles.addCityBtn}
+              onPress={() => addSecondaryCity(secondaryCityToAdd)}
+            >
+              <Text style={styles.addCityBtnText}>
+                도시 추가 · {CITIES[secondaryCityToAdd].nameKo}
+              </Text>
+            </Pressable>
+          ) : null}
           {lodgingCandidates.length > 0 ? (
             <View style={styles.lodgingBox}>
               <Text style={styles.lodgingTitle}>숙소 후보 (점수 분해)</Text>
@@ -876,25 +1017,41 @@ export function PlanScreen({
         {days.map((d) => (
           <Pressable
             key={d}
-            style={[styles.tab, day === d && styles.tabOn]}
+            style={[
+              styles.tab,
+              day === d && [styles.tabOn, { backgroundColor: colors.chipOnBg }],
+            ]}
             onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setDay(d);
               setSelectedPlaceId(null);
             }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isMultiCity
+                ? `Day ${d + 1} ${CITIES[cityIdForDay(trip, d)].nameKo}`
+                : `Day ${d + 1}`
+            }
           >
             <Text style={[styles.tabText, day === d && styles.tabTextOn]}>
               Day {d + 1}
             </Text>
+            {isMultiCity ? (
+              <Text style={styles.tabCityHint}>
+                {CITIES[cityIdForDay(trip, d)].nameKo}
+              </Text>
+            ) : null}
           </Pressable>
         ))}
       </View>
 
       <View style={styles.mapPane}>
         <PlanDayMap
-          cityId={trip.cityId}
+          cityId={dayCityId}
           places={mapPlaces}
           selectedPlaceId={selectedPlaceId}
           onSelectPlace={setSelectedPlaceId}
+          onMoveInDay={movePlaceInDay}
         />
       </View>
 
@@ -947,19 +1104,25 @@ export function PlanScreen({
   );
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
       {isFieldMode ? (
         <View style={styles.fieldRoot}>
           <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
-            <Text style={styles.back}>← 목록</Text>
+            <Text style={[styles.back, { color: colors.accent }]}>← 목록</Text>
           </Pressable>
-          <Text style={styles.title}>
-            {trip.cityName} · 현장 모드
+          <Text style={[styles.title, { color: colors.text }]}>
+            {tripCitiesLabel(trip)} · 현장 모드
           </Text>
           <Text style={styles.sub}>
             Day {day + 1} · 한 손 조작 ·{" "}
             {STATUS_LABEL[trip.status] ?? trip.status}
           </Text>
+          <WeatherCrowdChip cityId={dayCityId} />
+          <ChecklistSection
+            items={checklist}
+            onToggle={toggleChecklist}
+            compact
+          />
           {inlineMsg ? (
             <View style={styles.inlineToast}>
               <Text style={styles.inlineToastText}>{inlineMsg}</Text>
@@ -996,21 +1159,41 @@ export function PlanScreen({
             {days.map((d) => (
               <Pressable
                 key={d}
-                style={[styles.tab, day === d && styles.tabOn]}
-                onPress={() => setDay(d)}
+                style={[
+                  styles.tab,
+                  day === d && [styles.tabOn, { backgroundColor: colors.chipOnBg }],
+                ]}
+                onPress={() => {
+                  LayoutAnimation.configureNext(
+                    LayoutAnimation.Presets.easeInEaseOut,
+                  );
+                  setDay(d);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  isMultiCity
+                    ? `Day ${d + 1} ${CITIES[cityIdForDay(trip, d)].nameKo}`
+                    : `Day ${d + 1}`
+                }
               >
                 <Text style={[styles.tabText, day === d && styles.tabTextOn]}>
                   Day {d + 1}
                 </Text>
+                {isMultiCity ? (
+                  <Text style={styles.tabCityHint}>
+                    {CITIES[cityIdForDay(trip, d)].nameKo}
+                  </Text>
+                ) : null}
               </Pressable>
             ))}
           </View>
           <View style={styles.fieldMap}>
             <PlanDayMap
-              cityId={trip.cityId}
+              cityId={dayCityId}
               places={mapPlaces}
               selectedPlaceId={nextAction?.place.id ?? selectedPlaceId}
               onSelectPlace={setSelectedPlaceId}
+              onMoveInDay={movePlaceInDay}
             />
           </View>
           <Pressable
@@ -1043,16 +1226,31 @@ export function PlanScreen({
       )}
 
       {undoVisible ? (
-        <View style={styles.undoBar}>
-          <Text style={styles.undoLabel}>일정이 변경되었습니다</Text>
-          <Pressable onPress={undoLastChange} style={styles.undoBtn}>
-            <Text style={styles.undoBtnText}>실행 취소</Text>
+        <View style={[styles.undoBar, { backgroundColor: colors.undoBg }]}>
+          <Text style={[styles.undoLabel, { color: colors.undoFg }]}>
+            {undoDepth > 1
+              ? `변경됨 · 되돌리기 ${undoDepth}단계`
+              : "일정이 변경되었습니다"}
+          </Text>
+          <Pressable
+            onPress={undoLastChange}
+            accessibilityRole="button"
+            accessibilityLabel="실행 취소"
+          >
+            <Text style={{ color: colors.undoFg, fontWeight: "800", fontSize: 13 }}>
+              실행 취소{undoDepth > 1 ? ` (${undoDepth})` : ""}
+            </Text>
           </Pressable>
         </View>
       ) : null}
 
       <View style={styles.actions}>
-        <Pressable style={styles.btnPrimary} onPress={openNavSelectedOrNext}>
+        <Pressable
+          style={styles.btnPrimary}
+          onPress={openNavSelectedOrNext}
+          accessibilityRole="button"
+          accessibilityLabel="길안내"
+        >
           <Text style={styles.btnPrimaryText}>길안내</Text>
         </Pressable>
         <Pressable style={styles.btn} onPress={onExpenses}>
@@ -1071,7 +1269,12 @@ export function PlanScreen({
         </Pressable>
       </View>
       <View style={styles.actions}>
-        <Pressable style={styles.btnAlt} onPress={() => setStatus("active")}>
+        <Pressable
+          style={styles.btnAlt}
+          onPress={() => setStatus("active")}
+          accessibilityRole="button"
+          accessibilityLabel="여행 시작"
+        >
           <Text style={styles.btnAltText}>여행 시작</Text>
         </Pressable>
         <Pressable
@@ -1232,6 +1435,26 @@ const styles = StyleSheet.create({
   tabOn: { backgroundColor: "#0369a1" },
   tabText: { color: "#334155", fontWeight: "700" },
   tabTextOn: { color: "#fff" },
+  tabCityHint: { color: "#64748b", fontSize: 10, fontWeight: "600", marginTop: 2 },
+  addCityBtn: {
+    marginBottom: 8,
+    paddingVertical: 12,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
+    backgroundColor: "#ecfeff",
+    borderWidth: 1,
+    borderColor: "#67e8f9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addCityBtnText: { color: "#0e7490", fontWeight: "800", fontSize: 13 },
+  swipeDelete: {
+    backgroundColor: "#dc2626",
+    justifyContent: "center",
+    padding: 16,
+    minWidth: 80,
+  },
+  swipeDeleteText: { color: "#fff", fontWeight: "800", fontSize: 14 },
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 10,

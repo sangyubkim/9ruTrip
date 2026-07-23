@@ -10,6 +10,8 @@ import type {
 
 export type ItineraryRequest = {
   cityId: MvpCityId;
+  /** 멀티시티: 예 ["tokyo","osaka"] */
+  cityIds?: MvpCityId[];
   nights: number;
   days: number;
   partySize: number;
@@ -23,6 +25,7 @@ export type ItineraryResponse = {
   lodgingCandidates?: LodgingCandidate[];
   preferredLodgingId?: string | null;
   cityId?: MvpCityId;
+  cities?: { cityId: MvpCityId; cityName: string; dayIndexes: number[] }[];
   mapProvider?: "google" | "naver";
   transportEngine?: string;
 };

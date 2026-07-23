@@ -193,6 +193,15 @@ npm run typecheck
 - **재루트 미리보기**: AI 재루트 응답 후 장소 변경 요약 Alert → 적용/취소
 - **Directions 단위 테스트**: mock fetch로 transit 파라미터·ZERO_RESULTS 캐시·재시도 검증
 
+### UX backlog 7–12 (구현됨)
+
+1. **마커 순서 변경 (#7)**: Plan Day 지도 마커 탭 → 「순서 변경」 오버레이(▲▼). 리스트·enrich·Undo 스택과 동기. (Android maps 드래그는 불안정해 오버레이 방식)
+2. **멀티시티 (#8)**: `Trip.cities[]` + place `cityId`. Create에서 도쿄·오사카 복수 선택. Day별 지도 중심 도시. Plan 「도시 추가」. 스키마 하위 호환(단일 cityId).
+3. **스와이프 삭제 + 다단계 Undo (#9)**: `Swipeable` 행 삭제. Undo 스택 N=5, 스낵바에 깊이 표시.
+4. **날씨·혼잡 (#10)**: Open-Meteo(키 없음) → 「오늘 날씨 · °C · 강수%」 칩 + 시간대 혼잡 휴리스틱.
+5. **체크인 체크리스트 (#11)**: 예약번호·여권·WiFi·미팅포인트 — Trip에 저장, Plan ⋯ / 현장 모드 체크박스.
+6. **브랜드 모션·다크·a11y (#12)**: 설정 테마(시스템/라이트/다크), Home·Plan·Active 토큰, Day/탭 `LayoutAnimation`, 주요 버튼 `accessibilityLabel`·대비 칩.
+
 
 ## API
 

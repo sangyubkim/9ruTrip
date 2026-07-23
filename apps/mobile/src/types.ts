@@ -52,6 +52,10 @@ export type LodgingCandidate = {
   scoreBreakdown: LodgingScoreBreakdown;
 };
 
+export type MvpCityId = "tokyo" | "osaka";
+
+export type MapProviderId = "google" | "naver";
+
 export type ItineraryPlace = {
   id: string;
   name: string;
@@ -62,6 +66,8 @@ export type ItineraryPlace = {
   notes?: string;
   dayIndex: number;
   order: number;
+  /** 멀티시티: 장소가 속한 도시 (없으면 Trip.cityId) */
+  cityId?: MvpCityId;
   plannedTime?: string;
   travelFromPrevMinutes?: number;
   travelFromPrevCost?: number;
@@ -70,6 +76,18 @@ export type ItineraryPlace = {
   transportEngine?: string;
   preferredTransportMode?: TransportMode;
   transportOptions?: TransportOption[];
+};
+
+export type TripCityLeg = {
+  cityId: MvpCityId;
+  cityName: string;
+  dayIndexes: number[];
+};
+
+export type ChecklistItem = {
+  id: string;
+  label: string;
+  checked: boolean;
 };
 
 export type Expense = {
@@ -91,14 +109,12 @@ export type PlaceReview = Step & {
 
 export type TripStatus = "planning" | "active" | "done";
 
-export type MvpCityId = "tokyo" | "osaka";
-
-export type MapProviderId = "google" | "naver";
-
 export type Trip = {
   id: string;
   cityId: MvpCityId;
   cityName: string;
+  /** 멀티시티 (선택). 없으면 단일 cityId */
+  cities?: TripCityLeg[];
   nights: number;
   days: number;
   partySize: number;
@@ -113,6 +129,7 @@ export type Trip = {
   aiRerouteEnabled: boolean;
   guideAlarmsEnabled: boolean;
   completedPlaceIds: string[];
+  checklist?: ChecklistItem[];
   createdAt: string;
   updatedAt: string;
 };
@@ -154,6 +171,74 @@ export const CITIES = {
 
 export const MVP_CITY = CITIES.tokyo;
 
+export const DEFAULT_CHECKLIST_LABELS = [
+  "예약번호",
+  "여권",
+  "WiFi",
+  "미팅포인트",
+] as const;
+
+export function createDefaultChecklist(): ChecklistItem[] {
+  return DEFAULT_CHECKLIST_LABELS.map((label, i) => ({
+    id: `check-${i}-${label}`,
+    label,
+    checked: false,
+  }));
+}
+
 export function getCityMeta(cityId: MvpCityId) {
   return CITIES[cityId] ?? CITIES.tokyo;
+}
+
+/** Day에 해당하는 도시 (멀티시티 지원, 하위 호환) */
+export function cityIdForDay(trip: Trip, dayIndex: number): MvpCityId {
+  const leg = trip.cities?.find((c) => c.dayIndexes.includes(dayIndex));
+  if (leg) return leg.cityId;
+  const fromPlace = trip.places.find((p) => p.dayIndex === dayIndex)?.cityId;
+  if (fromPlace === "osaka" || fromPlace === "tokyo") return fromPlace;
+  return trip.cityId === "osaka" ? "osaka" : "tokyo";
+}
+
+/** 도시 표시명 (멀티시티면 합침) */
+export function tripCitiesLabel(trip: Trip): string {
+  if (trip.cities && trip.cities.length > 1) {
+    return trip.cities.map((c) => c.cityName).join(" · ");
+  }
+  return trip.cityName;
+}
+
+/** dayIndexes 균등 분할로 TripCityLeg[] 생성 */
+export function buildCityLegs(
+  cityIds: MvpCityId[],
+  days: number,
+): TripCityLeg[] {
+  const unique = [...new Set(cityIds)].filter(
+    (id): id is MvpCityId => id === "tokyo" || id === "osaka",
+  );
+  if (unique.length === 0) unique.push("tokyo");
+  if (unique.length === 1) {
+    return [
+      {
+        cityId: unique[0],
+        cityName: getCityMeta(unique[0]).nameKo,
+        dayIndexes: Array.from({ length: days }, (_, i) => i),
+      },
+    ];
+  }
+  const split = Math.max(1, Math.ceil(days / unique.length));
+  const legs: TripCityLeg[] = [];
+  let cursor = 0;
+  for (let i = 0; i < unique.length; i++) {
+    const id = unique[i];
+    const isLast = i === unique.length - 1;
+    const count = isLast ? days - cursor : Math.min(split, days - cursor);
+    const dayIndexes = Array.from({ length: Math.max(0, count) }, (_, j) => cursor + j);
+    cursor += count;
+    legs.push({
+      cityId: id,
+      cityName: getCityMeta(id).nameKo,
+      dayIndexes,
+    });
+  }
+  return legs;
 }
