@@ -129,7 +129,7 @@ GOOGLE_MAPS_API_KEY=your_server_key
 ## 테스트
 
 ```bash
-# API 단위 테스트 (sms-parse · haversine 교통 비교)
+# API 단위 테스트 (sms-parse · haversine · Directions mock)
 npm test
 # 또는
 npm run test --prefix apps/api
@@ -175,6 +175,7 @@ npm run typecheck
 - **여행 설정**: 토글·숙소 후보를 「⋯ 더보기」로 접기
 - **길안내**: 행/하단 CTA → Google Maps (Android `google.navigation` 또는 https dir, transit)
 - **재루트 미리보기**: AI 재루트 응답 후 장소 변경 요약 Alert → 적용/취소
+- **Directions 단위 테스트**: mock fetch로 transit 파라미터·ZERO_RESULTS 캐시·재시도 검증
 
 
 ## API
