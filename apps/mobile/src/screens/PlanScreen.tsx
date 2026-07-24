@@ -1788,6 +1788,7 @@ export function PlanScreen({
         selectedMode={comparePlace?.preferredTransportMode}
         loading={compareLoading}
         engineHint={compareEngine}
+        currency={currencyForCity(trip.cityId)}
         onSelect={applyTransportMode}
         onClose={() => setComparePlace(null)}
         onOpenMapsTransit={

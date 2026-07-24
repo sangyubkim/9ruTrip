@@ -1,3 +1,4 @@
+import { CITIES } from "../data/destinations";
 import type {
   CostSummary,
   Expense,
@@ -22,14 +23,15 @@ export function sumActual(expenses: Expense[]): number {
 }
 
 export function currencyForCity(cityId: string): "JPY" | "KRW" {
-  return cityId === "seoul" || cityId === "busan" || cityId === "jeju"
-    ? "KRW"
-    : "JPY";
+  const c = CITIES[cityId];
+  if (c?.currency === "KRW" || c?.region === "domestic") return "KRW";
+  if (c?.currency === "JPY") return "JPY";
+  return "KRW";
 }
 
 export function formatMoney(
   n: number,
-  currency: "JPY" | "KRW" = "JPY",
+  currency: "JPY" | "KRW" = "KRW",
 ): string {
   if (currency === "KRW") return `${Math.round(n).toLocaleString("ko-KR")}원`;
   return `¥${Math.round(n).toLocaleString("ja-JP")}`;

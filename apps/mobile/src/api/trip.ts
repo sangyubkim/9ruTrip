@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, readApiJson } from "./client";
 import type {
   ItineraryPlace,
   LodgingCandidate,
@@ -55,7 +55,7 @@ export async function generateItinerary(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const json = (await res.json()) as ItineraryResponse & { error?: string };
+  const json = await readApiJson<ItineraryResponse & { error?: string }>(res);
   if (!res.ok) {
     throw new Error(json.error ?? `Itinerary failed: ${res.status}`);
   }
@@ -84,7 +84,7 @@ export async function rerouteTrip(payload: RerouteRequest): Promise<RerouteRespo
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const json = (await res.json()) as RerouteResponse & { error?: string };
+  const json = await readApiJson<RerouteResponse & { error?: string }>(res);
   if (!res.ok) {
     throw new Error(json.error ?? `Reroute failed: ${res.status}`);
   }
@@ -111,7 +111,7 @@ export async function exportTripDraft(trip: unknown): Promise<ExportDraftRespons
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ trip }),
   });
-  const json = (await res.json()) as ExportDraftResponse & { error?: string };
+  const json = await readApiJson<ExportDraftResponse & { error?: string }>(res);
   if (!res.ok) {
     throw new Error(json.error ?? `Export failed: ${res.status}`);
   }
@@ -144,10 +144,9 @@ export async function publishTripToWordPress(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const json = (await res.json()) as PublishResponse & {
-    error?: string;
-    hint?: string;
-  };
+  const json = await readApiJson<
+    PublishResponse & { error?: string; hint?: string }
+  >(res);
   if (!res.ok) {
     throw new Error(
       [json.error, json.hint].filter(Boolean).join("\n") ||
@@ -173,7 +172,7 @@ export async function parseSmsExpense(text: string): Promise<ParseSmsResponse> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   });
-  return (await res.json()) as ParseSmsResponse;
+  return readApiJson<ParseSmsResponse>(res);
 }
 
 export async function enrichTransport(
@@ -186,11 +185,11 @@ export async function enrichTransport(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ places, forceRecalc, cityId }),
   });
-  const json = (await res.json()) as {
+  const json = await readApiJson<{
     places: ItineraryPlace[];
     transportEngine?: string;
     error?: string;
-  };
+  }>(res);
   if (!res.ok) {
     throw new Error(json.error ?? `Enrich failed: ${res.status}`);
   }
@@ -217,9 +216,9 @@ export async function compareTransport(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const json = (await res.json()) as CompareTransportResponse & {
-    error?: string;
-  };
+  const json = await readApiJson<CompareTransportResponse & { error?: string }>(
+    res,
+  );
   if (!res.ok) {
     throw new Error(json.error ?? `Compare failed: ${res.status}`);
   }
@@ -240,12 +239,12 @@ export async function suggestPlaces(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const json = (await res.json()) as {
+  const json = await readApiJson<{
     places: ItineraryPlace[];
     source?: string;
     googleMapsConfigured?: boolean;
     error?: string;
-  };
+  }>(res);
   if (!res.ok) {
     throw new Error(json.error ?? `Suggest failed: ${res.status}`);
   }
@@ -270,11 +269,11 @@ export async function searchPlaces(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const json = (await res.json()) as {
+  const json = await readApiJson<{
     results?: PlaceSearchResult[];
     source?: string;
     error?: string;
-  };
+  }>(res);
   if (!res.ok) {
     throw new Error(json.error ?? `Place search failed: ${res.status}`);
   }
@@ -303,7 +302,7 @@ export async function optimizeDay(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const json = (await res.json()) as OptimizeDayResponse & { error?: string };
+  const json = await readApiJson<OptimizeDayResponse & { error?: string }>(res);
   if (!res.ok) {
     throw new Error(json.error ?? `Optimize failed: ${res.status}`);
   }
@@ -317,20 +316,13 @@ export async function checkHealth(): Promise<{
   googleMapsConfigured?: boolean;
 }> {
   const res = await apiFetch("/health");
-  let data: {
+  const data = await readApiJson<{
     ok?: boolean;
     geminiConfigured?: boolean;
     wordpressConfigured?: boolean;
     googleMapsConfigured?: boolean;
     service?: string;
-  };
-  try {
-    data = (await res.json()) as typeof data;
-  } catch {
-    throw new Error(
-      "9ruTrip API 응답을 해석할 수 없습니다. URL이 …/apps/api (또는 LAN :3011) 인지 확인하세요.",
-    );
-  }
+  }>(res);
   if (!res.ok || !data?.ok) {
     throw new Error(
       "헬스체크 실패. 9ruDocs API 주소가 아닌지, 경로가 /apps/api 인지 확인하세요.",

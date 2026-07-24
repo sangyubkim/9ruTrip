@@ -136,7 +136,7 @@ async function handle(req, res) {
         {
           ok: true,
           service: "9rutrip-api",
-          mvpCity: "tokyo",
+          mvpCity: "seoul",
           cities: listCityIds(),
           geminiConfigured: Boolean(env.geminiApiKey),
           wordpressConfigured: Boolean(
@@ -157,7 +157,7 @@ async function handle(req, res) {
         200,
         {
           name: "9ruTrip API",
-          mvpCity: "Tokyo",
+          mvpCity: "Seoul",
           health: "/health",
           routes: [
             "POST /trip/itinerary",
@@ -311,7 +311,7 @@ async function handle(req, res) {
     if (method === "POST" && matchRoute(url, "/trip/suggest-places")) {
       const body = await readBody(req);
       const result = await suggestPlacesByCategory({
-        cityId: isKnownCityId(body?.cityId) ? body.cityId : "tokyo",
+        cityId: isKnownCityId(body?.cityId) ? body.cityId : "seoul",
         category: body?.category,
         partySize: Number(body?.partySize) || 2,
         mapsApiKey: env.googleMapsApiKey,

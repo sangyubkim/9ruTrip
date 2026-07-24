@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Mirror of 9ruDocs/docs/deploy/cloudways/start-9rudocs-api.sh.sample (keep in sync).
+# Cloudways (master, no sudo): start / restart 9ruDocs Node API via user-level PM2.
+# Install once:
+#   mkdir -p "$HOME/bin" "$HOME/logs"
+#   cp start-9rudocs-api.sh.sample "$HOME/bin/start-9rudocs-api.sh"
+#   chmod +x "$HOME/bin/start-9rudocs-api.sh"
+#   # optional: export DOCS_API_DIR=/path/to/apps/api  (folder containing server.mjs)
+#
+# Env:
+#   DOCS_API_DIR   directory with server.mjs (default: probe common paths)
+#   DOCS_API_PORT  health check port (default: 3001)
+#   DOCS_PM2_NAME  PM2 process name (default: 9rudocs-api)
+
+set -u
+
+export PATH="${HOME}/node_modules/.bin:${HOME}/.npm-global/bin:${HOME}/.local/bin:${PATH}:/usr/local/bin:/usr/bin"
+
+DOCS_PM2_NAME="${DOCS_PM2_NAME:-9rudocs-api}"
+DOCS_API_PORT="${DOCS_API_PORT:-3001}"
+LOG_TAG="[9rudocs-api]"
+
+log() { echo "$(date -Iseconds 2>/dev/null || date) ${LOG_TAG} $*"; }
+
+resolve_docs_dir() {
+  if [ -n "${DOCS_API_DIR:-}" ]; then
+    if [ -f "${DOCS_API_DIR}/server.mjs" ]; then
+      echo "${DOCS_API_DIR}"
+      return 0
+    fi
+    if [ -f "${DOCS_API_DIR}/apps/api/server.mjs" ]; then
+      echo "${DOCS_API_DIR}/apps/api"
+      return 0
+    fi
+  fi
+  local candidates=(
+    "${HOME}/applications/tfrqcejwbk/public_html/apps/api"
+    "${HOME}/applications/tfrqcejwbk/git_repo/apps/api"
+    "${HOME}/9ruDocs/apps/api"
+    "${HOME}/applications/tfrqcejwbk/9ruDocs/apps/api"
+  )
+  local d
+  for d in "${candidates[@]}"; do
+    if [ -f "${d}/server.mjs" ]; then
+      echo "${d}"
+      return 0
+    fi
+  done
+  local found
+  found="$(find "${HOME}/applications" -maxdepth 5 -type f -path '*/apps/api/server.mjs' 2>/dev/null | head -n 1 || true)"
+  if [ -n "${found}" ]; then
+    echo "$(dirname "${found}")"
+    return 0
+  fi
+  return 1
+}
+
+if ! command -v node >/dev/null 2>&1; then
+  log "ERROR: node not in PATH (${PATH})"
+  exit 1
+fi
+if ! command -v pm2 >/dev/null 2>&1; then
+  log "ERROR: pm2 not in PATH. Install: npm install -g pm2  (user-level)"
+  exit 1
+fi
+
+DIR="$(resolve_docs_dir)" || {
+  log "ERROR: could not find server.mjs. Set DOCS_API_DIR to apps/api directory."
+  exit 1
+}
+log "using DOCS_API_DIR=${DIR}"
+
+if [ -f "${HOME}/.pm2/dump.pm2" ]; then
+  log "pm2 resurrect"
+  pm2 resurrect >/dev/null 2>&1 || true
+fi
+
+if pm2 describe "${DOCS_PM2_NAME}" >/dev/null 2>&1; then
+  log "pm2 restart ${DOCS_PM2_NAME}"
+  pm2 restart "${DOCS_PM2_NAME}" --update-env
+else
+  log "pm2 start ${DOCS_PM2_NAME} (cwd=${DIR})"
+  cd "${DIR}"
+  PORT="${DOCS_API_PORT}" NODE_ENV=production \
+    pm2 start "server.mjs" \
+      --name "${DOCS_PM2_NAME}" \
+      --interpreter node \
+      --update-env
+fi
+
+pm2 save >/dev/null 2>&1 || true
+
+ok=0
+for i in 1 2 3 4 5 6; do
+  if curl -fsS --max-time 5 "http://127.0.0.1:${DOCS_API_PORT}/health" >/dev/null 2>&1 \
+    || curl -fsS --max-time 5 "http://127.0.0.1:${DOCS_API_PORT}/apps/api/health" >/dev/null 2>&1; then
+    ok=1
+    break
+  fi
+  sleep 2
+done
+
+if [ "${ok}" -eq 1 ]; then
+  log "health OK on :${DOCS_API_PORT}"
+  curl -sS --max-time 5 "http://127.0.0.1:${DOCS_API_PORT}/health" 2>/dev/null \
+    || curl -sS --max-time 5 "http://127.0.0.1:${DOCS_API_PORT}/apps/api/health" 2>/dev/null \
+    || true
+  echo
+  exit 0
+fi
+
+log "WARN: health check failed on :${DOCS_API_PORT} (pm2 may still be starting)"
+pm2 status "${DOCS_PM2_NAME}" || true
+exit 1

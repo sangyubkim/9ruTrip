@@ -26,7 +26,7 @@ export async function fetchCityWeather(
     `https://api.open-meteo.com/v1/forecast` +
     `?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}` +
     `&current=temperature_2m,precipitation_probability` +
-    `&timezone=Asia%2FTokyo`;
+    `&timezone=Asia%2FSeoul`;
 
   try {
     const res = await fetch(url);

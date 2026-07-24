@@ -1,34 +1,35 @@
 import { geminiComplete, parseJsonLoose } from "./gemini.mjs";
 import {
+  isKnownCityId,
+  resolveCity as resolveCityFromCatalog,
+} from "./cities.mjs";
+import {
   buildLodgingCandidates,
   enrichPlacesWithTransport,
 } from "./transport.mjs";
-
-const SEOUL_CENTER = { lat: 37.5665, lng: 126.978 };
-const BUSAN_CENTER = { lat: 35.1796, lng: 129.0756 };
-const JEJU_CENTER = { lat: 33.4996, lng: 126.5312 };
-const TOKYO_CENTER = { lat: 35.681236, lng: 139.767125 };
-const OSAKA_CENTER = { lat: 34.6937, lng: 135.5023 };
-
-const VALID_CITY_IDS = new Set([
-  "seoul",
-  "busan",
-  "jeju",
-  "tokyo",
-  "osaka",
-]);
-const DOMESTIC_CITY_IDS = new Set(["seoul", "busan", "jeju"]);
 
 function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function isValidCityId(cityId) {
-  return VALID_CITY_IDS.has(cityId);
+  return isKnownCityId(cityId);
 }
 
 function isDomesticCity(cityId) {
-  return DOMESTIC_CITY_IDS.has(cityId);
+  if (!isKnownCityId(cityId)) return true;
+  const c = resolveCityFromCatalog(cityId);
+  return c.region === "domestic" || c.countryId === "kr";
+}
+
+/** 일본 열도 대략 lng > 132 */
+function looksLikeJapanPlaces(places) {
+  const withLng = (places || []).filter((p) =>
+    Number.isFinite(Number(p?.lng)),
+  );
+  if (withLng.length === 0) return false;
+  const jp = withLng.filter((p) => Number(p.lng) > 132).length;
+  return jp / withLng.length >= 0.5;
 }
 
 function parseStartHour(startTime) {
@@ -42,54 +43,18 @@ function parseStartHour(startTime) {
 }
 
 function resolveCity(cityId) {
-  switch (cityId) {
-    case "busan":
-      return {
-        id: "busan",
-        nameKo: "부산",
-        center: BUSAN_CENTER,
-        mapProvider: "naver",
-        currency: "KRW",
-        region: "domestic",
-      };
-    case "jeju":
-      return {
-        id: "jeju",
-        nameKo: "제주",
-        center: JEJU_CENTER,
-        mapProvider: "naver",
-        currency: "KRW",
-        region: "domestic",
-      };
-    case "tokyo":
-      return {
-        id: "tokyo",
-        nameKo: "도쿄",
-        center: TOKYO_CENTER,
-        mapProvider: "google",
-        currency: "JPY",
-        region: "overseas",
-      };
-    case "osaka":
-      return {
-        id: "osaka",
-        nameKo: "오사카",
-        center: OSAKA_CENTER,
-        mapProvider: "google",
-        currency: "JPY",
-        region: "overseas",
-      };
-    case "seoul":
-    default:
-      return {
-        id: "seoul",
-        nameKo: "서울",
-        center: SEOUL_CENTER,
-        mapProvider: "naver",
-        currency: "KRW",
-        region: "domestic",
-      };
-  }
+  const c = resolveCityFromCatalog(
+    isValidCityId(cityId) ? cityId : "seoul",
+  );
+  return {
+    id: c.id,
+    nameKo: c.nameKo,
+    center: c.center,
+    mapProvider: c.mapProvider,
+    currency: c.currency,
+    region: c.region,
+    countryId: c.countryId,
+  };
 }
 
 function fallbackTemplates(cityId, partySize) {
@@ -264,7 +229,7 @@ function fallbackTemplates(cityId, partySize) {
         lat: 35.714765,
         lng: 139.796655,
         estimatedCost: 0,
-        notes: "아침 방문 추천",
+        notes: "아침 방문 추천 (해외)",
       },
       {
         name: "나카미세도리 먹거리",
@@ -356,76 +321,126 @@ function fallbackTemplates(cityId, partySize) {
       },
     ];
   }
-  // seoul (default)
+  if (cityId === "seoul") {
+    return [
+      {
+        name: "경복궁",
+        category: "attraction",
+        lat: 37.5796,
+        lng: 126.977,
+        estimatedCost: 3000 * partySize,
+        notes: "조선 왕궁",
+        mustVisit: true,
+      },
+      {
+        name: "광장시장",
+        category: "food",
+        lat: 37.5701,
+        lng: 126.9997,
+        estimatedCost: 15000 * partySize,
+        notes: "빈대떡·육회",
+        signatureFood: "마약김밥·육회",
+      },
+      {
+        name: "남산서울타워",
+        category: "attraction",
+        lat: 37.5512,
+        lng: 126.9882,
+        estimatedCost: 16000 * partySize,
+        notes: "전망·야경",
+        mustVisit: true,
+      },
+      {
+        name: "홍대",
+        category: "attraction",
+        lat: 37.5563,
+        lng: 126.922,
+        estimatedCost: 0,
+        notes: "거리공연·카페",
+      },
+      {
+        name: "북촌한옥마을",
+        category: "attraction",
+        lat: 37.5826,
+        lng: 126.9831,
+        estimatedCost: 0,
+        notes: "한옥 골목",
+        mustVisit: true,
+      },
+      {
+        name: "명동",
+        category: "attraction",
+        lat: 37.5636,
+        lng: 126.9869,
+        estimatedCost: 20000 * partySize,
+        notes: "쇼핑·길거리음식",
+      },
+      {
+        name: "한강공원 (여의도)",
+        category: "attraction",
+        lat: 37.5285,
+        lng: 126.9326,
+        estimatedCost: 0,
+        notes: "피크닉·자전거",
+      },
+      {
+        name: "광화문 고궁 인근 한식",
+        category: "food",
+        lat: 37.572,
+        lng: 126.9769,
+        estimatedCost: 18000 * partySize,
+        notes: "한정식·비빔밥",
+        signatureFood: "비빔밥",
+      },
+    ];
+  }
+
+  // 기타 도시: 카탈로그 중심 좌표 기반 일반 폴백
+  const city = resolveCity(cityId);
+  const { lat, lng } = city.center;
+  const domestic = isDomesticCity(city.id);
+  const meal = domestic ? 15000 * partySize : 3000 * partySize;
   return [
     {
-      name: "경복궁",
+      name: `${city.nameKo} 대표 명소`,
       category: "attraction",
-      lat: 37.5796,
-      lng: 126.977,
-      estimatedCost: 3000 * partySize,
-      notes: "조선 왕궁",
+      lat,
+      lng,
+      estimatedCost: 0,
+      notes: "시내 핵심 스팟",
       mustVisit: true,
     },
     {
-      name: "광장시장",
+      name: `${city.nameKo} 현지 맛집`,
       category: "food",
-      lat: 37.5701,
-      lng: 126.9997,
-      estimatedCost: 15000 * partySize,
-      notes: "빈대떡·육회",
-      signatureFood: "마약김밥·육회",
+      lat: lat + 0.004,
+      lng: lng + 0.003,
+      estimatedCost: meal,
+      notes: "현지 식사",
     },
     {
-      name: "남산서울타워",
+      name: `${city.nameKo} 산책·전망`,
       category: "attraction",
-      lat: 37.5512,
-      lng: 126.9882,
-      estimatedCost: 16000 * partySize,
-      notes: "전망·야경",
-      mustVisit: true,
-    },
-    {
-      name: "홍대",
-      category: "attraction",
-      lat: 37.5563,
-      lng: 126.922,
+      lat: lat - 0.003,
+      lng: lng + 0.002,
       estimatedCost: 0,
-      notes: "거리공연·카페",
+      notes: "가벼운 이동",
     },
     {
-      name: "북촌한옥마을",
-      category: "attraction",
-      lat: 37.5826,
-      lng: 126.9831,
-      estimatedCost: 0,
-      notes: "한옥 골목",
-      mustVisit: true,
-    },
-    {
-      name: "명동",
-      category: "attraction",
-      lat: 37.5636,
-      lng: 126.9869,
-      estimatedCost: 20000 * partySize,
-      notes: "쇼핑·길거리음식",
-    },
-    {
-      name: "한강공원 (여의도)",
-      category: "attraction",
-      lat: 37.5285,
-      lng: 126.9326,
-      estimatedCost: 0,
-      notes: "피크닉·자전거",
-    },
-    {
-      name: "광화문 고궁 인근 한식",
+      name: `${city.nameKo} 카페·휴식`,
       category: "food",
-      lat: 37.572,
-      lng: 126.9769,
-      estimatedCost: 18000 * partySize,
-      notes: "한정식·비빔밥",
-      signatureFood: "비빔밥",
+      lat: lat + 0.002,
+      lng: lng - 0.004,
+      estimatedCost: Math.round(meal * 0.5),
+      notes: "휴식",
+    },
+    {
+      name: `${city.nameKo} 야경·포토`,
+      category: "attraction",
+      lat: lat - 0.005,
+      lng: lng - 0.002,
+      estimatedCost: 0,
+      notes: "저녁 동선",
     },
   ];
 }
@@ -643,7 +658,8 @@ export async function generateItinerary(body, env) {
   const isMulti = cityIds.length > 1;
   const domestic = isDomesticCity(cityId) || cityIds.every(isDomesticCity);
   const currency = domestic ? "KRW" : "JPY";
-  const cityEnum = [...VALID_CITY_IDS].join("|");
+  // 프롬프트 cityId enum은 요청 도시만 — 전체 카탈로그(도쿄 포함)를 넣으면 모델이 이탈함
+  const cityEnum = cityIds.join("|");
   const originName =
     body?.origin && typeof body.origin === "object"
       ? String(body.origin.address || body.origin.name || "").trim()
@@ -807,12 +823,21 @@ travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0
     });
 
     const parsed = parseJsonLoose(text);
-    const places = normalizePlaces(parsed.places, {
+    let places = normalizePlaces(parsed.places, {
       days,
       partySize,
       center: city.center,
     });
-    if (places.length === 0) {
+    // 국내 요청인데 일본 좌표가 대부분이거나 장소가 없으면 폴백
+    if (
+      places.length === 0 ||
+      (domestic && looksLikeJapanPlaces(places))
+    ) {
+      if (domestic && places.length > 0) {
+        console.warn(
+          "[itinerary] Gemini returned Japan coords for domestic trip — using fallback",
+        );
+      }
       return finish(
         isMulti
           ? buildMultiCityFallbackItinerary({
@@ -828,7 +853,7 @@ travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0
     places.sort((a, b) => a.dayIndex - b.dayIndex || a.order - b.order);
     places.forEach((p, i) => {
       p.order = i;
-      if (!p.cityId) p.cityId = cityId;
+      if (!p.cityId || !cityIds.includes(p.cityId)) p.cityId = cityId;
     });
 
     let lodgingCandidates = Array.isArray(parsed.lodgingCandidates)
@@ -864,7 +889,13 @@ travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0
 
     const citiesFromParsed = Array.isArray(parsed.cities)
       ? parsed.cities
-          .filter((c) => c && isValidCityId(c.cityId))
+          .filter(
+            (c) =>
+              c &&
+              isValidCityId(c.cityId) &&
+              cityIds.includes(c.cityId) &&
+              (!domestic || isDomesticCity(c.cityId)),
+          )
           .map((c) => ({
             cityId: c.cityId,
             cityName: String(c.cityName || resolveCity(c.cityId).nameKo),
@@ -874,35 +905,42 @@ travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0
           }))
       : undefined;
 
+    const defaultCities = isMulti
+      ? buildMultiCityFallbackItinerary({
+          nights,
+          days,
+          partySize,
+          cityIds,
+        }).cities
+      : [
+          {
+            cityId,
+            cityName: city.nameKo,
+            dayIndexes: Array.from({ length: days }, (_, i) => i),
+          },
+        ];
+
+    let summary = String(
+      parsed.summary || `${city.nameKo} ${nights}박 ${days}일 AI 일정`,
+    );
+    // 국내 요청인데 요약에 일본 도시명이 남으면 교체
+    if (
+      domestic &&
+      /도쿄|오사카|교토|동경|tokyo|osaka|kyoto/i.test(summary)
+    ) {
+      summary = `${cityIds.map((id) => resolveCity(id).nameKo).join(" · ")} ${nights}박 ${days}일 AI 일정`;
+    }
+
     return finish({
       places,
       lodgingCandidates,
       preferredLodgingId:
         parsed.preferredLodgingId || lodgingCandidates[0]?.id || null,
       plannedBudget: parsed.plannedBudget,
-      summary: String(
-        parsed.summary ||
-          `${city.nameKo} ${nights}박 ${days}일 AI 일정`,
-      ),
+      summary,
       engine,
       cityId,
-      cities:
-        citiesFromParsed?.length
-          ? citiesFromParsed
-          : isMulti
-            ? buildMultiCityFallbackItinerary({
-                nights,
-                days,
-                partySize,
-                cityIds,
-              }).cities
-            : [
-                {
-                  cityId,
-                  cityName: city.nameKo,
-                  dayIndexes: Array.from({ length: days }, (_, i) => i),
-                },
-              ],
+      cities: citiesFromParsed?.length ? citiesFromParsed : defaultCities,
     });
   } catch (err) {
     console.error(

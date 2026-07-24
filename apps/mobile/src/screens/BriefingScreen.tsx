@@ -3,7 +3,7 @@ import type { Trip, TripPreferenceWeights } from "../types";
 import { getCityMeta, tripCitiesLabel } from "../types";
 import { useTheme } from "../theme/ThemeContext";
 import { radius, space } from "../theme/tokens";
-import { formatYen } from "../utils/cost";
+import { currencyForCity, formatMoney } from "../utils/cost";
 
 type Props = {
   trip: Trip;
@@ -65,7 +65,7 @@ export function BriefingScreen({ trip, onContinue, onBack }: Props) {
       <Text style={[styles.title, { color: colors.text }]}>여행 브리핑</Text>
       <Text style={[styles.sub, { color: colors.textSecondary }]}>
         {trip.nights}박 {trip.days}일 · {trip.partySize}명 ·{" "}
-        {formatYen(trip.plannedBudget)}
+        {formatMoney(trip.plannedBudget, currencyForCity(trip.cityId))}
       </Text>
 
       <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>

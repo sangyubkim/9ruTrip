@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Cloudways (master, no sudo): start Trip + Docs Node APIs after reboot.
+# Install once (on the server):
+#   mkdir -p "$HOME/bin" "$HOME/logs"
+#   cp start-9rutrip-api.sh.sample  "$HOME/bin/start-9rutrip-api.sh"
+#   cp start-9rudocs-api.sh.sample  "$HOME/bin/start-9rudocs-api.sh"
+#   cp start-9ru-apis.sh.sample     "$HOME/bin/start-9ru-apis.sh"
+#   chmod +x "$HOME/bin"/start-9ru*.sh
+# Crontab (no sudo):
+#   crontab -e
+#   @reboot sleep 30 && $HOME/bin/start-9ru-apis.sh >> $HOME/logs/api-boot.log 2>&1
+#
+# Optional env (export in this file or in crontab line):
+#   TRIP_API_DIR / DOCS_API_DIR / TRIP_API_PORT / DOCS_API_PORT
+
+set -u
+
+export PATH="${HOME}/node_modules/.bin:${HOME}/.npm-global/bin:${HOME}/.local/bin:${PATH}:/usr/local/bin:/usr/bin"
+
+BIN="${HOME}/bin"
+TRIP_SH="${BIN}/start-9rutrip-api.sh"
+DOCS_SH="${BIN}/start-9rudocs-api.sh"
+rc=0
+
+echo "$(date -Iseconds 2>/dev/null || date) [start-9ru-apis] begin PATH=${PATH}"
+
+if [ -x "${TRIP_SH}" ]; then
+  "${TRIP_SH}" || rc=1
+else
+  echo "$(date -Iseconds 2>/dev/null || date) [start-9ru-apis] SKIP Trip: missing ${TRIP_SH}"
+  rc=1
+fi
+
+if [ -x "${DOCS_SH}" ]; then
+  "${DOCS_SH}" || rc=1
+else
+  echo "$(date -Iseconds 2>/dev/null || date) [start-9ru-apis] SKIP Docs: missing ${DOCS_SH}"
+  rc=1
+fi
+
+echo "$(date -Iseconds 2>/dev/null || date) [start-9ru-apis] done exit=${rc}"
+exit "${rc}"

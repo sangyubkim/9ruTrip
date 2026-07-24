@@ -2,6 +2,7 @@
 
 import {
   CITIES as DESTINATION_CITIES,
+  COUNTRIES,
   DEFAULT_CITY_ID,
   getDestinationCity,
   isKnownCityId,
@@ -224,8 +225,9 @@ export type Screen =
 export const CITIES = DESTINATION_CITIES;
 export const MVP_CITY = DESTINATION_CITIES.seoul ?? DESTINATION_CITIES[DEFAULT_CITY_ID];
 
-/** 국내 여행 위자드용 (서울·부산·제주) */
-export const DOMESTIC_CITY_IDS: MvpCityId[] = ["seoul", "busan", "jeju"];
+/** 국내 여행 위자드용 — 한국 카탈로그 전체 */
+export const DOMESTIC_CITY_IDS: MvpCityId[] =
+  COUNTRIES.find((c) => c.id === "kr")?.cityIds ?? ["seoul", "busan", "jeju"];
 export const OVERSEAS_CITY_IDS: MvpCityId[] = ["tokyo", "osaka"];
 
 export function isMvpCityId(id: unknown): id is MvpCityId {
@@ -233,7 +235,11 @@ export function isMvpCityId(id: unknown): id is MvpCityId {
 }
 
 export function isDomesticCityId(id: unknown): boolean {
-  return id === "seoul" || id === "busan" || id === "jeju";
+  return (
+    typeof id === "string" &&
+    (DESTINATION_CITIES[id]?.region === "domestic" ||
+      DESTINATION_CITIES[id]?.countryId === "kr")
+  );
 }
 
 export const DEFAULT_CHECKLIST_LABELS = [

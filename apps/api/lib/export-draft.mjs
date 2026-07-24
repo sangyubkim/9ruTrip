@@ -4,7 +4,7 @@
  */
 export function buildExportDraft(trip) {
   const now = new Date().toISOString();
-  const cityName = trip?.cityName || "도쿄";
+  const cityName = trip?.cityName || "서울";
   const nights = Number(trip?.nights) || 0;
   const days = Number(trip?.days) || 0;
   const partySize = Number(trip?.partySize) || 1;
@@ -42,7 +42,7 @@ export function buildExportDraft(trip) {
     steps,
     body,
     excerpt: `${cityName} 여행 기록 · ${partySize}명 · 9ruTrip`,
-    tags: [cityName, "여행", "9ruTrip", String(trip?.cityId || "tokyo")],
+    tags: [cityName, "여행", "9ruTrip", String(trip?.cityId || "seoul")],
     createdAt: now,
     updatedAt: now,
     /** 9ruDocs API로 이어갈 때 참고 */

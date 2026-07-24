@@ -7,6 +7,7 @@ import {
   View,
 } from "react-native";
 import type { TransportMode, TransportOption } from "../types";
+import { formatMoney } from "../utils/cost";
 
 const MODE_LABEL: Record<TransportMode, string> = {
   walking: "도보",
@@ -24,6 +25,7 @@ type Props = {
   selectedMode?: TransportMode;
   loading?: boolean;
   engineHint?: string;
+  currency?: "JPY" | "KRW";
   onSelect: (mode: TransportMode) => void;
   onClose: () => void;
   /** Google Maps transit 길안내 */
@@ -39,6 +41,7 @@ export function TransportCompareSheet({
   selectedMode,
   loading,
   engineHint,
+  currency = "KRW",
   onSelect,
   onClose,
   onOpenMapsTransit,
@@ -113,7 +116,7 @@ export function TransportCompareSheet({
                     <Text style={[styles.cost, on && styles.costOn]}>
                       {opt
                         ? opt.estimatedCost > 0
-                          ? `~¥${opt.estimatedCost.toLocaleString("ja-JP")}`
+                          ? `~${formatMoney(opt.estimatedCost, currency)}`
                           : "무료"
                         : "—"}
                     </Text>

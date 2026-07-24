@@ -1,3 +1,4 @@
+import { isKnownCityId, resolveCity } from "./cities.mjs";
 import { estimateTransitLeg } from "./jp-transit.mjs";
 
 /** 하버사인 거리(km) */
@@ -21,7 +22,7 @@ export const TRANSPORT_MODES = ["walking", "transit", "taxi"];
  * - transit: 도쿄 지하철형 분·요금
  * - taxi: 도심 속도 + 기본요금·거리요금 추정
  */
-export function estimateLegByModeHaversine(from, to, mode) {
+export function estimateLegByModeHaversine(from, to, mode, opts = {}) {
   if (!from || !to) {
     return {
       mode,
@@ -43,6 +44,10 @@ export function estimateLegByModeHaversine(from, to, mode) {
     };
   }
 
+  const region =
+    opts.region || directionsRegionFromCoords(from, to) || "kr";
+  const domestic = region !== "jp";
+
   if (mode === "walking") {
     return {
       mode: "walking",
@@ -53,9 +58,11 @@ export function estimateLegByModeHaversine(from, to, mode) {
   }
 
   if (mode === "taxi") {
-    // 도심 ~22km/h 상당 + 대기, 기본 ¥500 + ¥120/km 근사
+    // 국내: 기본요금≈4800원 + km당≈1000원 / 일본: ¥500 + ¥120/km
     const minutes = Math.max(5, Math.round(km * 2.8 + 4));
-    const cost = Math.round(500 + Math.max(0, km) * 120);
+    const cost = domestic
+      ? Math.round(4800 + Math.max(0, km) * 1000)
+      : Math.round(500 + Math.max(0, km) * 120);
     return {
       mode: "taxi",
       minutes,
@@ -67,7 +74,13 @@ export function estimateLegByModeHaversine(from, to, mode) {
   // transit (default)
   const minutes =
     km < 1.2 ? Math.round(5 + km * 12) : Math.round(10 + km * 3.5 + 6);
-  const cost = km < 0.9 ? 0 : Math.round(170 + Math.min(km, 25) * 18);
+  const cost = domestic
+    ? km < 0.9
+      ? 0
+      : Math.round(1400 + Math.min(km, 25) * 120)
+    : km < 0.9
+      ? 0
+      : Math.round(170 + Math.min(km, 25) * 18);
   return {
     mode: "transit",
     minutes: Math.max(3, minutes),
@@ -167,13 +180,26 @@ function shouldRetryDirections(status, httpOk) {
  * Directions JSON 1회 호출
  * transit은 departure_time 필수 (없으면 INVALID_REQUEST → haversine 폴백이 잦음)
  */
-async function fetchDirectionsOnce(origin, destination, apiMode, apiKey) {
+function directionsRegionFromCoords(from, to) {
+  const lng = Number(from?.lng ?? to?.lng);
+  // 일본 열도 대략 lng > 132
+  if (Number.isFinite(lng) && lng > 132) return "jp";
+  return "kr";
+}
+
+async function fetchDirectionsOnce(
+  origin,
+  destination,
+  apiMode,
+  apiKey,
+  region = "kr",
+) {
   const url = new URL("https://maps.googleapis.com/maps/api/directions/json");
   url.searchParams.set("origin", origin);
   url.searchParams.set("destination", destination);
   url.searchParams.set("mode", apiMode);
   url.searchParams.set("language", "ko");
-  url.searchParams.set("region", "jp");
+  url.searchParams.set("region", region);
   url.searchParams.set("key", apiKey);
   // transit: departure_time 필수. driving에도 현재 시각 기준 교통 반영
   if (apiMode === "transit" || apiMode === "driving") {
@@ -191,21 +217,26 @@ async function fetchDirectionsOnce(origin, destination, apiMode, apiKey) {
   return { httpOk, data };
 }
 
-function parseDirectionsLeg(leg, mode, apiMode) {
+function parseDirectionsLeg(leg, mode, apiMode, region = "kr") {
   const seconds = Number(leg.duration?.value) || 0;
   const meters = Number(leg.distance?.value) || 0;
   const minutes = Math.max(3, Math.round(seconds / 60));
   const km = meters / 1000;
+  const domestic = region !== "jp";
 
   let cost = 0;
   if (mode === "walking") {
     cost = 0;
   } else if (mode === "taxi") {
-    cost = Math.round(500 + Math.max(0, km) * 120);
+    cost = domestic
+      ? Math.round(4800 + Math.max(0, km) * 1000)
+      : Math.round(500 + Math.max(0, km) * 120);
   } else if (leg.fare?.value != null && Number.isFinite(Number(leg.fare.value))) {
     cost = Math.round(Number(leg.fare.value));
   } else if (meters > 900) {
-    cost = Math.round(170 + Math.min(km, 25) * 18);
+    cost = domestic
+      ? Math.round(1400 + Math.min(km, 25) * 120)
+      : Math.round(170 + Math.min(km, 25) * 18);
   }
 
   return {
@@ -233,6 +264,7 @@ export async function estimateLegByModeDirections(from, to, mode, apiKey) {
   const origin = `${Number(from.lat)},${Number(from.lng)}`;
   const destination = `${Number(to.lat)},${Number(to.lng)}`;
   const apiMode = directionsApiMode(mode);
+  const region = directionsRegionFromCoords(from, to);
   const maxAttempts = 2;
 
   try {
@@ -242,6 +274,7 @@ export async function estimateLegByModeDirections(from, to, mode, apiKey) {
         destination,
         apiMode,
         apiKey,
+        region,
       );
       const status = data?.status;
 
@@ -250,6 +283,7 @@ export async function estimateLegByModeDirections(from, to, mode, apiKey) {
           data.routes[0].legs[0],
           mode,
           apiMode,
+          region,
         );
         setCachedDirection(cacheKey, result);
         return result;
@@ -275,12 +309,14 @@ export async function estimateLegByModeDirections(from, to, mode, apiKey) {
         destination,
         apiMode,
         apiKey,
+        region,
       );
       if (httpOk && data?.status === "OK" && data.routes?.[0]?.legs?.[0]) {
         const result = parseDirectionsLeg(
           data.routes[0].legs[0],
           mode,
           apiMode,
+          region,
         );
         setCachedDirection(cacheKey, result);
         return result;
@@ -290,7 +326,7 @@ export async function estimateLegByModeDirections(from, to, mode, apiKey) {
     }
   }
 
-  const fallback = estimateLegByModeHaversine(from, to, mode);
+  const fallback = estimateLegByModeHaversine(from, to, mode, { region });
   // Directions 실패 결과도 캐시 (특히 JP transit ZERO_RESULTS)
   setCachedDirection(cacheKey, fallback);
   return fallback;
@@ -464,16 +500,20 @@ function hubsForCity(cityId) {
     case "busan":
       return BUSAN_HUBS;
     case "jeju":
+    case "seogwipo":
       return JEJU_HUBS;
     case "osaka":
       return OSAKA_HUBS;
-    default:
+    case "tokyo":
       return TOKYO_HUBS;
+    default:
+      return SEOUL_HUBS;
   }
 }
 
 function isDomesticCityId(cityId) {
-  return cityId === "seoul" || cityId === "busan" || cityId === "jeju";
+  if (cityId === "tokyo" || cityId === "osaka") return false;
+  return true;
 }
 
 /**
@@ -483,15 +523,14 @@ function isDomesticCityId(cityId) {
 export function inferCityIdFromLat(lat, lng) {
   const n = Number(lat);
   const g = Number(lng);
-  if (!Number.isFinite(n)) return "tokyo";
+  if (!Number.isFinite(n)) return "seoul";
   if (Number.isFinite(g) && g > 132) {
     return n < 35.2 ? "osaka" : "tokyo";
   }
   if (n > 36.5) return "seoul";
   if (n > 34.5 && Number.isFinite(g) && g > 128) return "busan";
   if (n < 34) return "jeju";
-  if (n < 35.2) return "osaka";
-  return "tokyo";
+  return "seoul";
 }
 
 /** 숙소 점수 분해 (centrality / price / rating proxy) — 허브는 cityId별 */
@@ -783,11 +822,44 @@ function lodgingCatalogForCity(cityId) {
     case "busan":
       return BUSAN_LODGING_CATALOG;
     case "jeju":
+    case "seogwipo":
       return JEJU_LODGING_CATALOG;
     case "osaka":
       return OSAKA_LODGING_CATALOG;
-    default:
+    case "tokyo":
       return TOKYO_LODGING_CATALOG;
+    default: {
+      if (!isKnownCityId(cityId)) return SEOUL_LODGING_CATALOG;
+      const city = resolveCity(cityId);
+      if (city.region === "overseas" || city.countryId === "jp") {
+        return TOKYO_LODGING_CATALOG;
+      }
+      const { lat, lng } = city.center;
+      const nameKo = city.nameKo;
+      return [
+        {
+          name: `${nameKo} 시내 호텔`,
+          lat,
+          lng,
+          basePerNight: 110000,
+          notes: `${nameKo} 중심 · 추천`,
+        },
+        {
+          name: `${nameKo} 비즈니스 호텔`,
+          lat: lat + 0.008,
+          lng: lng - 0.005,
+          basePerNight: 90000,
+          notes: `${nameKo} · 가성비`,
+        },
+        {
+          name: `${nameKo} 리조트·스테이`,
+          lat: lat - 0.01,
+          lng: lng + 0.006,
+          basePerNight: 140000,
+          notes: `${nameKo} · 휴식`,
+        },
+      ];
+    }
   }
 }
 

@@ -86,12 +86,36 @@ export const CITIES: Record<string, DestinationCity> = {
   // 한국
   seoul: city("seoul", "서울", "Seoul", "kr", "KRW", 37.5665, 126.978, "Asia/Seoul", "domestic", "naver"),
   busan: city("busan", "부산", "Busan", "kr", "KRW", 35.1796, 129.0756, "Asia/Seoul", "domestic", "naver"),
-  jeju: city("jeju", "제주", "Jeju", "kr", "KRW", 33.4996, 126.5312, "Asia/Seoul", "domestic", "naver"),
-  gyeongju: city("gyeongju", "경주", "Gyeongju", "kr", "KRW", 35.8562, 129.2247, "Asia/Seoul", "domestic", "naver"),
   incheon: city("incheon", "인천", "Incheon", "kr", "KRW", 37.4563, 126.7052, "Asia/Seoul", "domestic", "naver"),
+  daegu: city("daegu", "대구", "Daegu", "kr", "KRW", 35.8714, 128.6014, "Asia/Seoul", "domestic", "naver"),
+  daejeon: city("daejeon", "대전", "Daejeon", "kr", "KRW", 36.3504, 127.3845, "Asia/Seoul", "domestic", "naver"),
+  gwangju: city("gwangju", "광주", "Gwangju", "kr", "KRW", 35.1595, 126.8526, "Asia/Seoul", "domestic", "naver"),
+  ulsan: city("ulsan", "울산", "Ulsan", "kr", "KRW", 35.5384, 129.3114, "Asia/Seoul", "domestic", "naver"),
+  sejong: city("sejong", "세종", "Sejong", "kr", "KRW", 36.48, 127.289, "Asia/Seoul", "domestic", "naver"),
+  suwon: city("suwon", "수원", "Suwon", "kr", "KRW", 37.2636, 127.0286, "Asia/Seoul", "domestic", "naver"),
+  gapyeong: city("gapyeong", "가평", "Gapyeong", "kr", "KRW", 37.8315, 127.5102, "Asia/Seoul", "domestic", "naver"),
+  yangpyeong: city("yangpyeong", "양평", "Yangpyeong", "kr", "KRW", 37.4914, 127.4876, "Asia/Seoul", "domestic", "naver"),
+  chuncheon: city("chuncheon", "춘천", "Chuncheon", "kr", "KRW", 37.8813, 127.73, "Asia/Seoul", "domestic", "naver"),
   gangneung: city("gangneung", "강릉", "Gangneung", "kr", "KRW", 37.7519, 128.8761, "Asia/Seoul", "domestic", "naver"),
+  sokcho: city("sokcho", "속초", "Sokcho", "kr", "KRW", 38.207, 128.5918, "Asia/Seoul", "domestic", "naver"),
+  cheongju: city("cheongju", "청주", "Cheongju", "kr", "KRW", 36.6424, 127.489, "Asia/Seoul", "domestic", "naver"),
+  daniyang: city("daniyang", "단양", "Danyang", "kr", "KRW", 36.9846, 128.3656, "Asia/Seoul", "domestic", "naver"),
+  gongju: city("gongju", "공주", "Gongju", "kr", "KRW", 36.4465, 127.119, "Asia/Seoul", "domestic", "naver"),
+  boryeong: city("boryeong", "보령", "Boryeong", "kr", "KRW", 36.3334, 126.6129, "Asia/Seoul", "domestic", "naver"),
+  taean: city("taean", "태안", "Taean", "kr", "KRW", 36.7456, 126.298, "Asia/Seoul", "domestic", "naver"),
   jeonju: city("jeonju", "전주", "Jeonju", "kr", "KRW", 35.8242, 127.148, "Asia/Seoul", "domestic", "naver"),
+  gunsan: city("gunsan", "군산", "Gunsan", "kr", "KRW", 35.9676, 126.7369, "Asia/Seoul", "domestic", "naver"),
   yeosu: city("yeosu", "여수", "Yeosu", "kr", "KRW", 34.7604, 127.6622, "Asia/Seoul", "domestic", "naver"),
+  suncheon: city("suncheon", "순천", "Suncheon", "kr", "KRW", 34.9506, 127.4872, "Asia/Seoul", "domestic", "naver"),
+  mokpo: city("mokpo", "목포", "Mokpo", "kr", "KRW", 34.8118, 126.3922, "Asia/Seoul", "domestic", "naver"),
+  gyeongju: city("gyeongju", "경주", "Gyeongju", "kr", "KRW", 35.8562, 129.2247, "Asia/Seoul", "domestic", "naver"),
+  andong: city("andong", "안동", "Andong", "kr", "KRW", 36.5684, 128.7294, "Asia/Seoul", "domestic", "naver"),
+  pohang: city("pohang", "포항", "Pohang", "kr", "KRW", 36.019, 129.3435, "Asia/Seoul", "domestic", "naver"),
+  tongyeong: city("tongyeong", "통영", "Tongyeong", "kr", "KRW", 34.8544, 128.4331, "Asia/Seoul", "domestic", "naver"),
+  geoje: city("geoje", "거제", "Geoje", "kr", "KRW", 34.8806, 128.6211, "Asia/Seoul", "domestic", "naver"),
+  jinju: city("jinju", "진주", "Jinju", "kr", "KRW", 35.1802, 128.1076, "Asia/Seoul", "domestic", "naver"),
+  jeju: city("jeju", "제주시", "Jeju City", "kr", "KRW", 33.4996, 126.5312, "Asia/Seoul", "domestic", "naver"),
+  seogwipo: city("seogwipo", "서귀포", "Seogwipo", "kr", "KRW", 33.2541, 126.5601, "Asia/Seoul", "domestic", "naver"),
   // 일본
   tokyo: city("tokyo", "도쿄", "Tokyo", "jp", "JPY", 35.681236, 139.767125, "Asia/Tokyo"),
   osaka: city("osaka", "오사카", "Osaka", "jp", "JPY", 34.6937, 135.5023, "Asia/Tokyo"),
@@ -254,7 +278,18 @@ const country = (
 ): CountryMeta => ({ id, nameKo, nameEn, flag, cityIds });
 
 export const COUNTRIES: CountryMeta[] = [
-  country("kr", "한국", "Korea", "🇰🇷", ["seoul", "busan", "jeju", "gyeongju", "incheon", "gangneung", "jeonju", "yeosu"]),
+  country("kr", "한국", "Korea", "🇰🇷", [
+    "seoul", "busan", "incheon", "daegu", "daejeon", "gwangju", "ulsan", "sejong",
+    "suwon", "gapyeong", "yangpyeong",
+    "chuncheon", "gangneung", "sokcho",
+    "cheongju", "daniyang",
+    "gongju", "boryeong", "taean",
+    "jeonju", "gunsan",
+    "yeosu", "suncheon", "mokpo",
+    "gyeongju", "andong", "pohang",
+    "tongyeong", "geoje", "jinju",
+    "jeju", "seogwipo",
+  ]),
   country("jp", "일본", "Japan", "🇯🇵", ["tokyo", "osaka", "kyoto", "fukuoka", "sapporo", "nagoya", "hiroshima", "okinawa", "nagasaki"]),
   country("th", "태국", "Thailand", "🇹🇭", ["bangkok", "chiangmai", "phuket", "pattaya", "krabi", "kohsamui"]),
   country("vn", "베트남", "Vietnam", "🇻🇳", ["hanoi", "hochiminh", "danang", "hoian", "nhatrang", "dalat", "phuquoc"]),
@@ -289,8 +324,10 @@ export const COUNTRIES: CountryMeta[] = [
   country("in", "인도", "India", "🇮🇳", ["newdelhi", "mumbai", "agra", "jaipur", "varanasi"]),
 ];
 
-export const DEFAULT_CITY_ID = "tokyo";
-export const MAX_SELECTED_CITIES = 2;
+export const DEFAULT_CITY_ID = "seoul";
+/** 출발 도시 (국내 MVP) */
+export const DEPARTURE_CITY_IDS = ["seoul", "busan"] as const;
+export const MAX_SELECTED_CITIES = 6;
 
 export function isKnownCityId(id: string | undefined | null): boolean {
   return Boolean(id && CITIES[id]);

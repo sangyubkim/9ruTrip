@@ -60,7 +60,7 @@ if (Object.keys(cities).length < 50) {
 }
 
 const out = `/** Auto-generated from apps/mobile/src/data/destinations.ts — do not edit by hand */
-export const DEFAULT_CITY_ID = "tokyo";
+export const DEFAULT_CITY_ID = "seoul";
 
 export const COUNTRIES = ${JSON.stringify(countries, null, 2)};
 

@@ -46,7 +46,7 @@ export function MapScreen({ trip, onBack }: Props) {
           </Text>
           <Text style={styles.stubBody}>
             {mapCfg.providerId === "naver"
-              ? "국내 도시용 어댑터가 준비되어 있습니다. 도쿄/오사카는 Google을 사용합니다. "
+              ? "국내 도시는 Naver Maps 어댑터를 사용합니다. "
               : ""}
             {mapCfg.stubMessage ??
               "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY를 apps/mobile/.env에 넣고 APK를 재빌드하세요."}

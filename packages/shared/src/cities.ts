@@ -80,8 +80,11 @@ export const JEJU_CITY: CityMeta = {
   region: "domestic",
 };
 
+/** 국내 MVP 기본 도시 (서울) */
+export const MVP_CITY: CityMeta = SEOUL_CITY;
+
 /** 해외: 도쿄 */
-export const MVP_CITY: CityMeta = {
+export const TOKYO_CITY: CityMeta = {
   id: "tokyo",
   nameKo: "도쿄",
   nameEn: "Tokyo",
@@ -119,7 +122,7 @@ export const CITIES: Record<MvpCityId, CityMeta> = {
   seoul: SEOUL_CITY,
   busan: BUSAN_CITY,
   jeju: JEJU_CITY,
-  tokyo: MVP_CITY,
+  tokyo: TOKYO_CITY,
   osaka: OSAKA_CITY,
 };
 

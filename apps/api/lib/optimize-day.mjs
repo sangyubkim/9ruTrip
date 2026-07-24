@@ -61,7 +61,7 @@ export async function optimizeDayRoute(body, env) {
     throw new Error("places is required");
   }
 
-  const cityId = isKnownCityId(body?.cityId) ? body.cityId : "tokyo";
+  const cityId = isKnownCityId(body?.cityId) ? body.cityId : "seoul";
   const dayIndexes = [
     ...new Set(allPlaces.map((p) => Number(p.dayIndex) || 0)),
   ];

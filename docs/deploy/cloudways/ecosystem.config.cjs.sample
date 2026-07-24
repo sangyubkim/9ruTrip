@@ -3,7 +3,8 @@
  * Copy next to the monorepo root on the server, adjust cwd/PORT, then:
  *   pm2 start ecosystem.config.cjs
  *   pm2 save
- *   pm2 startup   # follow printed command once
+ *   # Cloudways master often cannot run `pm2 startup` (needs sudo).
+ *   # Use crontab @reboot + docs/deploy/cloudways/start-9ru-apis.sh.sample instead.
  */
 module.exports = {
   apps: [

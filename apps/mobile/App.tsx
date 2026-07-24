@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Alert, BackHandler, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -23,7 +23,13 @@ import {
   upsertTrip,
 } from "./src/storage/tripStorage";
 import type { Screen, Trip } from "./src/types";
-import { buildRouteOutline, getCityMeta, tripCitiesLabel } from "./src/types";
+import {
+  buildCityLegs,
+  buildRouteOutline,
+  getCityMeta,
+  isDomesticCityId,
+  tripCitiesLabel,
+} from "./src/types";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { TripTypeScreen } from "./src/screens/TripTypeScreen";
 import {
@@ -53,6 +59,50 @@ function AppInner() {
   useEffect(() => {
     setApiClientBaseUrl(apiBaseUrl);
   }, [apiBaseUrl]);
+
+  /** 소프트 백버튼 → 이전 화면 (홈에서만 앱 종료) */
+  useEffect(() => {
+    const onHardwareBack = () => {
+      if (showOnboarding) return true;
+      if (showSettings) {
+        setShowSettings(false);
+        return true;
+      }
+      if (screen === "home") return false;
+      if (screen === "tripType") {
+        setScreen("home");
+        return true;
+      }
+      if (screen === "create") {
+        setScreen("tripType");
+        return true;
+      }
+      if (screen === "briefing") {
+        setScreen("create");
+        return true;
+      }
+      if (screen === "plan") {
+        setActive(null);
+        setScreen("home");
+        return true;
+      }
+      if (
+        screen === "map" ||
+        screen === "capture" ||
+        screen === "expenses" ||
+        screen === "summary"
+      ) {
+        setScreen("plan");
+        return true;
+      }
+      return false;
+    };
+    const sub = BackHandler.addEventListener(
+      "hardwareBackPress",
+      onHardwareBack,
+    );
+    return () => sub.remove();
+  }, [screen, showSettings, showOnboarding]);
 
   useEffect(() => {
     if (!ready) return;
@@ -131,20 +181,47 @@ function AppInner() {
           userRequest: input.userRequest,
           mainRequest: input.userRequest,
         });
+        const inputCityIds =
+          input.cityIds?.length > 0 ? input.cityIds : [input.cityId];
+        const inputDomestic = inputCityIds.every(isDomesticCityId);
+        // 구 API/모델이 도쿄 일정을 주면 저장하지 않고 실패 처리
+        const apiOverseasMismatch =
+          inputDomestic &&
+          ((result.cityId && !isDomesticCityId(result.cityId)) ||
+            (result.cities ?? []).some((c) => !isDomesticCityId(c.cityId)) ||
+            /도쿄|오사카|교토|tokyo|osaka/i.test(
+              `${result.briefing || ""} ${result.summary || ""}`,
+            ) ||
+            (result.places ?? []).filter((p) => Number(p.lng) > 132).length >=
+              Math.ceil((result.places?.length || 0) / 2));
+        if (apiOverseasMismatch) {
+          throw new Error(
+            "서버가 해외(일본) 일정을 반환했습니다. API를 최신 코드로 재시작한 뒤 다시 시도해 주세요.",
+          );
+        }
+        const resolvedCityId = result.cityId ?? input.cityId;
+        const cities =
+          result.cities ?? buildCityLegs(inputCityIds, input.days);
+        const cityName =
+          cities.length > 1
+            ? cities.map((c) => c.cityName).join(" · ")
+            : getCityMeta(resolvedCityId).nameKo;
         const routeOutline =
           result.routeOutline ||
           buildRouteOutline({
             origin,
-            cityIds: input.cityIds,
+            cityIds: inputCityIds,
           });
+        const briefing = result.briefing || result.summary;
         const trip = createEmptyTrip({
           ...input,
+          cityId: resolvedCityId,
+          cityIds: inputCityIds,
           origin,
           mainRequest: input.userRequest,
-          briefing: result.briefing || result.summary,
+          briefing,
           routeOutline,
         });
-        const resolvedCityId = result.cityId ?? input.cityId;
         const next: Trip = {
           ...trip,
           places: result.places,
@@ -154,12 +231,9 @@ function AppInner() {
           mapProvider:
             result.mapProvider ?? getCityMeta(resolvedCityId).mapProvider,
           cityId: resolvedCityId,
-          cityName:
-            result.cities && result.cities.length > 1
-              ? result.cities.map((c) => c.cityName).join(" · ")
-              : getCityMeta(resolvedCityId).nameKo,
-          cities: result.cities ?? trip.cities,
-          briefing: result.briefing || result.summary,
+          cityName,
+          cities,
+          briefing,
           routeOutline,
           startAddress: input.startAddress,
           startLat: input.startLat,

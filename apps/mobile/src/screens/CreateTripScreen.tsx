@@ -11,11 +11,13 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ProvinceCityPicker } from "../components/ProvinceCityPicker";
 import {
   CITIES,
-  DOMESTIC_CITY_IDS,
-  type MvpCityId,
-} from "../types";
+  DEPARTURE_CITY_IDS,
+  MAX_SELECTED_CITIES,
+} from "../data/destinations";
+import type { MvpCityId } from "../types";
 import { useTheme } from "../theme/ThemeContext";
 import { radius, space } from "../theme/tokens";
 
@@ -27,9 +29,12 @@ try {
   Location = null;
 }
 
+export type DepartureCityId = (typeof DEPARTURE_CITY_IDS)[number];
+
 export type CreateTripInput = {
   cityId: MvpCityId;
   cityIds: MvpCityId[];
+  departureCityId: DepartureCityId;
   nights: number;
   days: number;
   partySize: number;
@@ -57,7 +62,9 @@ function normalizeStartTime(raw: string): string {
 export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const [selected, setSelected] = useState<MvpCityId[]>(["seoul"]);
+  const [departureCityId, setDepartureCityId] =
+    useState<DepartureCityId>("seoul");
+  const [selected, setSelected] = useState<MvpCityId[]>(["busan"]);
   const [nights, setNights] = useState("2");
   const [days, setDays] = useState("3");
   const [party, setParty] = useState("2");
@@ -67,16 +74,6 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const [startTime, setStartTime] = useState("09:00");
   const [userRequest, setUserRequest] = useState("");
   const [locating, setLocating] = useState(false);
-
-  const toggleCity = (id: MvpCityId) => {
-    setSelected((prev) => {
-      if (prev.includes(id)) {
-        if (prev.length === 1) return prev;
-        return prev.filter((c) => c !== id);
-      }
-      return [...prev, id];
-    });
-  };
 
   const useCurrentLocation = async () => {
     if (!Location || Platform.OS === "web") {
@@ -103,7 +100,10 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
 
       let label = `현재 위치 (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
       try {
-        const geos = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+        const geos = await Location.reverseGeocodeAsync({
+          latitude: lat,
+          longitude: lng,
+        });
         const g = geos?.[0];
         if (g) {
           const parts = [
@@ -130,29 +130,30 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   };
 
   const submit = () => {
+    if (!selected.length) {
+      Alert.alert("여행지 필요", "여행 도시를 하나 이상 선택해 주세요.");
+      return;
+    }
     const n = Math.min(14, Math.max(1, parseInt(nights, 10) || 2));
     const d = Math.min(15, Math.max(1, parseInt(days, 10) || n + 1));
     const p = Math.min(12, Math.max(1, parseInt(party, 10) || 2));
-    const cityIds = selected.length ? selected : (["seoul"] as MvpCityId[]);
+    const cityIds = selected;
+    const dep = CITIES[departureCityId];
     const addr = startAddress.trim();
     onSubmit({
       cityId: cityIds[0],
       cityIds,
+      departureCityId,
       nights: n,
       days: d,
       partySize: p,
-      startAddress: addr || undefined,
-      startLat,
-      startLng,
+      startAddress: addr || dep?.nameKo,
+      startLat: startLat ?? dep?.center.lat,
+      startLng: startLng ?? dep?.center.lng,
       startTime: normalizeStartTime(startTime),
       userRequest: userRequest.trim() || undefined,
     });
   };
-
-  const label =
-    selected.length > 1
-      ? selected.map((id) => CITIES[id].nameKo).join(" · ")
-      : CITIES[selected[0] ?? "seoul"].nameKo;
 
   const inputStyle = [
     styles.input,
@@ -182,11 +183,45 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       </Pressable>
       <Text style={[styles.title, { color: colors.text }]}>여행자 정보</Text>
       <Text style={[styles.hint, { color: colors.textMuted }]}>
-        출발지·일정·요청을 입력하면 AI가 추천 경로를 만듭니다.
+        출발 도시·여행지·일정을 입력하면 AI가 국내 추천 경로를 만듭니다.
       </Text>
 
       <Text style={[styles.label, { color: colors.textSecondary }]}>
-        출발지 (국내 주소)
+        출발 도시
+      </Text>
+      <View style={styles.cityRow}>
+        {DEPARTURE_CITY_IDS.map((id) => {
+          const on = departureCityId === id;
+          return (
+            <Pressable
+              key={id}
+              style={[
+                styles.cityChip,
+                {
+                  backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                  borderColor: on ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => setDepartureCityId(id)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: on }}
+              accessibilityLabel={`출발 ${CITIES[id].nameKo}`}
+            >
+              <Text
+                style={[
+                  styles.cityChipText,
+                  { color: on ? colors.chipOnFg : colors.chipFg },
+                ]}
+              >
+                {CITIES[id].nameKo}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Text style={[styles.label, { color: colors.textSecondary }]}>
+        출발 상세 주소 (선택)
       </Text>
       <TextInput
         style={inputStyle}
@@ -196,7 +231,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
           setStartLat(undefined);
           setStartLng(undefined);
         }}
-        placeholder="예: 서울시 강남구 …"
+        placeholder={`예: ${CITIES[departureCityId].nameKo}시 …`}
         placeholderTextColor={colors.textMuted}
         accessibilityLabel="출발지 주소"
       />
@@ -221,44 +256,13 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       </Pressable>
 
       <Text style={[styles.label, { color: colors.textSecondary }]}>
-        여행 도시
+        여행지 (도 → 도시)
       </Text>
-      <View style={styles.cityRow}>
-        {DOMESTIC_CITY_IDS.map((id) => {
-          const on = selected.includes(id);
-          return (
-            <Pressable
-              key={id}
-              style={[
-                styles.cityChip,
-                {
-                  backgroundColor: on ? colors.chipOnBg : colors.chipBg,
-                  borderColor: on ? colors.primary : colors.border,
-                },
-              ]}
-              onPress={() => toggleCity(id)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: on }}
-              accessibilityLabel={`${CITIES[id].nameKo} 선택`}
-            >
-              <Text
-                style={[
-                  styles.cityChipText,
-                  { color: on ? colors.chipOnFg : colors.chipFg },
-                ]}
-              >
-                {CITIES[id].nameKo}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <View style={[styles.locked, { backgroundColor: colors.accentMuted }]}>
-        <Text style={[styles.lockedText, { color: colors.accent }]}>
-          {label}
-          {selected.length > 1 ? " · Day 균등 분할" : ""}
-        </Text>
-      </View>
+      <ProvinceCityPicker
+        selectedCityIds={selected}
+        onChangeCityIds={(ids) => setSelected(ids as MvpCityId[])}
+        maxCities={MAX_SELECTED_CITIES}
+      />
 
       <View style={styles.fieldGrid}>
         <View style={styles.fieldCol}>
@@ -401,7 +405,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.md,
   },
   gpsBtnText: { fontWeight: "800", fontSize: 14 },
-  cityRow: { flexDirection: "row", gap: space.sm, marginTop: space.sm, flexWrap: "wrap" },
+  cityRow: {
+    flexDirection: "row",
+    gap: space.sm,
+    marginTop: space.sm,
+    flexWrap: "wrap",
+  },
   cityChip: {
     paddingHorizontal: space.lg,
     paddingVertical: space.md,
@@ -411,12 +420,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   cityChipText: { fontWeight: "800", fontSize: 15 },
-  locked: {
-    marginTop: space.md,
-    borderRadius: radius.md,
-    padding: space.md,
-  },
-  lockedText: { fontWeight: "700", fontSize: 13 },
   primary: {
     marginTop: space.xl,
     paddingVertical: 16,

@@ -19,7 +19,12 @@ import { InlineToast } from "../components/InlineToast";
 import { useTheme } from "../theme/ThemeContext";
 import { radius, space } from "../theme/tokens";
 import type { Expense, PlaceCategory, Trip } from "../types";
-import { CATEGORY_LABEL, formatYen, sumActual } from "../utils/cost";
+import {
+  CATEGORY_LABEL,
+  currencyForCity,
+  formatMoney,
+  sumActual,
+} from "../utils/cost";
 import { parseKoreanCardSmsLocal } from "../utils/smsParse";
 
 type Props = {
@@ -51,6 +56,7 @@ function extractSharedText(url: string | null): string | null {
 
 export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
   const { colors } = useTheme();
+  const tripCurrency = currencyForCity(trip.cityId);
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState<PlaceCategory | "misc">("food");
@@ -67,14 +73,17 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
     const n = override?.amount ?? Number(amount);
     const lab = (override?.label ?? label).trim();
     if (!lab || !Number.isFinite(n) || n <= 0) {
-      Alert.alert("입력 확인", "항목명과 금액(엔)을 입력해 주세요.");
+      Alert.alert(
+        "입력 확인",
+        `항목명과 금액(${tripCurrency === "KRW" ? "원" : "엔"})을 입력해 주세요.`,
+      );
       return;
     }
     const expense: Expense = {
       id: `exp-${Date.now()}`,
       label: lab,
       amount: n,
-      currency: override?.currency ?? "JPY",
+      currency: override?.currency ?? tripCurrency,
       category: override?.category ?? category,
       createdAt: new Date().toISOString(),
       sourceSms: override?.sourceSms,
@@ -143,23 +152,25 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
         Alert.alert("파싱 실패", parsed.error || "금액/가맹점을 찾지 못했습니다.");
         return;
       }
-      const jpy =
-        parsed.amountJpyEstimate ?? Math.round(parsed.amountKrw * 0.11);
+      const amountValue =
+        tripCurrency === "KRW"
+          ? parsed.amountKrw
+          : (parsed.amountJpyEstimate ?? Math.round(parsed.amountKrw * 0.11));
       setLabel(parsed.merchant || "카드결제");
-      setAmount(String(jpy));
+      setAmount(String(amountValue));
       setCategory("misc");
       Alert.alert(
         "SMS 파싱됨",
-        `가맹점: ${parsed.merchant}\nKRW ${parsed.amountKrw.toLocaleString()}\n추정 JPY ¥${jpy.toLocaleString()}\n\n금액을 확인한 뒤 「추가」를 누르세요.`,
+        `가맹점: ${parsed.merchant}\n금액 ${formatMoney(amountValue, tripCurrency)}\n\n확인 후 「추가」를 누르세요.`,
         [
           { text: "확인" },
           {
-            text: "바로 추가(JPY)",
+            text: `바로 추가(${tripCurrency})`,
             onPress: () =>
               add({
                 label: parsed.merchant || "카드결제",
-                amount: jpy,
-                currency: "JPY",
+                amount: amountValue,
+                currency: tripCurrency,
                 category: "misc",
                 sourceSms: smsText.trim(),
               }),
@@ -195,7 +206,7 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
             style={[styles.sumChip, { backgroundColor: colors.accentMuted }]}
           >
             <Text style={[styles.sumChipText, { color: colors.accent }]}>
-              {formatYen(sumActual(trip.expenses))}
+              {formatMoney(sumActual(trip.expenses), tripCurrency)}
             </Text>
           </View>
         </View>
@@ -273,7 +284,9 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
         placeholderTextColor={colors.textMuted}
         accessibilityLabel="경비 항목명"
       />
-      <Text style={[styles.label, { color: colors.text }]}>금액 (JPY)</Text>
+      <Text style={[styles.label, { color: colors.text }]}>
+        금액 ({tripCurrency === "KRW" ? "원" : "JPY"})
+      </Text>
       <TextInput
         style={[
           styles.input,
@@ -286,7 +299,7 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
         keyboardType="number-pad"
         value={amount}
         onChangeText={setAmount}
-        accessibilityLabel="금액 엔"
+        accessibilityLabel={tripCurrency === "KRW" ? "금액 원" : "금액 엔"}
       />
 
       <View style={styles.chips}>
@@ -350,7 +363,12 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
               </Text>
               <Text style={[styles.meta, { color: colors.textMuted }]}>
                 {CATEGORY_LABEL[item.category] || item.category} ·{" "}
-                {formatYen(item.amount)}
+                {formatMoney(
+                  item.amount,
+                  item.currency === "JPY" || item.currency === "KRW"
+                    ? item.currency
+                    : tripCurrency,
+                )}
                 {item.sourceSms ? " · SMS" : ""}
               </Text>
             </View>

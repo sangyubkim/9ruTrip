@@ -31,7 +31,8 @@ export function buildCostSummary(trip: Trip): CostSummary {
   return {
     plannedTotal,
     actualTotal,
-    currency: trip.cityId === "seoul" || trip.cityId === "busan" || trip.cityId === "jeju" ? "KRW" : "JPY",
+    currency:
+      trip.cityId === "tokyo" || trip.cityId === "osaka" ? "JPY" : "KRW",
     byCategory,
     variance: actualTotal - plannedTotal,
   };
