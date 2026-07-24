@@ -1,5 +1,6 @@
 import { geminiComplete, parseJsonLoose } from "./gemini.mjs";
 import { haversineKm } from "./transport.mjs";
+import { isKnownCityId, resolveCity } from "./cities.mjs";
 
 /**
  * Nearest-neighbor 휴리스틱: start에서 가장 가까운 미방문 장소를 반복 선택.
@@ -47,7 +48,7 @@ export function pathLengthKm(places) {
 }
 
 function cityLabel(cityId) {
-  return cityId === "osaka" ? "오사카" : "도쿄";
+  return resolveCity(cityId).nameKo;
 }
 
 /**
@@ -60,7 +61,7 @@ export async function optimizeDayRoute(body, env) {
     throw new Error("places is required");
   }
 
-  const cityId = body?.cityId === "osaka" ? "osaka" : "tokyo";
+  const cityId = isKnownCityId(body?.cityId) ? body.cityId : "tokyo";
   const dayIndexes = [
     ...new Set(allPlaces.map((p) => Number(p.dayIndex) || 0)),
   ];

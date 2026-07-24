@@ -69,8 +69,8 @@ export type LodgingCandidate = {
   scoreBreakdown: LodgingScoreBreakdown;
 };
 
-/** 해외 MVP: tokyo (기본) + osaka (선택). 국내는 추후 naver */
-export type MvpCityId = "tokyo" | "osaka";
+/** 도시 id — destinations 카탈로그의 등록된 slug */
+export type MvpCityId = string;
 
 export type MapProviderId = "google" | "naver";
 

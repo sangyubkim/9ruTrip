@@ -37,12 +37,19 @@ export function MapScreen({ trip, onBack }: Props) {
         {mapCfg.stubMessage ? ` · ${mapCfg.stubMessage}` : ""}
       </Text>
 
-      {mapCfg.providerId === "naver" ? (
+      {mapCfg.providerId === "naver" || !mapCfg.canMountNativeMap ? (
         <View style={styles.stub}>
-          <Text style={styles.stubTitle}>Naver Maps 스캐폴드</Text>
+          <Text style={styles.stubTitle}>
+            {mapCfg.providerId === "naver"
+              ? "Naver Maps 스캐폴드"
+              : "지도 키 없음"}
+          </Text>
           <Text style={styles.stubBody}>
-            국내 도시용 어댑터가 준비되어 있습니다. 도쿄/오사카는 Google을
-            사용합니다. {mapCfg.stubMessage}
+            {mapCfg.providerId === "naver"
+              ? "국내 도시용 어댑터가 준비되어 있습니다. 도쿄/오사카는 Google을 사용합니다. "
+              : ""}
+            {mapCfg.stubMessage ??
+              "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY를 apps/mobile/.env에 넣고 APK를 재빌드하세요."}
           </Text>
           <Text style={styles.count}>장소 {places.length}곳 (목록만)</Text>
           {places.map((p) => (

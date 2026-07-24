@@ -15,6 +15,8 @@ D:\01_Project\9ruTrip\
 
 **공유 전략:** `@9rutrip/shared`의 `Step`/`BlogDraft`는 `@9rudocs/shared`와 동일 스키마. 상세는 `packages/shared/README.md`. 물리 병합은 선택(보류).
 
+**외부망 API:** 9ruDocs Cloudways URL(`…/apps/api`)은 Trip 라우트를 제공하지 않습니다. 별도 Cloudways 앱 + `docs/CLOUDWAYS.md` 체크리스트를 따르세요.
+
 ## AI 설정
 
 blog-pipeline과 동일한 Gemini 설정을 사용합니다.
@@ -47,15 +49,39 @@ npm start
 # Android: a 키 또는 npm run android
 ```
 
+### USB 실기기 (Expo Go 대신 개발 APK)
+
+Expo Go QR이 아니라 **USB로 `com.nineru.trip` 개발 빌드**를 설치합니다.
+
+상세: [`apps/mobile/docs/ANDROID-USB-BUILD.md`](apps/mobile/docs/ANDROID-USB-BUILD.md)
+
+```bash
+# 1) Android Studio + USB 디버깅 (최초)
+#    winget install Google.AndroidStudio
+#    winget install Google.PlatformTools
+
+# 2) apps/mobile/.env — 실기기는 LAN IP 필수
+#    EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:3011
+
+# 3) 빌드 + USB 설치
+npm run android:usb
+
+# 기기 목록 / APK만 재설치
+npm run android:devices
+npm run android:install -- path\to.apk
+```
+
 ### API Base URL
 
 | 환경 | URL |
 |------|-----|
 | Android 에뮬레이터 | `http://10.0.2.2:3011` (앱 기본값) |
 | iOS 시뮬 / 웹 | `http://localhost:3011` |
-| 실기기 | PC의 LAN IP, 예: `http://192.168.x.x:3011` |
+| 실기기 (LAN) | PC의 LAN IP, 예: `http://192.168.x.x:3011` |
+| **외부망 (Cloudways)** | `https://<호스트>/apps/api` — **9ruDocs URL과 별개** |
 
-앱 홈 → **API 설정**에서 변경·헬스체크 가능.
+앱 홈 → **설정 → 고급**에서 변경·헬스체크 가능.  
+Cloudways 배포·체크리스트: [`docs/CLOUDWAYS.md`](docs/CLOUDWAYS.md).
 
 ### Google Maps
 
@@ -74,9 +100,11 @@ EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_mobile_key
 GOOGLE_MAPS_API_KEY=your_server_key
 ```
 
-키가 없으면 지도는 graceful degrade(힌트 표시 + 기본 지도/제한 모드), 교통 추정은 **모드별 하버사인 폴백**(도보/대중교통/택시). Directions 실측이 필요하면 `GOOGLE_MAPS_API_KEY`를 `apps/api/.env`에 설정하세요. **가짜 키·실키 커밋 금지.**
+키가 없으면 Android는 MapView를 마운트하지 않고 목록 placeholder로 graceful degrade(크래시 없음). iOS는 Apple Maps로 표시. 교통 추정은 **모드별 하버사인 폴백**(도보/대중교통/택시). Directions 실측이 필요하면 `GOOGLE_MAPS_API_KEY`를 `apps/api/.env`에 설정하세요. **가짜 키·실키 커밋 금지.**
 
-검증: API 재시작 후 `GET /health` → `googleMapsConfigured: true` · Expo 재시작 후 지도 확인.
+지도 타일을 쓰려면 `apps/mobile/.env`에 키를 넣은 뒤 **APK/개발 빌드를 다시 만들고 재설치**하세요. Manifest `com.google.android.geo.API_KEY`는 빌드 타임 주입이라, 설치 후 `.env`만 바꿔도 네이티브 키는 갱신되지 않습니다.
+
+검증: API 재시작 후 `GET /health` → `googleMapsConfigured: true` · (키 넣은 뒤) 재빌드·재설치 후 지도 확인.
 
 실기기 전체 사이클: [`docs/E2E-CHECKLIST.md`](docs/E2E-CHECKLIST.md).
 

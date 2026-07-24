@@ -5,20 +5,22 @@ export type CityMeta = {
   nameKo: string;
   nameEn: string;
   country: string;
-  currency: "JPY";
+  countryId?: string;
+  currency: string;
   center: { lat: number; lng: number };
   timezone: string;
-  /** 해외 = google, 국내(향후) = naver */
+  /** 해외 = google, 국내 = naver */
   mapProvider: MapProviderId;
   region: "overseas" | "domestic";
 };
 
-/** MVP: 해외 도쿄 (기본) */
+/** MVP 기본 도시 */
 export const MVP_CITY: CityMeta = {
   id: "tokyo",
   nameKo: "도쿄",
   nameEn: "Tokyo",
   country: "Japan",
+  countryId: "jp",
   currency: "JPY",
   center: { lat: 35.681236, lng: 139.767125 },
   timezone: "Asia/Tokyo",
@@ -26,12 +28,12 @@ export const MVP_CITY: CityMeta = {
   region: "overseas",
 };
 
-/** P2: 해외 2번째 도시 (선택) — Google Maps */
 export const OSAKA_CITY: CityMeta = {
   id: "osaka",
   nameKo: "오사카",
   nameEn: "Osaka",
   country: "Japan",
+  countryId: "jp",
   currency: "JPY",
   center: { lat: 34.6937, lng: 135.5023 },
   timezone: "Asia/Tokyo",
@@ -39,30 +41,35 @@ export const OSAKA_CITY: CityMeta = {
   region: "overseas",
 };
 
-/**
- * 국내 도시 자리표시 (Naver Maps) — 키/SDK 연동 전 스텁
- * 실제 cityId 로는 아직 선택 불가
- */
-export const SEOUL_STUB = {
-  id: "seoul" as const,
+export const SEOUL_CITY: CityMeta = {
+  id: "seoul",
   nameKo: "서울",
   nameEn: "Seoul",
   country: "Korea",
-  currency: "KRW" as const,
+  countryId: "kr",
+  currency: "KRW",
   center: { lat: 37.5665, lng: 126.978 },
   timezone: "Asia/Seoul",
-  mapProvider: "naver" as const,
-  region: "domestic" as const,
-  status: "stub" as const,
+  mapProvider: "naver",
+  region: "domestic",
 };
 
-export const CITIES: Record<MvpCityId, CityMeta> = {
+/** @deprecated use SEOUL_CITY */
+export const SEOUL_STUB = { ...SEOUL_CITY, status: "stub" as const };
+
+/**
+ * 등록 도시 메타.
+ * 모바일 앱의 destinations.ts 가 전체 카탈로그의 단일 소스이며,
+ * shared 는 공통 헬퍼/하위 호환용 핵심 도시만 유지합니다.
+ */
+export const CITIES: Record<string, CityMeta> = {
   tokyo: MVP_CITY,
   osaka: OSAKA_CITY,
+  seoul: SEOUL_CITY,
 };
 
 export function getCity(cityId: string | undefined | null): CityMeta {
-  if (cityId === "osaka") return OSAKA_CITY;
+  if (cityId && CITIES[cityId]) return CITIES[cityId];
   return MVP_CITY;
 }
 

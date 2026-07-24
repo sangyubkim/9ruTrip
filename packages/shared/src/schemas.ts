@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const cityIdSchema = z.string().min(1).max(64);
+
 export const healthResponseSchema = z.object({
   ok: z.literal(true),
   service: z.string(),
@@ -9,12 +11,46 @@ export const healthResponseSchema = z.object({
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
 export const itineraryRequestSchema = z.object({
-  cityId: z.enum(["tokyo", "osaka"]),
-  /** 멀티시티: 주 도시 외 추가 도시 (예: ["osaka"]) */
-  cityIds: z.array(z.enum(["tokyo", "osaka"])).min(1).max(2).optional(),
+  cityId: cityIdSchema,
+  cityIds: z.array(cityIdSchema).min(1).max(2).optional(),
   nights: z.number().int().min(1).max(14),
   days: z.number().int().min(1).max(15),
   partySize: z.number().int().min(1).max(12),
+  origin: z
+    .object({
+      name: z.string(),
+      address: z.string().optional(),
+      lat: z.number().optional(),
+      lng: z.number().optional(),
+      placeId: z.string().optional(),
+      query: z.string().optional(),
+    })
+    .nullable()
+    .optional(),
+  endPoint: z
+    .object({
+      name: z.string(),
+      address: z.string().optional(),
+      lat: z.number().optional(),
+      lng: z.number().optional(),
+      placeId: z.string().optional(),
+      query: z.string().optional(),
+    })
+    .nullable()
+    .optional(),
+  stopoverCityIds: z.array(cityIdSchema).max(3).optional(),
+  cityWeights: z.array(z.number()).max(2).optional(),
+  preferences: z
+    .object({
+      food: z.number().min(1).max(5),
+      attraction: z.number().min(1).max(5),
+      activity: z.number().min(1).max(5),
+      cost: z.number().min(1).max(5),
+      minTravel: z.number().min(1).max(5),
+    })
+    .optional(),
+  mainRequest: z.string().max(800).optional(),
+  extraRequest: z.string().max(800).optional(),
 });
 
 export type ItineraryRequest = z.infer<typeof itineraryRequestSchema>;
@@ -60,11 +96,11 @@ export const itineraryPlaceSchema = z.object({
   transportEngine: z.string().optional(),
   preferredTransportMode: transportModeSchema.optional(),
   transportOptions: z.array(transportOptionSchema).optional(),
-  cityId: z.enum(["tokyo", "osaka"]).optional(),
+  cityId: cityIdSchema.optional(),
 });
 
 export const tripCityLegSchema = z.object({
-  cityId: z.enum(["tokyo", "osaka"]),
+  cityId: cityIdSchema,
   cityName: z.string(),
   dayIndexes: z.array(z.number().int().min(0)),
 });
@@ -94,10 +130,12 @@ export const itineraryResponseSchema = z.object({
   engine: z.string(),
   lodgingCandidates: z.array(lodgingCandidateSchema).optional(),
   preferredLodgingId: z.string().nullable().optional(),
-  cityId: z.enum(["tokyo", "osaka"]).optional(),
+  cityId: cityIdSchema.optional(),
   cities: z.array(tripCityLegSchema).optional(),
   mapProvider: z.enum(["google", "naver"]).optional(),
   transportEngine: z.string().optional(),
+  briefing: z.string().optional(),
+  routeOutline: z.string().optional(),
 });
 
 export type ItineraryResponse = z.infer<typeof itineraryResponseSchema>;

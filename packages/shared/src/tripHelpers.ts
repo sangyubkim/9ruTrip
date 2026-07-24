@@ -1,5 +1,5 @@
 import type { ChecklistItem, MvpCityId, Trip, TripCityLeg } from "./types.js";
-import { CITIES, getCity } from "./cities.js";
+import { getCity } from "./cities.js";
 
 export const DEFAULT_CHECKLIST_LABELS = [
   "예약번호",
@@ -20,8 +20,8 @@ export function cityIdForDay(trip: Trip, dayIndex: number): MvpCityId {
   const leg = trip.cities?.find((c) => c.dayIndexes.includes(dayIndex));
   if (leg) return leg.cityId;
   const fromPlace = trip.places.find((p) => p.dayIndex === dayIndex)?.cityId;
-  if (fromPlace === "osaka" || fromPlace === "tokyo") return fromPlace;
-  return trip.cityId === "osaka" ? "osaka" : "tokyo";
+  if (fromPlace) return fromPlace;
+  return trip.cityId || "tokyo";
 }
 
 export function tripCitiesLabel(trip: Trip): string {
@@ -36,7 +36,7 @@ export function buildCityLegs(
   days: number,
 ): TripCityLeg[] {
   const unique = [...new Set(cityIds)].filter(
-    (id): id is MvpCityId => id === "tokyo" || id === "osaka",
+    (id): id is MvpCityId => Boolean(id && String(id).trim()),
   );
   if (unique.length === 0) unique.push("tokyo");
   if (unique.length === 1) {
@@ -62,7 +62,7 @@ export function buildCityLegs(
     cursor += count;
     legs.push({
       cityId: id,
-      cityName: CITIES[id].nameKo,
+      cityName: getCity(id).nameKo,
       dayIndexes,
     });
   }

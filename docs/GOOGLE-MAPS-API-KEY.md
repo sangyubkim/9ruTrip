@@ -88,8 +88,9 @@ keytool -list -v -alias androiddebugkey -keystore "$env:USERPROFILE\.android\deb
 EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=여기에_모바일_키
 ```
 
-- `app.config.js`가 Android/iOS Maps apiKey로 주입합니다.
-- 키 변경 후 **Expo 재시작** (`npx expo start -c` 권장).
+- `app.config.js`가 **키가 있을 때만** Android/iOS Maps apiKey(Manifest meta-data)로 주입합니다.
+- **커스텀 APK / release / USB 빌드**: 키를 넣거나 바꾼 뒤 **반드시 재빌드·재설치**. Manifest는 빌드 타임 값이라, 설치 후 `.env`만 바꿔도 네이티브 키는 갱신되지 않습니다.
+- Expo Go / Metro만 쓰는 경우: `npx expo start -c` 후 재로드 (단, Android Google Maps 타일은 네이티브 키가 있는 개발/프로덕션 빌드가 필요).
 
 참고 템플릿: `apps/mobile/.env.example`
 
@@ -122,9 +123,10 @@ curl http://localhost:3011/health
 
 ### 모바일
 
-1. `apps/mobile/.env` 설정 후 Expo 재시작.
-2. Plan 상단 지도 / 전체지도에서 타일이 정상인지 확인.
-3. 키가 없으면 “Maps 키 없음 · 기본 지도” 힌트만 표시되고 크래시하지 않아야 합니다.
+1. `apps/mobile/.env`에 `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` 설정.
+2. **APK/개발 빌드 재생성·재설치** (Manifest 키 반영).
+3. Plan 상단 지도 / 전체지도에서 타일이 정상인지 확인.
+4. 키가 없으면 Android는 “지도 키 없음” 목록 placeholder만 표시되고 **크래시하지 않아야** 합니다.
 
 ### Directions 스모크 (선택)
 
@@ -158,5 +160,6 @@ curl -X POST http://localhost:3011/trip/compare-transport ^
 - [ ] 모바일 키: `com.nineru.trip` + SHA-1 + Maps SDK만
 - [ ] 서버 키: Directions만 (IP 제한 선택)
 - [ ] `apps/mobile/.env` / `apps/api/.env` 설정 (커밋 안 함)
+- [ ] 모바일: 키 반영 후 **APK 재빌드·재설치**
 - [ ] `GET /health` → `googleMapsConfigured: true`
-- [ ] Expo 재시작 후 지도 확인
+- [ ] 재빌드 후 지도 타일 확인 (키 없으면 Android placeholder, 크래시 없음)

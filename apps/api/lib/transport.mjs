@@ -594,15 +594,31 @@ const OSAKA_LODGING_CATALOG = [
   },
 ];
 
-/** 도쿄/오사카 숙소 후보 Top N (실존 호텔 좌표 기반 정적 카탈로그) */
+import { resolveCity } from "./cities.mjs";
+
+/** 도쿄/오사카 숙소 후보 Top N (실존 호텔 좌표 기반 정적 카탈로그). 그 외 도시는 중심점 근처 플레이스홀더 */
 export function buildLodgingCandidates({
   nights = 2,
   partySize = 2,
   topN = 5,
   cityId = "tokyo",
 } = {}) {
+  const city = resolveCity(cityId);
   const catalog =
-    cityId === "osaka" ? OSAKA_LODGING_CATALOG : TOKYO_LODGING_CATALOG;
+    cityId === "osaka"
+      ? OSAKA_LODGING_CATALOG
+      : cityId === "tokyo"
+        ? TOKYO_LODGING_CATALOG
+        : Array.from({ length: Math.max(3, topN) }, (_, i) => {
+            const offset = (i - 1) * 0.004;
+            return {
+              name: `${city.nameKo} 추천 숙소 ${i + 1}`,
+              lat: city.center.lat + offset,
+              lng: city.center.lng - offset * 0.5,
+              basePerNight: 9000 + i * 2500,
+              notes: `${city.nameKo} 시내 · AI 일정용 후보`,
+            };
+          });
 
   const partyFactor = 1 + Math.max(0, partySize - 2) * 0.15;
   const scored = catalog.map((c, i) => {

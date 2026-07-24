@@ -1,0 +1,23 @@
+/**
+ * PM2 sample for Cloudways SSH session.
+ * Copy next to the monorepo root on the server, adjust cwd/PORT, then:
+ *   pm2 start ecosystem.config.cjs
+ *   pm2 save
+ *   pm2 startup   # follow printed command once
+ */
+module.exports = {
+  apps: [
+    {
+      name: "9rutrip-api",
+      cwd: "/home/master/applications/REPLACE_APP_FOLDER/9ruTrip",
+      script: "apps/api/server.mjs",
+      interpreter: "node",
+      env: {
+        NODE_ENV: "production",
+        PORT: "3011",
+      },
+      max_restarts: 20,
+      min_uptime: "5s",
+    },
+  ],
+};

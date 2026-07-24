@@ -34,6 +34,9 @@ export type ColorTokens = {
   text: string;
   textSecondary: string;
   textMuted: string;
+  /** White/light elevated cards (e.g. Plan place rows) — always dark for contrast */
+  textOnCard: string;
+  textMutedOnCard: string;
   border: string;
   primary: string;
   primaryFg: string;
@@ -57,6 +60,8 @@ export const lightTokens: ColorTokens = {
   text: "#0c4a6e",
   textSecondary: "#334155",
   textMuted: "#64748b",
+  textOnCard: "#0f172a",
+  textMutedOnCard: "#64748b",
   border: "#e2e8f0",
   primary: "#0c4a6e",
   primaryFg: "#ffffff",
@@ -80,6 +85,9 @@ export const darkTokens: ColorTokens = {
   text: "#e0f2fe",
   textSecondary: "#cbd5e1",
   textMuted: "#94a3b8",
+  // Plan place rows stay #fff — keep dark slate even in dark theme
+  textOnCard: "#0f172a",
+  textMutedOnCard: "#475569",
   border: "#334155",
   primary: "#38bdf8",
   primaryFg: "#0f172a",

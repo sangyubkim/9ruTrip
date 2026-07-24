@@ -96,7 +96,7 @@ export function HomeScreen({
         <Text style={styles.brand} accessibilityRole="header">
           9ruTrip
         </Text>
-        <Text style={styles.tag}>도쿄 · 오사카 · 한 손으로 따라가는 여행</Text>
+        <Text style={styles.tag}>국가·도시 선택 · 한 손으로 따라가는 여행</Text>
         <Pressable
           style={styles.primary}
           onPress={onCreate}
@@ -132,7 +132,7 @@ export function HomeScreen({
         <EmptyState
           glyph="✈"
           title="아직 여행이 없습니다"
-          body="도쿄·오사카 일정을 만들고, 현장에서 한 손으로 다음 액션을 따라가 보세요."
+          body="원하는 국가·도시로 일정을 만들고, 현장에서 한 손으로 다음 액션을 따라가 보세요."
           ctaLabel="첫 여행 만들기"
           onCta={onCreate}
         />

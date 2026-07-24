@@ -168,12 +168,33 @@ export function PlanDayMap({
     onSelectPlace?.(placeId);
   };
 
-  if (mapCfg.providerId === "naver") {
+  if (mapCfg.providerId === "naver" || !mapCfg.canMountNativeMap) {
     return (
       <View style={[styles.stub, { borderColor: colors.mapBorder }]}>
         <Text style={[styles.stubText, { color: colors.accent }]}>
-          Naver Maps 스캐폴드 · 장소 {coords.length}곳
+          {mapCfg.providerId === "naver"
+            ? `Naver Maps 스캐폴드 · 장소 ${coords.length}곳`
+            : `지도 키 없음 · 장소 ${coords.length}곳`}
         </Text>
+        {mapCfg.stubMessage ? (
+          <Text style={[styles.stubHint, { color: colors.textMuted }]}>
+            {mapCfg.stubMessage}
+          </Text>
+        ) : null}
+        {coords.slice(0, 8).map((p, i) => (
+          <Text
+            key={p.id}
+            style={[styles.stubItem, { color: colors.text }]}
+            numberOfLines={1}
+          >
+            {i + 1}. {p.name}
+          </Text>
+        ))}
+        {coords.length > 8 ? (
+          <Text style={[styles.stubHint, { color: colors.textMuted }]}>
+            …외 {coords.length - 8}곳 (아래 일정 리스트에서 확인)
+          </Text>
+        ) : null}
       </View>
     );
   }
@@ -494,8 +515,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 12,
+    gap: 4,
   },
-  stubText: { fontSize: 12, textAlign: "center" },
+  stubText: { fontSize: 12, textAlign: "center", fontWeight: "700" },
+  stubHint: { fontSize: 10, textAlign: "center", marginTop: 2, paddingHorizontal: 4 },
+  stubItem: { fontSize: 11, alignSelf: "stretch", marginTop: 2 },
   emptyOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",

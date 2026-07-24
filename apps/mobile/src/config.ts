@@ -3,7 +3,14 @@ import { Platform } from "react-native";
 import type { MapProviderId } from "./types";
 import { getCityMeta, type MvpCityId } from "./types";
 
-/** Android 에뮬레이터에서 호스트 PC localhost */
+/**
+ * API base URL
+ * - `.env` EXPO_PUBLIC_API_BASE_URL 우선
+ *   · LAN: http://192.168.x.x:3011
+ *   · 외부: https://…cloudwaysapps.com/apps/api  (docs/CLOUDWAYS.md)
+ * - 미설정 Android 기본값 10.0.2.2 = 에뮬레이터→호스트 (실기기에서는 동작 안 함)
+ * - 안내: apps/mobile/docs/ANDROID-USB-BUILD.md · docs/CLOUDWAYS.md
+ */
 function defaultApiBase(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, "");

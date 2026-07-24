@@ -6,29 +6,51 @@ import {
   getCityMeta,
   MVP_CITY,
 } from "../types";
+import {
+  DEFAULT_CITY_ID,
+  isKnownCityId,
+} from "../data/destinations";
 
 const KEY = "@9rutrip/trips";
 
+function normalizeCityId(id: string | undefined | null): string {
+  return isKnownCityId(id) ? (id as string) : DEFAULT_CITY_ID;
+}
+
 function normalizeTrip(data: Trip): Trip {
-  const cityId = data.cityId === "osaka" ? "osaka" : "tokyo";
+  const cityId = normalizeCityId(data.cityId);
   const cities =
     Array.isArray(data.cities) && data.cities.length > 0
-      ? data.cities.map((c) => ({
-          cityId: (c.cityId === "osaka" ? "osaka" : "tokyo") as
-            | "tokyo"
-            | "osaka",
-          cityName:
-            c.cityName ||
-            getCityMeta(c.cityId === "osaka" ? "osaka" : "tokyo").nameKo,
-          dayIndexes: Array.isArray(c.dayIndexes) ? c.dayIndexes : [],
-        }))
-      : buildCityLegs([cityId], Math.max(1, data.days || 1));
+      ? data.cities.map((c) => {
+          const cid = normalizeCityId(c.cityId);
+          return {
+            cityId: cid,
+            cityName: c.cityName || getCityMeta(cid).nameKo,
+            dayIndexes: Array.isArray(c.dayIndexes) ? c.dayIndexes : [],
+          };
+        })
+      : buildCityLegs(
+          [cityId],
+          Math.max(1, data.days || 1),
+          data.cityWeights,
+        );
 
   return {
     ...data,
     cityId,
     cityName: data.cityName || getCityMeta(cityId).nameKo,
     cities,
+    origin: data.origin ?? null,
+    endPoint: data.endPoint ?? null,
+    stopoverCityIds: Array.isArray(data.stopoverCityIds)
+      ? data.stopoverCityIds.filter(isKnownCityId)
+      : [],
+    cityWeights: Array.isArray(data.cityWeights) ? data.cityWeights : undefined,
+    preferences: data.preferences,
+    mainRequest: data.mainRequest,
+    extraRequest: data.extraRequest,
+    briefing: data.briefing,
+    routeOutline: data.routeOutline,
     aiRerouteEnabled: data.aiRerouteEnabled ?? true,
     guideAlarmsEnabled: data.guideAlarmsEnabled ?? true,
     completedPlaceIds: Array.isArray(data.completedPlaceIds)
@@ -37,10 +59,7 @@ function normalizeTrip(data: Trip): Trip {
     places: Array.isArray(data.places)
       ? data.places.map((p) => ({
           ...p,
-          cityId:
-            p.cityId === "osaka" || p.cityId === "tokyo"
-              ? p.cityId
-              : undefined,
+          cityId: isKnownCityId(p.cityId) ? p.cityId : undefined,
         }))
       : [],
     expenses: Array.isArray(data.expenses) ? data.expenses : [],
@@ -49,7 +68,7 @@ function normalizeTrip(data: Trip): Trip {
       ? data.lodgingCandidates
       : [],
     preferredLodgingId: data.preferredLodgingId ?? null,
-    mapProvider: data.mapProvider ?? "google",
+    mapProvider: data.mapProvider ?? getCityMeta(cityId).mapProvider,
     checklist:
       Array.isArray(data.checklist) && data.checklist.length > 0
         ? data.checklist.map((c) => ({
@@ -132,15 +151,24 @@ export function createEmptyTrip(input: {
   nights: number;
   days: number;
   partySize: number;
+  origin?: import("../types").PlaceRef | null;
+  endPoint?: import("../types").PlaceRef | null;
+  stopoverCityIds?: import("../types").MvpCityId[];
+  cityWeights?: number[];
+  preferences?: import("../types").TripPreferenceWeights;
+  mainRequest?: string;
+  extraRequest?: string;
+  briefing?: string;
+  routeOutline?: string;
 }): Trip {
   const now = new Date().toISOString();
   const cityIds =
     input.cityIds && input.cityIds.length > 0
-      ? input.cityIds
-      : [input.cityId === "osaka" ? ("osaka" as const) : ("tokyo" as const)];
-  const primary = cityIds[0] === "osaka" ? "osaka" : "tokyo";
+      ? input.cityIds.map(normalizeCityId)
+      : [normalizeCityId(input.cityId)];
+  const primary = cityIds[0] ?? DEFAULT_CITY_ID;
   const city = getCityMeta(primary);
-  const cities = buildCityLegs(cityIds, input.days);
+  const cities = buildCityLegs(cityIds, input.days, input.cityWeights);
   const label =
     cities.length > 1
       ? cities.map((c) => c.cityName).join(" · ")
@@ -150,6 +178,15 @@ export function createEmptyTrip(input: {
     cityId: primary,
     cityName: label,
     cities,
+    origin: input.origin ?? null,
+    endPoint: input.endPoint ?? null,
+    stopoverCityIds: (input.stopoverCityIds ?? []).filter(isKnownCityId),
+    cityWeights: input.cityWeights,
+    preferences: input.preferences,
+    mainRequest: input.mainRequest,
+    extraRequest: input.extraRequest,
+    briefing: input.briefing,
+    routeOutline: input.routeOutline,
     nights: input.nights,
     days: input.days,
     partySize: input.partySize,
@@ -170,5 +207,4 @@ export function createEmptyTrip(input: {
   };
 }
 
-// keep MVP_CITY referenced for tree-shake-friendly import side-effect none
 void MVP_CITY;

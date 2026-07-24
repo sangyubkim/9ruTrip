@@ -16,11 +16,36 @@ import {
   compareLegTransport,
   enrichPlacesWithTransport,
 } from "./lib/transport.mjs";
+import { isKnownCityId, listCityIds } from "./lib/cities.mjs";
+import { searchPlaces } from "./lib/places-search.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv(join(__dirname, ".env"));
 // 루트 .env도 허용
 loadEnv(join(__dirname, "../../.env"));
+
+/**
+ * Cloudways(Apache) 프록시가 앱 경로 prefix를 남기는 경우 제거.
+ * - `/apps/api` … 9ruDocs와 동일 패턴 (별도 Cloudways 앱 권장)
+ * - `/apps/trip-api` … 같은 서버에 Docs와 공존할 때 구분용
+ * - `/api` … 짧은 별칭
+ * 앱 라우트는 항상 `/health`, `/trip/*` 등 prefix 없는 경로로 매칭.
+ */
+function requestPathname(rawUrl) {
+  let pathname = String(rawUrl ?? "/").split("?")[0] || "/";
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    pathname = pathname.slice(0, -1) || "/";
+  }
+  const prefixes = ["/apps/trip-api", "/apps/api", "/api"];
+  for (const prefix of prefixes) {
+    if (pathname === prefix) return "/";
+    if (pathname.startsWith(`${prefix}/`)) {
+      pathname = pathname.slice(prefix.length) || "/";
+      break;
+    }
+  }
+  return pathname || "/";
+}
 
 const env = {
   port: Number(process.env.PORT ?? 3011),
@@ -71,6 +96,8 @@ function corsHeaders(origin) {
     "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Content-Type": "application/json; charset=utf-8",
+    // Apache/CDN이 /health 등을 오래 캐시하지 않도록
+    "Cache-Control": "no-store",
   };
 }
 
@@ -89,7 +116,10 @@ function wpMissingHint() {
 
 async function handle(req, res) {
   const origin = req.headers.origin ?? "";
-  const url = req.url ?? "/";
+  const rawUrl = req.url ?? "/";
+  const pathname = requestPathname(rawUrl);
+  const url =
+    pathname + (rawUrl.includes("?") ? rawUrl.slice(rawUrl.indexOf("?")) : "");
   const method = req.method ?? "GET";
 
   if (method === "OPTIONS") {
@@ -107,7 +137,7 @@ async function handle(req, res) {
           ok: true,
           service: "9rutrip-api",
           mvpCity: "tokyo",
-          cities: ["tokyo", "osaka"],
+          cities: listCityIds(),
           geminiConfigured: Boolean(env.geminiApiKey),
           wordpressConfigured: Boolean(
             env.wpSiteUrl && env.wpUsername && env.wpAppPassword,
@@ -138,6 +168,7 @@ async function handle(req, res) {
             "POST /trip/compare-transport",
             "POST /trip/suggest-places",
             "POST /trip/optimize-day",
+            "POST /places/search",
             "POST /wordpress/publish",
           ],
         },
@@ -191,7 +222,7 @@ async function handle(req, res) {
         forceRecalc: Boolean(body?.forceRecalc),
         mapsApiKey: env.googleMapsApiKey,
         startHour: Number(body?.startHour) || 9,
-        cityId: body?.cityId === "osaka" ? "osaka" : body?.cityId === "tokyo" ? "tokyo" : undefined,
+        cityId: isKnownCityId(body?.cityId) ? body.cityId : undefined,
       });
       send(
         res,
@@ -270,10 +301,17 @@ async function handle(req, res) {
       return;
     }
 
+    if (method === "POST" && matchRoute(url, "/places/search")) {
+      const body = await readBody(req);
+      const result = await searchPlaces(body, env);
+      send(res, 200, result, origin);
+      return;
+    }
+
     if (method === "POST" && matchRoute(url, "/trip/suggest-places")) {
       const body = await readBody(req);
       const result = await suggestPlacesByCategory({
-        cityId: body?.cityId === "osaka" ? "osaka" : "tokyo",
+        cityId: isKnownCityId(body?.cityId) ? body.cityId : "tokyo",
         category: body?.category,
         partySize: Number(body?.partySize) || 2,
         mapsApiKey: env.googleMapsApiKey,
@@ -359,5 +397,5 @@ http.createServer(handle).listen(env.port, () => {
   );
   console.log(`Google Maps Directions: ${Boolean(env.googleMapsApiKey)}`);
   console.log(`Naver Maps scaffold: ${Boolean(env.naverMapClientId)}`);
-  console.log(`MVP cities: Tokyo (+ Osaka optional)`);
+  console.log(`Cities catalog: ${listCityIds().length} cities`);
 });

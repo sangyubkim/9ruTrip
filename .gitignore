@@ -10,6 +10,14 @@ build/
 .expo-shared/
 apps/mobile/.expo/
 
+# Native (CNG — `expo prebuild` / `android:usb` 로 생성)
+apps/mobile/android/
+apps/mobile/ios/
+
+# Local APK / EAS artifacts
+apps/mobile/*.apk
+apps/mobile/dist/
+
 # Env & secrets (never commit)
 .env
 .env.*

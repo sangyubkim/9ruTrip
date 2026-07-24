@@ -1,0 +1,13 @@
+# Cloudways Hybrid Stack — place as:
+#   ~/applications/<APP_FOLDER>/public_html/apps/api/.htaccess
+#
+# Forwards /apps/api/* → local Node (PORT must match apps/api/.env).
+# Requires Apache mod_proxy / mod_proxy_http (Cloudways support can enable).
+# Do NOT commit a live .htaccess with secrets; this file is a template only.
+
+DirectoryIndex disabled
+RewriteEngine On
+RewriteBase /apps/api/
+
+# Keep /apps/api prefix so Node requestPathname can strip it (Docs-compatible).
+RewriteRule ^(.*)$ http://127.0.0.1:3011/apps/api/$1 [P,L]

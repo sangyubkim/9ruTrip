@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Linking,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -170,7 +172,10 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.bg }]}>
+    <KeyboardAvoidingView
+      style={[styles.root, { backgroundColor: colors.bg }]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       <FadeIn>
         <Pressable
           onPress={onBack}
@@ -367,7 +372,7 @@ export function ExpensesScreen({ trip, onChangeTrip, onBack }: Props) {
           />
         }
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

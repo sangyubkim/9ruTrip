@@ -22,10 +22,11 @@ import {
   loadTrips,
   upsertTrip,
 } from "./src/storage/tripStorage";
-import type { MvpCityId, Screen, Trip } from "./src/types";
-import { tripCitiesLabel } from "./src/types";
+import type { Screen, Trip } from "./src/types";
+import { buildRouteOutline, getCityMeta, tripCitiesLabel } from "./src/types";
 import { HomeScreen } from "./src/screens/HomeScreen";
-import { CreateTripScreen } from "./src/screens/CreateTripScreen";
+import { CreateTripScreen, type CreateTripInput } from "./src/screens/CreateTripScreen";
+import { BriefingScreen } from "./src/screens/BriefingScreen";
 import { PlanScreen } from "./src/screens/PlanScreen";
 import { MapScreen } from "./src/screens/MapScreen";
 import { CaptureScreen } from "./src/screens/CaptureScreen";
@@ -100,13 +101,7 @@ function AppInner() {
   }, []);
 
   const handleCreate = useCallback(
-    async (input: {
-      cityId: MvpCityId;
-      cityIds: MvpCityId[];
-      nights: number;
-      days: number;
-      partySize: number;
-    }) => {
+    async (input: CreateTripInput) => {
       setGenerating(true);
       try {
         const result = await generateItinerary({
@@ -115,8 +110,27 @@ function AppInner() {
           nights: input.nights,
           days: input.days,
           partySize: input.partySize,
+          origin: input.origin,
+          endPoint: input.endPoint,
+          stopoverCityIds: input.stopoverCityIds,
+          cityWeights: input.cityWeights,
+          preferences: input.preferences,
+          mainRequest: input.mainRequest,
+          extraRequest: input.extraRequest,
         });
-        const trip = createEmptyTrip(input);
+        const routeOutline =
+          result.routeOutline ||
+          buildRouteOutline({
+            origin: input.origin,
+            endPoint: input.endPoint,
+            cityIds: input.cityIds,
+            stopoverCityIds: input.stopoverCityIds,
+          });
+        const trip = createEmptyTrip({
+          ...input,
+          briefing: result.briefing || result.summary,
+          routeOutline,
+        });
         const next: Trip = {
           ...trip,
           places: result.places,
@@ -128,22 +142,15 @@ function AppInner() {
           cityName:
             result.cities && result.cities.length > 1
               ? result.cities.map((c) => c.cityName).join(" · ")
-              : (result.cityId ?? input.cityId) === "osaka"
-                ? "오사카"
-                : "도쿄",
+              : getCityMeta(result.cityId ?? input.cityId).nameKo,
           cities: result.cities ?? trip.cities,
+          briefing: result.briefing || result.summary,
+          routeOutline,
           status: "planning",
           updatedAt: new Date().toISOString(),
         };
         await persist(next);
-        setScreen("plan");
-        Alert.alert(
-          "일정 생성",
-          `${result.summary}\n엔진: ${result.engine} · ${result.places.length}곳` +
-            (result.transportEngine
-              ? `\n교통: ${result.transportEngine}`
-              : ""),
-        );
+        setScreen("briefing");
       } catch (e) {
         Alert.alert(
           "AI 일정 실패",
@@ -206,6 +213,13 @@ function AppInner() {
           generating={generating}
           onBack={() => setScreen("home")}
           onSubmit={(input) => void handleCreate(input)}
+        />
+      )}
+      {screen === "briefing" && active && (
+        <BriefingScreen
+          trip={active}
+          onBack={() => setScreen("create")}
+          onContinue={() => setScreen("plan")}
         />
       )}
       {screen === "plan" && active && (

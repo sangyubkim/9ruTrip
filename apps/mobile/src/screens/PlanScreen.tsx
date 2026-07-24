@@ -67,7 +67,14 @@ import {
   type TransportOption,
   type Trip,
 } from "../types";
+import {
+  MAX_SELECTED_CITIES,
+  citiesInCountry,
+  getCountryForCity,
+} from "../data/destinations";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
+import { space } from "../theme/tokens";
 import { CATEGORY_LABEL, formatYen, STATUS_LABEL } from "../utils/cost";
 import { formatLodgingScoreLines } from "../utils/lodgingExplain";
 import {
@@ -171,6 +178,7 @@ export function PlanScreen({
   const undoOpacity = useRef(new Animated.Value(0)).current;
 
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const reduceMotion = useReduceMotion();
   const isEasy = planUiMode === "easy";
 
@@ -196,10 +204,14 @@ export function PlanScreen({
     : createDefaultChecklist();
   const existingCityIds =
     trip.cities?.map((c) => c.cityId) ?? ([trip.cityId] as MvpCityId[]);
-  const hasTokyo = existingCityIds.includes("tokyo");
-  const hasOsaka = existingCityIds.includes("osaka");
+  const sameCountryCities =
+    getCountryForCity(trip.cityId)?.id != null
+      ? citiesInCountry(getCountryForCity(trip.cityId)!.id).map((c) => c.id)
+      : [];
   const secondaryCityToAdd: MvpCityId | null =
-    hasTokyo && hasOsaka ? null : hasTokyo ? "osaka" : "tokyo";
+    existingCityIds.length >= MAX_SELECTED_CITIES
+      ? null
+      : (sameCountryCities.find((id) => !existingCityIds.includes(id)) ?? null);
 
   useEffect(() => {
     if (trip.status === "active") {
@@ -982,7 +994,9 @@ export function PlanScreen({
               accessibilityLabel="순서 변경 핸들"
               accessibilityHint="≡만 길게 눌러 순서를 바꿉니다. 삭제는 왼쪽 스와이프"
             >
-              <Text style={[styles.drag, { color: colors.textMuted }]}>≡</Text>
+              <Text style={[styles.drag, { color: colors.textMutedOnCard }]}>
+                ≡
+              </Text>
             </Pressable>
             <View style={{ flex: 1 }}>
               <View style={styles.nameRow}>
@@ -997,13 +1011,13 @@ export function PlanScreen({
                   </Text>
                 </Pressable>
                 <Text
-                  style={[styles.name, { color: colors.text }]}
+                  style={[styles.name, { color: colors.textOnCard }]}
                   numberOfLines={2}
                 >
                   {item.name}
                 </Text>
               </View>
-              <Text style={[styles.meta, { color: colors.textMuted }]}>
+              <Text style={[styles.meta, { color: colors.textMutedOnCard }]}>
                 {CATEGORY_LABEL[item.category] || item.category} ·{" "}
                 {formatYen(item.estimatedCost)}
                 {item.category === "hotel" && item.lodgingScore
@@ -1752,63 +1766,65 @@ export function PlanScreen({
         </Animated.View>
       ) : null}
 
-      <View style={styles.actions}>
-        <Pressable
-          style={styles.btnPrimary}
-          onPress={openNavSelectedOrNext}
-          accessibilityRole="button"
-          accessibilityLabel="길안내"
-        >
-          <Text style={styles.btnPrimaryText}>길안내</Text>
-        </Pressable>
-        {!isEasy ? (
-          <>
-            <Pressable style={styles.btn} onPress={onExpenses}>
-              <Text style={styles.btnText}>경비</Text>
-            </Pressable>
-            <Pressable style={styles.btn} onPress={onSummary}>
-              <Text style={styles.btnText}>요약</Text>
-            </Pressable>
-          </>
-        ) : null}
-      </View>
-      {!isEasy ? (
+      <View style={{ paddingBottom: Math.max(insets.bottom, space.sm) }}>
         <View style={styles.actions}>
-          <Pressable style={styles.btnGhost} onPress={onMap}>
-            <Text style={styles.btnGhostText}>전체지도</Text>
+          <Pressable
+            style={styles.btnPrimary}
+            onPress={openNavSelectedOrNext}
+            accessibilityRole="button"
+            accessibilityLabel="길안내"
+          >
+            <Text style={styles.btnPrimaryText}>길안내</Text>
           </Pressable>
-          <Pressable style={styles.btnGhost} onPress={onCapture}>
-            <Text style={styles.btnGhostText}>리뷰</Text>
+          {!isEasy ? (
+            <>
+              <Pressable style={styles.btn} onPress={onExpenses}>
+                <Text style={styles.btnText}>경비</Text>
+              </Pressable>
+              <Pressable style={styles.btn} onPress={onSummary}>
+                <Text style={styles.btnText}>요약</Text>
+              </Pressable>
+            </>
+          ) : null}
+        </View>
+        {!isEasy ? (
+          <View style={styles.actions}>
+            <Pressable style={styles.btnGhost} onPress={onMap}>
+              <Text style={styles.btnGhostText}>전체지도</Text>
+            </Pressable>
+            <Pressable style={styles.btnGhost} onPress={onCapture}>
+              <Text style={styles.btnGhostText}>리뷰</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        <View style={styles.actions}>
+          <Pressable
+            style={styles.btnAlt}
+            onPress={() => setStatus("active")}
+            accessibilityRole="button"
+            accessibilityLabel="여행 시작"
+          >
+            <Text style={styles.btnAltText}>여행 시작</Text>
+          </Pressable>
+          {!isEasy ? (
+            <Pressable
+              style={[styles.btnAlt, rerouting && { opacity: 0.6 }]}
+              disabled={rerouting}
+              onPress={() =>
+                void runReroute("사용자가 동선에서 벗어남 / 남은 일정 재조정")
+              }
+            >
+              {rerouting ? (
+                <ActivityIndicator color="#075985" />
+              ) : (
+                <Text style={styles.btnAltText}>이탈·재루트</Text>
+              )}
+            </Pressable>
+          ) : null}
+          <Pressable style={styles.btnAlt} onPress={() => setStatus("done")}>
+            <Text style={styles.btnAltText}>여행 종료</Text>
           </Pressable>
         </View>
-      ) : null}
-      <View style={styles.actions}>
-        <Pressable
-          style={styles.btnAlt}
-          onPress={() => setStatus("active")}
-          accessibilityRole="button"
-          accessibilityLabel="여행 시작"
-        >
-          <Text style={styles.btnAltText}>여행 시작</Text>
-        </Pressable>
-        {!isEasy ? (
-          <Pressable
-            style={[styles.btnAlt, rerouting && { opacity: 0.6 }]}
-            disabled={rerouting}
-            onPress={() =>
-              void runReroute("사용자가 동선에서 벗어남 / 남은 일정 재조정")
-            }
-          >
-            {rerouting ? (
-              <ActivityIndicator color="#075985" />
-            ) : (
-              <Text style={styles.btnAltText}>이탈·재루트</Text>
-            )}
-          </Pressable>
-        ) : null}
-        <Pressable style={styles.btnAlt} onPress={() => setStatus("done")}>
-          <Text style={styles.btnAltText}>여행 종료</Text>
-        </Pressable>
       </View>
 
       <TransportCompareSheet

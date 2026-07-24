@@ -3,6 +3,8 @@ import {
   Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -84,7 +86,10 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.bg }]}>
+    <KeyboardAvoidingView
+      style={[styles.root, { backgroundColor: colors.bg }]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       <FadeIn>
         <Pressable
           onPress={onBack}
@@ -291,7 +296,7 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
           </View>
         )}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -4,17 +4,27 @@ import type {
   LodgingCandidate,
   MvpCityId,
   PlaceCategory,
+  PlaceRef,
   TransportOption,
   Trip,
+  TripPreferenceWeights,
 } from "../types";
 
 export type ItineraryRequest = {
   cityId: MvpCityId;
-  /** 멀티시티: 예 ["tokyo","osaka"] */
+  /** 멀티시티 여행지: 예 ["tokyo","osaka"] */
   cityIds?: MvpCityId[];
   nights: number;
   days: number;
   partySize: number;
+  origin?: PlaceRef | null;
+  endPoint?: PlaceRef | null;
+  stopoverCityIds?: MvpCityId[];
+  /** 여행지별 Day 비중 (합 ~100) */
+  cityWeights?: number[];
+  preferences?: TripPreferenceWeights;
+  mainRequest?: string;
+  extraRequest?: string;
 };
 
 export type ItineraryResponse = {
@@ -28,6 +38,8 @@ export type ItineraryResponse = {
   cities?: { cityId: MvpCityId; cityName: string; dayIndexes: number[] }[];
   mapProvider?: "google" | "naver";
   transportEngine?: string;
+  briefing?: string;
+  routeOutline?: string;
 };
 
 export async function generateItinerary(
@@ -235,6 +247,35 @@ export async function suggestPlaces(payload: {
   return json;
 }
 
+export type PlaceSearchResult = {
+  placeId?: string;
+  name: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
+  cityId?: string;
+};
+
+export async function searchPlaces(payload: {
+  query: string;
+  cityId?: string;
+}): Promise<{ results: PlaceSearchResult[]; source?: string }> {
+  const res = await apiFetch("/places/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = (await res.json()) as {
+    results?: PlaceSearchResult[];
+    source?: string;
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(json.error ?? `Place search failed: ${res.status}`);
+  }
+  return { results: json.results ?? [], source: json.source };
+}
+
 export type OptimizeDayResponse = {
   places: ItineraryPlace[];
   dayIndex: number;
@@ -271,10 +312,34 @@ export async function checkHealth(): Promise<{
   googleMapsConfigured?: boolean;
 }> {
   const res = await apiFetch("/health");
-  return (await res.json()) as {
-    ok: boolean;
+  let data: {
+    ok?: boolean;
     geminiConfigured?: boolean;
     wordpressConfigured?: boolean;
     googleMapsConfigured?: boolean;
+    service?: string;
+  };
+  try {
+    data = (await res.json()) as typeof data;
+  } catch {
+    throw new Error(
+      "9ruTrip API 응답을 해석할 수 없습니다. URL이 …/apps/api (또는 LAN :3011) 인지 확인하세요.",
+    );
+  }
+  if (!res.ok || !data?.ok) {
+    throw new Error(
+      "헬스체크 실패. 9ruDocs API 주소가 아닌지, 경로가 /apps/api 인지 확인하세요.",
+    );
+  }
+  if (data.service && data.service !== "9rutrip-api") {
+    throw new Error(
+      `다른 서비스 응답(${data.service}). 9ruTrip Cloudways 앱 URL을 사용하세요 (Docs URL 불가).`,
+    );
+  }
+  return {
+    ok: true,
+    geminiConfigured: data.geminiConfigured,
+    wordpressConfigured: data.wordpressConfigured,
+    googleMapsConfigured: data.googleMapsConfigured,
   };
 }

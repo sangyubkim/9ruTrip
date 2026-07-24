@@ -1,5 +1,6 @@
 import { geminiComplete, parseJsonLoose } from "./gemini.mjs";
 import { enrichPlacesWithTransport } from "./transport.mjs";
+import { isKnownCityId } from "./cities.mjs";
 
 function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -156,7 +157,7 @@ export async function rerouteItinerary(body, env) {
   const enriched = await enrichPlacesWithTransport(merged, {
     mapsApiKey: env.googleMapsApiKey || "",
     forceRecalc: true,
-    cityId: trip.cityId === "osaka" ? "osaka" : "tokyo",
+    cityId: isKnownCityId(trip.cityId) ? trip.cityId : "tokyo",
   });
   const plannedBudget = enriched.reduce((s, p) => s + (p.estimatedCost || 0), 0);
 

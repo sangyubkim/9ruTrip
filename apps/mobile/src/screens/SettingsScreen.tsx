@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -73,7 +76,15 @@ export function SettingsScreen({ onClose }: Props) {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.bg }]}>
+    <KeyboardAvoidingView
+      style={[styles.root, { backgroundColor: colors.bg }]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        contentContainerStyle={styles.scrollContent}
+      >
       <Text style={[styles.title, { color: colors.text }]}>설정</Text>
 
       <View
@@ -192,7 +203,8 @@ export function SettingsScreen({ onClose }: Props) {
             API Base URL
           </Text>
           <Text style={[styles.hint, { color: colors.textMuted }]}>
-            Android 에뮬레이터 기본값: http://10.0.2.2:3011 · 실기기는 PC LAN IP
+            에뮬레이터: http://10.0.2.2:3011 · LAN 실기기: http://PC의IPv4:3011 ·
+            외부망: https://….cloudwaysapps.com/apps/api (9ruDocs URL과 별개)
           </Text>
           <TextInput
             style={[
@@ -232,7 +244,8 @@ export function SettingsScreen({ onClose }: Props) {
       >
         <Text style={[styles.ghostText, { color: colors.textMuted }]}>닫기</Text>
       </Pressable>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -243,9 +256,9 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
-    padding: 16,
     zIndex: 20,
   },
+  scrollContent: { padding: 16, paddingBottom: 40 },
   title: { fontSize: 22, fontWeight: "800", marginBottom: 12 },
   healthCard: {
     borderWidth: 2,
