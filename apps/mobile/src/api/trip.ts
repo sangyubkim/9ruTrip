@@ -25,6 +25,11 @@ export type ItineraryRequest = {
   preferences?: TripPreferenceWeights;
   mainRequest?: string;
   extraRequest?: string;
+  startAddress?: string;
+  startLat?: number;
+  startLng?: number;
+  startTime?: string;
+  userRequest?: string;
 };
 
 export type ItineraryResponse = {

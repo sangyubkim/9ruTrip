@@ -11,7 +11,6 @@ import { Platform } from "react-native";
 import { PROVIDER_GOOGLE } from "react-native-maps";
 import {
   getGoogleMapsKey,
-  getNaverMapClientId,
   resolveMapProvider,
 } from "../config";
 import type { MapProviderId, MvpCityId } from "../types";
@@ -30,18 +29,19 @@ export type MapViewConfig = {
 };
 
 export function getMapViewConfig(cityId: MvpCityId): MapViewConfig {
-  const providerId = resolveMapProvider(cityId);
+  const preferred = resolveMapProvider(cityId);
 
-  if (providerId === "naver") {
-    const id = getNaverMapClientId();
+  // Naver SDK 미연동 — 국내 도시도 Google Maps로 표시 (폴백)
+  if (preferred === "naver") {
+    const key = getGoogleMapsKey();
     return {
-      providerId: "naver",
-      rnProvider: undefined,
-      hasCredentials: Boolean(id),
-      canMountNativeMap: false,
-      stubMessage: id
-        ? "Naver Maps Client ID는 있으나 네이티브 모듈 미연동 (스캐폴드). 국내 도시에서 활성화 예정."
-        : "Naver Maps 스텁 — EXPO_PUBLIC_NAVER_MAP_CLIENT_ID 설정 후 국내 도시용으로 사용. 현재 해외 도시는 Google.",
+      providerId: "google",
+      rnProvider: Platform.OS === "android" ? PROVIDER_GOOGLE : undefined,
+      hasCredentials: Boolean(key),
+      canMountNativeMap: Platform.OS !== "android" || Boolean(key),
+      stubMessage: key
+        ? null
+        : "국내 도시 · Google Maps 폴백 (Naver SDK 미연동). EXPO_PUBLIC_GOOGLE_MAPS_API_KEY 권장.",
     };
   }
 

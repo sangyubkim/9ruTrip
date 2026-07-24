@@ -7,10 +7,11 @@ import {
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Trip, TripStatus } from "../types";
 import { tripCitiesLabel } from "../types";
 import { EmptyState } from "../components/EmptyState";
-import { formatYen, STATUS_LABEL } from "../utils/cost";
+import { currencyForCity, formatMoney, STATUS_LABEL } from "../utils/cost";
 import { useTheme } from "../theme/ThemeContext";
 import { radius, space, type } from "../theme/tokens";
 
@@ -43,6 +44,7 @@ export function HomeScreen({
   onDuplicate,
 }: Props) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const openTripMenu = (trip: Trip) => {
     Alert.alert(
@@ -132,7 +134,7 @@ export function HomeScreen({
         <EmptyState
           glyph="✈"
           title="아직 여행이 없습니다"
-          body="원하는 국가·도시로 일정을 만들고, 현장에서 한 손으로 다음 액션을 따라가 보세요."
+          body="서울·부산·제주 일정을 만들고, 현장에서 한 손으로 다음 액션을 따라가 보세요."
           ctaLabel="첫 여행 만들기"
           onCta={onCreate}
         />
@@ -140,7 +142,9 @@ export function HomeScreen({
         <FlatList
           data={trips}
           keyExtractor={(t) => t.id}
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{
+            paddingBottom: Math.max(insets.bottom, 16) + 24,
+          }}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           renderItem={({ item }) => {
             const chip = STATUS_CHIP[item.status] ?? STATUS_CHIP.planning;
@@ -202,7 +206,11 @@ export function HomeScreen({
                   <Text
                     style={[styles.cardMetaInline, { color: colors.textMuted }]}
                   >
-                    {item.partySize}명 · 계획 {formatYen(item.plannedBudget)}
+                    {item.partySize}명 · 계획{" "}
+                    {formatMoney(
+                      item.plannedBudget,
+                      currencyForCity(item.cityId),
+                    )}
                   </Text>
                 </View>
                 <Text style={[styles.cardMeta, { color: colors.textMuted }]}>

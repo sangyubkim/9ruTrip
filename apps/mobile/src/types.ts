@@ -90,6 +90,11 @@ export type ItineraryPlace = {
   transportEngine?: string;
   preferredTransportMode?: TransportMode;
   transportOptions?: TransportOption[];
+  rating?: number;
+  mustVisit?: boolean;
+  signatureFood?: string;
+  reviewSummary?: string;
+  aiReason?: string;
 };
 
 export type TripCityLeg = {
@@ -187,6 +192,11 @@ export type Trip = {
   guideAlarmsEnabled: boolean;
   completedPlaceIds: string[];
   checklist?: ChecklistItem[];
+  startAddress?: string;
+  startLat?: number;
+  startLng?: number;
+  startTime?: string;
+  userRequest?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -194,7 +204,7 @@ export type Trip = {
 export type CostSummary = {
   plannedTotal: number;
   actualTotal: number;
-  currency: "JPY";
+  currency: "JPY" | "KRW";
   byCategory: Record<string, { planned: number; actual: number }>;
   variance: number;
 };
@@ -208,10 +218,23 @@ export type Screen =
   | "capture"
   | "expenses"
   | "summary"
-  | "settings";
+  | "settings"
+  | "tripType";
 
 export const CITIES = DESTINATION_CITIES;
-export const MVP_CITY = DESTINATION_CITIES[DEFAULT_CITY_ID];
+export const MVP_CITY = DESTINATION_CITIES.seoul ?? DESTINATION_CITIES[DEFAULT_CITY_ID];
+
+/** 국내 여행 위자드용 (서울·부산·제주) */
+export const DOMESTIC_CITY_IDS: MvpCityId[] = ["seoul", "busan", "jeju"];
+export const OVERSEAS_CITY_IDS: MvpCityId[] = ["tokyo", "osaka"];
+
+export function isMvpCityId(id: unknown): id is MvpCityId {
+  return typeof id === "string" && isKnownCityId(id);
+}
+
+export function isDomesticCityId(id: unknown): boolean {
+  return id === "seoul" || id === "busan" || id === "jeju";
+}
 
 export const DEFAULT_CHECKLIST_LABELS = [
   "예약번호",
@@ -238,7 +261,7 @@ export function cityIdForDay(trip: Trip, dayIndex: number): MvpCityId {
   if (leg) return leg.cityId;
   const fromPlace = trip.places.find((p) => p.dayIndex === dayIndex)?.cityId;
   if (fromPlace && isKnownCityId(fromPlace)) return fromPlace;
-  return isKnownCityId(trip.cityId) ? trip.cityId : DEFAULT_CITY_ID;
+  return isKnownCityId(trip.cityId) ? trip.cityId : "seoul";
 }
 
 /** 도시 표시명 (멀티시티면 합침) */
@@ -325,7 +348,7 @@ export function buildCityLegs(
   const unique = [...new Set(cityIds)].filter((id): id is MvpCityId =>
     isKnownCityId(id),
   );
-  if (unique.length === 0) unique.push(DEFAULT_CITY_ID);
+  if (unique.length === 0) unique.push("seoul");
   if (unique.length === 1) {
     return [
       {

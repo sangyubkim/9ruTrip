@@ -7,9 +7,12 @@
   ],
   "scripts": {
     "api": "node apps/api/server.mjs",
+    "api:win": "scripts\\start-api.bat",
     "install:mobile": "npm install --prefix apps/mobile",
     "mobile": "npm run start --prefix apps/mobile",
     "mobile:dev": "npm run start:dev --prefix apps/mobile",
+    "mobile:clear": "npm run start --prefix apps/mobile -- --clear",
+    "mobile:tunnel": "npm run start --prefix apps/mobile -- --tunnel",
     "android:usb": "npm run android:usb --prefix apps/mobile",
     "android:release": "npm run android:release --prefix apps/mobile",
     "android:apk": "npm run android:apk --prefix apps/mobile",

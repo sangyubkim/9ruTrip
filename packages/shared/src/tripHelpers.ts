@@ -1,5 +1,5 @@
 import type { ChecklistItem, MvpCityId, Trip, TripCityLeg } from "./types.js";
-import { getCity } from "./cities.js";
+import { getCity, isMvpCityId } from "./cities.js";
 
 export const DEFAULT_CHECKLIST_LABELS = [
   "예약번호",
@@ -18,10 +18,10 @@ export function createDefaultChecklist(): ChecklistItem[] {
 
 export function cityIdForDay(trip: Trip, dayIndex: number): MvpCityId {
   const leg = trip.cities?.find((c) => c.dayIndexes.includes(dayIndex));
-  if (leg) return leg.cityId;
+  if (leg && isMvpCityId(leg.cityId)) return leg.cityId;
   const fromPlace = trip.places.find((p) => p.dayIndex === dayIndex)?.cityId;
-  if (fromPlace) return fromPlace;
-  return trip.cityId || "tokyo";
+  if (fromPlace && isMvpCityId(fromPlace)) return fromPlace;
+  return isMvpCityId(trip.cityId) ? trip.cityId : "seoul";
 }
 
 export function tripCitiesLabel(trip: Trip): string {
@@ -35,10 +35,8 @@ export function buildCityLegs(
   cityIds: MvpCityId[],
   days: number,
 ): TripCityLeg[] {
-  const unique = [...new Set(cityIds)].filter(
-    (id): id is MvpCityId => Boolean(id && String(id).trim()),
-  );
-  if (unique.length === 0) unique.push("tokyo");
+  const unique = [...new Set(cityIds)].filter(isMvpCityId);
+  if (unique.length === 0) unique.push("seoul");
   if (unique.length === 1) {
     return [
       {

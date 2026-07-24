@@ -25,7 +25,11 @@ import {
 import type { Screen, Trip } from "./src/types";
 import { buildRouteOutline, getCityMeta, tripCitiesLabel } from "./src/types";
 import { HomeScreen } from "./src/screens/HomeScreen";
-import { CreateTripScreen, type CreateTripInput } from "./src/screens/CreateTripScreen";
+import { TripTypeScreen } from "./src/screens/TripTypeScreen";
+import {
+  CreateTripScreen,
+  type CreateTripInput,
+} from "./src/screens/CreateTripScreen";
 import { BriefingScreen } from "./src/screens/BriefingScreen";
 import { PlanScreen } from "./src/screens/PlanScreen";
 import { MapScreen } from "./src/screens/MapScreen";
@@ -104,48 +108,64 @@ function AppInner() {
     async (input: CreateTripInput) => {
       setGenerating(true);
       try {
+        const origin =
+          input.startAddress || input.startLat != null
+            ? {
+                name: input.startAddress || "현재 위치",
+                address: input.startAddress,
+                lat: input.startLat,
+                lng: input.startLng,
+              }
+            : null;
         const result = await generateItinerary({
           cityId: input.cityId,
           cityIds: input.cityIds,
           nights: input.nights,
           days: input.days,
           partySize: input.partySize,
-          origin: input.origin,
-          endPoint: input.endPoint,
-          stopoverCityIds: input.stopoverCityIds,
-          cityWeights: input.cityWeights,
-          preferences: input.preferences,
-          mainRequest: input.mainRequest,
-          extraRequest: input.extraRequest,
+          origin,
+          startAddress: input.startAddress,
+          startLat: input.startLat,
+          startLng: input.startLng,
+          startTime: input.startTime,
+          userRequest: input.userRequest,
+          mainRequest: input.userRequest,
         });
         const routeOutline =
           result.routeOutline ||
           buildRouteOutline({
-            origin: input.origin,
-            endPoint: input.endPoint,
+            origin,
             cityIds: input.cityIds,
-            stopoverCityIds: input.stopoverCityIds,
           });
         const trip = createEmptyTrip({
           ...input,
+          origin,
+          mainRequest: input.userRequest,
           briefing: result.briefing || result.summary,
           routeOutline,
         });
+        const resolvedCityId = result.cityId ?? input.cityId;
         const next: Trip = {
           ...trip,
           places: result.places,
           plannedBudget: result.plannedBudget,
           lodgingCandidates: result.lodgingCandidates ?? [],
           preferredLodgingId: result.preferredLodgingId ?? null,
-          mapProvider: result.mapProvider ?? "google",
-          cityId: result.cityId ?? input.cityId,
+          mapProvider:
+            result.mapProvider ?? getCityMeta(resolvedCityId).mapProvider,
+          cityId: resolvedCityId,
           cityName:
             result.cities && result.cities.length > 1
               ? result.cities.map((c) => c.cityName).join(" · ")
-              : getCityMeta(result.cityId ?? input.cityId).nameKo,
+              : getCityMeta(resolvedCityId).nameKo,
           cities: result.cities ?? trip.cities,
           briefing: result.briefing || result.summary,
           routeOutline,
+          startAddress: input.startAddress,
+          startLat: input.startLat,
+          startLng: input.startLng,
+          startTime: input.startTime,
+          userRequest: input.userRequest,
           status: "planning",
           updatedAt: new Date().toISOString(),
         };
@@ -178,7 +198,7 @@ function AppInner() {
   return (
     <SafeAreaView
       style={[styles.root, { backgroundColor: colors.bg }]}
-      edges={["top", "left", "right"]}
+      edges={["top", "left", "right", "bottom"]}
     >
       <StatusBar style={isDark ? "light" : "dark"} />
       <OnboardingModal visible={showOnboarding} onDone={finishOnboarding} />
@@ -198,7 +218,7 @@ function AppInner() {
         <HomeScreen
           trips={trips}
           loading={loading}
-          onCreate={() => setScreen("create")}
+          onCreate={() => setScreen("tripType")}
           onOpen={(t) => {
             setActive(t);
             setScreen("plan");
@@ -208,10 +228,16 @@ function AppInner() {
           onDuplicate={(t) => void handleDuplicateTrip(t)}
         />
       )}
+      {screen === "tripType" && (
+        <TripTypeScreen
+          onBack={() => setScreen("home")}
+          onSelectDomestic={() => setScreen("create")}
+        />
+      )}
       {screen === "create" && (
         <CreateTripScreen
           generating={generating}
-          onBack={() => setScreen("home")}
+          onBack={() => setScreen("tripType")}
           onSubmit={(input) => void handleCreate(input)}
         />
       )}

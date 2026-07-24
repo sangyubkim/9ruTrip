@@ -6,23 +6,16 @@ import {
   getCityMeta,
   MVP_CITY,
 } from "../types";
-import {
-  DEFAULT_CITY_ID,
-  isKnownCityId,
-} from "../data/destinations";
+import { isKnownCityId } from "../data/destinations";
 
 const KEY = "@9rutrip/trips";
 
-function normalizeCityId(id: string | undefined | null): string {
-  return isKnownCityId(id) ? (id as string) : DEFAULT_CITY_ID;
-}
-
 function normalizeTrip(data: Trip): Trip {
-  const cityId = normalizeCityId(data.cityId);
+  const cityId = isKnownCityId(data.cityId) ? data.cityId : "seoul";
   const cities =
     Array.isArray(data.cities) && data.cities.length > 0
       ? data.cities.map((c) => {
-          const cid = normalizeCityId(c.cityId);
+          const cid = isKnownCityId(c.cityId) ? c.cityId : "seoul";
           return {
             cityId: cid,
             cityName: c.cityName || getCityMeta(cid).nameKo,
@@ -160,13 +153,18 @@ export function createEmptyTrip(input: {
   extraRequest?: string;
   briefing?: string;
   routeOutline?: string;
+  startAddress?: string;
+  startLat?: number;
+  startLng?: number;
+  startTime?: string;
+  userRequest?: string;
 }): Trip {
   const now = new Date().toISOString();
   const cityIds =
     input.cityIds && input.cityIds.length > 0
-      ? input.cityIds.map(normalizeCityId)
-      : [normalizeCityId(input.cityId)];
-  const primary = cityIds[0] ?? DEFAULT_CITY_ID;
+      ? input.cityIds.filter(isKnownCityId)
+      : [isKnownCityId(input.cityId) ? input.cityId! : "seoul"];
+  const primary = cityIds[0] ?? "seoul";
   const city = getCityMeta(primary);
   const cities = buildCityLegs(cityIds, input.days, input.cityWeights);
   const label =
@@ -202,6 +200,11 @@ export function createEmptyTrip(input: {
     guideAlarmsEnabled: true,
     completedPlaceIds: [],
     checklist: createDefaultChecklist(),
+    startAddress: input.startAddress,
+    startLat: input.startLat,
+    startLng: input.startLng,
+    startTime: input.startTime,
+    userRequest: input.userRequest,
     createdAt: now,
     updatedAt: now,
   };

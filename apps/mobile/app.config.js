@@ -118,6 +118,9 @@ const expoConfig = {
       : "react-native-maps",
   ],
   extra: {
+    eas: {
+      projectId: "5381ef34-f385-465f-8a36-ea7b76d852ec",
+    },
     googleMapsApiKey: mapsKey,
     naverMapClientId:
       process.env.EXPO_PUBLIC_NAVER_MAP_CLIENT_ID?.trim() ||

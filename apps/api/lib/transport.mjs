@@ -428,12 +428,70 @@ const OSAKA_HUBS = [
   { name: "tennoji", lat: 34.6472, lng: 135.506, w: 0.85 },
 ];
 
-/** lat로 대략 도시 추정 (명시 cityId 없을 때) */
-function inferCityIdFromLat(lat) {
+const SEOUL_HUBS = [
+  { name: "gangnam", lat: 37.4979, lng: 127.0276, w: 1 },
+  { name: "seoul-station", lat: 37.5547, lng: 126.9707, w: 0.95 },
+  { name: "hongdae", lat: 37.5563, lng: 126.922, w: 0.92 },
+  { name: "myeongdong", lat: 37.5636, lng: 126.9869, w: 0.9 },
+];
+
+const BUSAN_HUBS = [
+  { name: "seomyeon", lat: 35.1576, lng: 129.059, w: 1 },
+  { name: "haeundae", lat: 35.1587, lng: 129.1604, w: 0.95 },
+  { name: "nampo", lat: 35.098, lng: 129.0324, w: 0.9 },
+  { name: "centum", lat: 35.1695, lng: 129.131, w: 0.88 },
+];
+
+const JEJU_HUBS = [
+  { name: "jeju-city", lat: 33.4996, lng: 126.5312, w: 1 },
+  { name: "seogwipo", lat: 33.2541, lng: 126.5601, w: 0.92 },
+  { name: "jungmun", lat: 33.245, lng: 126.412, w: 0.9 },
+  { name: "airport", lat: 33.5071, lng: 126.4927, w: 0.88 },
+];
+
+const VALID_CITY_IDS = new Set([
+  "seoul",
+  "busan",
+  "jeju",
+  "tokyo",
+  "osaka",
+]);
+
+function hubsForCity(cityId) {
+  switch (cityId) {
+    case "seoul":
+      return SEOUL_HUBS;
+    case "busan":
+      return BUSAN_HUBS;
+    case "jeju":
+      return JEJU_HUBS;
+    case "osaka":
+      return OSAKA_HUBS;
+    default:
+      return TOKYO_HUBS;
+  }
+}
+
+function isDomesticCityId(cityId) {
+  return cityId === "seoul" || cityId === "busan" || cityId === "jeju";
+}
+
+/**
+ * lat/lng로 대략 도시 추정 (명시 cityId 없을 때)
+ * - 일본(lng>132)을 먼저 분리해 오사카↔부산 혼동 방지
+ */
+export function inferCityIdFromLat(lat, lng) {
   const n = Number(lat);
+  const g = Number(lng);
   if (!Number.isFinite(n)) return "tokyo";
-  // 오사카(~34.6) vs 도쿄(~35.7)
-  return n < 35.2 ? "osaka" : "tokyo";
+  if (Number.isFinite(g) && g > 132) {
+    return n < 35.2 ? "osaka" : "tokyo";
+  }
+  if (n > 36.5) return "seoul";
+  if (n > 34.5 && Number.isFinite(g) && g > 128) return "busan";
+  if (n < 34) return "jeju";
+  if (n < 35.2) return "osaka";
+  return "tokyo";
 }
 
 /** 숙소 점수 분해 (centrality / price / rating proxy) — 허브는 cityId별 */
@@ -441,11 +499,11 @@ export function lodgingScoreBreakdown(
   place,
   { nights = 2, cityId } = {},
 ) {
-  const resolved =
-    cityId === "osaka" || cityId === "tokyo"
-      ? cityId
-      : inferCityIdFromLat(place?.lat);
-  const hubs = resolved === "osaka" ? OSAKA_HUBS : TOKYO_HUBS;
+  const resolved = VALID_CITY_IDS.has(cityId)
+    ? cityId
+    : inferCityIdFromLat(place?.lat, place?.lng);
+  const hubs = hubsForCity(resolved);
+  const domestic = isDomesticCityId(resolved);
 
   let centrality = 40;
   for (const h of hubs) {
@@ -459,15 +517,25 @@ export function lodgingScoreBreakdown(
     if (score > centrality) centrality = score;
   }
 
+  const defaultPerNight = domestic ? 120000 : 18000;
   const perNight =
     nights > 0
-      ? Math.max(1, Number(place.estimatedCost) || 18000) / nights
-      : Number(place.estimatedCost) || 18000;
-  // 저렴할수록 높은 점수 (¥8k~¥35k/night 기준)
+      ? Math.max(1, Number(place.estimatedCost) || defaultPerNight) / nights
+      : Number(place.estimatedCost) || defaultPerNight;
+  // 저렴할수록 높은 점수 (국내 KRW 8만~18만 / 해외 JPY 8k~35k)
+  const priceLo = domestic ? 80000 : 8000;
+  const priceHi = domestic ? 180000 : 35000;
+  const priceSpan = priceHi - priceLo;
   const priceEstimate = Math.round(
     Math.max(
       20,
-      Math.min(95, 95 - ((Math.min(Math.max(perNight, 8000), 35000) - 8000) / 27000) * 75),
+      Math.min(
+        95,
+        95 -
+          ((Math.min(Math.max(perNight, priceLo), priceHi) - priceLo) /
+            priceSpan) *
+            75,
+      ),
     ),
   );
 
@@ -594,31 +662,143 @@ const OSAKA_LODGING_CATALOG = [
   },
 ];
 
-import { resolveCity } from "./cities.mjs";
+const SEOUL_LODGING_CATALOG = [
+  {
+    name: "롯데호텔 서울",
+    lat: 37.5651,
+    lng: 126.9808,
+    basePerNight: 180000,
+    notes: "명동·을지로 · 추천",
+  },
+  {
+    name: "호텔 신라 서울",
+    lat: 37.5558,
+    lng: 127.0052,
+    basePerNight: 170000,
+    notes: "장충동 · 도심 접근",
+  },
+  {
+    name: "그랜드 하얏트 서울",
+    lat: 37.5392,
+    lng: 126.997,
+    basePerNight: 160000,
+    notes: "남산 · 전망",
+  },
+  {
+    name: "글래드 여의도",
+    lat: 37.5254,
+    lng: 126.9177,
+    basePerNight: 110000,
+    notes: "여의도 · 한강 접근",
+  },
+  {
+    name: "호텔 더블유 홍대",
+    lat: 37.5558,
+    lng: 126.9235,
+    basePerNight: 90000,
+    notes: "홍대입구 · 가성비",
+  },
+];
 
-/** 도쿄/오사카 숙소 후보 Top N (실존 호텔 좌표 기반 정적 카탈로그). 그 외 도시는 중심점 근처 플레이스홀더 */
+const BUSAN_LODGING_CATALOG = [
+  {
+    name: "파라다이스 호텔 부산",
+    lat: 35.1602,
+    lng: 129.1655,
+    basePerNight: 170000,
+    notes: "해운대 해변 · 추천",
+  },
+  {
+    name: "웨스틴 조선 부산",
+    lat: 35.1595,
+    lng: 129.1618,
+    basePerNight: 160000,
+    notes: "해운대 · 바다 전망",
+  },
+  {
+    name: "호텔 농심",
+    lat: 35.1638,
+    lng: 129.1682,
+    basePerNight: 120000,
+    notes: "해운대 · 스파",
+  },
+  {
+    name: "아바니 센트럴 부산",
+    lat: 35.1578,
+    lng: 129.0585,
+    basePerNight: 100000,
+    notes: "서면 허브",
+  },
+  {
+    name: "토요코인 부산역",
+    lat: 35.1152,
+    lng: 129.0414,
+    basePerNight: 80000,
+    notes: "부산역 · 가성비",
+  },
+];
+
+const JEJU_LODGING_CATALOG = [
+  {
+    name: "메종 글래드 제주",
+    lat: 33.4855,
+    lng: 126.4895,
+    basePerNight: 150000,
+    notes: "제주공항 · 도심 접근",
+  },
+  {
+    name: "롯데호텔 제주",
+    lat: 33.2485,
+    lng: 126.4108,
+    basePerNight: 180000,
+    notes: "중문 · 리조트",
+  },
+  {
+    name: "신라호텔 제주",
+    lat: 33.2468,
+    lng: 126.4125,
+    basePerNight: 170000,
+    notes: "중문 관광단지",
+  },
+  {
+    name: "호텔 리젠트 마린 블루",
+    lat: 33.5168,
+    lng: 126.5255,
+    basePerNight: 110000,
+    notes: "제주 시내 · 바다",
+  },
+  {
+    name: "벤티모 호텔 앤 레지던스 제주",
+    lat: 33.4902,
+    lng: 126.4928,
+    basePerNight: 90000,
+    notes: "연동 · 가성비",
+  },
+];
+
+function lodgingCatalogForCity(cityId) {
+  switch (cityId) {
+    case "seoul":
+      return SEOUL_LODGING_CATALOG;
+    case "busan":
+      return BUSAN_LODGING_CATALOG;
+    case "jeju":
+      return JEJU_LODGING_CATALOG;
+    case "osaka":
+      return OSAKA_LODGING_CATALOG;
+    default:
+      return TOKYO_LODGING_CATALOG;
+  }
+}
+
+/** 도시별 숙소 후보 Top N (실존 호텔 좌표 기반 정적 카탈로그) */
 export function buildLodgingCandidates({
   nights = 2,
   partySize = 2,
   topN = 5,
-  cityId = "tokyo",
+  cityId = "seoul",
 } = {}) {
-  const city = resolveCity(cityId);
-  const catalog =
-    cityId === "osaka"
-      ? OSAKA_LODGING_CATALOG
-      : cityId === "tokyo"
-        ? TOKYO_LODGING_CATALOG
-        : Array.from({ length: Math.max(3, topN) }, (_, i) => {
-            const offset = (i - 1) * 0.004;
-            return {
-              name: `${city.nameKo} 추천 숙소 ${i + 1}`,
-              lat: city.center.lat + offset,
-              lng: city.center.lng - offset * 0.5,
-              basePerNight: 9000 + i * 2500,
-              notes: `${city.nameKo} 시내 · AI 일정용 후보`,
-            };
-          });
+  const catalog = lodgingCatalogForCity(cityId);
 
   const partyFactor = 1 + Math.max(0, partySize - 2) * 0.15;
   const scored = catalog.map((c, i) => {

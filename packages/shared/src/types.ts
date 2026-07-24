@@ -69,8 +69,11 @@ export type LodgingCandidate = {
   scoreBreakdown: LodgingScoreBreakdown;
 };
 
-/** 도시 id — destinations 카탈로그의 등록된 slug */
-export type MvpCityId = string;
+/**
+ * 핵심 MVP 도시 id (shared helpers).
+ * 모바일 destinations 카탈로그는 더 넓은 slug를 쓸 수 있음.
+ */
+export type MvpCityId = "seoul" | "busan" | "jeju" | "tokyo" | "osaka";
 
 export type MapProviderId = "google" | "naver";
 
@@ -102,6 +105,12 @@ export type ItineraryPlace = {
   preferredTransportMode?: TransportMode;
   /** 도보/대중교통/택시 비교 옵션 */
   transportOptions?: TransportOption[];
+  rating?: number;
+  mustVisit?: boolean;
+  signatureFood?: string;
+  reviewSummary?: string;
+  /** 숙소 AI 선택 이유 */
+  aiReason?: string;
 };
 
 /** 멀티시티 여행의 도시별 Day 할당 */
@@ -152,6 +161,14 @@ export type Trip = {
   nights: number;
   days: number;
   partySize: number;
+  /** 출발지 주소 (국내 주소 또는 GPS) */
+  startAddress?: string;
+  startLat?: number;
+  startLng?: number;
+  /** 여행 시작 시각 HH:mm (기본 09:00) */
+  startTime?: string;
+  /** AI 경로에 반영할 주요 요청 */
+  userRequest?: string;
   places: ItineraryPlace[];
   expenses: Expense[];
   reviews: PlaceReview[];
@@ -161,7 +178,7 @@ export type Trip = {
   preferredLodgingId?: string | null;
   /** 지도 프로바이더 (도시 메타에서 파생) */
   mapProvider?: MapProviderId;
-  /** 계획 총예산 (엔) — places estimatedCost 합 또는 수동 */
+  /** 계획 총예산 (통화는 도시 region 기준) */
   plannedBudget: number;
   status: TripStatus;
   /** AI 재루트 어시스트 ON/OFF */
@@ -179,7 +196,7 @@ export type Trip = {
 export type CostSummary = {
   plannedTotal: number;
   actualTotal: number;
-  currency: "JPY";
+  currency: "JPY" | "KRW";
   byCategory: Record<string, { planned: number; actual: number }>;
   variance: number;
 };

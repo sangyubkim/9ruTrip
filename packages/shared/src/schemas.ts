@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const cityIdSchema = z.string().min(1).max(64);
+const cityIdSchema = z.enum(["seoul", "busan", "jeju", "tokyo", "osaka"]);
 
 export const healthResponseSchema = z.object({
   ok: z.literal(true),
@@ -12,7 +12,8 @@ export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
 export const itineraryRequestSchema = z.object({
   cityId: cityIdSchema,
-  cityIds: z.array(cityIdSchema).min(1).max(2).optional(),
+  /** 멀티시티: 주 도시 외 추가 도시 */
+  cityIds: z.array(cityIdSchema).min(1).max(3).optional(),
   nights: z.number().int().min(1).max(14),
   days: z.number().int().min(1).max(15),
   partySize: z.number().int().min(1).max(12),
@@ -39,7 +40,7 @@ export const itineraryRequestSchema = z.object({
     .nullable()
     .optional(),
   stopoverCityIds: z.array(cityIdSchema).max(3).optional(),
-  cityWeights: z.array(z.number()).max(2).optional(),
+  cityWeights: z.array(z.number()).max(3).optional(),
   preferences: z
     .object({
       food: z.number().min(1).max(5),
@@ -51,6 +52,14 @@ export const itineraryRequestSchema = z.object({
     .optional(),
   mainRequest: z.string().max(800).optional(),
   extraRequest: z.string().max(800).optional(),
+  startAddress: z.string().max(200).optional(),
+  startLat: z.number().optional(),
+  startLng: z.number().optional(),
+  startTime: z
+    .string()
+    .regex(/^\d{1,2}:\d{2}$/)
+    .optional(),
+  userRequest: z.string().max(1000).optional(),
 });
 
 export type ItineraryRequest = z.infer<typeof itineraryRequestSchema>;
@@ -97,6 +106,11 @@ export const itineraryPlaceSchema = z.object({
   preferredTransportMode: transportModeSchema.optional(),
   transportOptions: z.array(transportOptionSchema).optional(),
   cityId: cityIdSchema.optional(),
+  rating: z.number().optional(),
+  mustVisit: z.boolean().optional(),
+  signatureFood: z.string().optional(),
+  reviewSummary: z.string().optional(),
+  aiReason: z.string().optional(),
 });
 
 export const tripCityLegSchema = z.object({

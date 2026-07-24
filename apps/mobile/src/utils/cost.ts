@@ -21,6 +21,24 @@ export function sumActual(expenses: Expense[]): number {
   return expenses.reduce((a, e) => a + (Number(e.amount) || 0), 0);
 }
 
+export function currencyForCity(cityId: string): "JPY" | "KRW" {
+  return cityId === "seoul" || cityId === "busan" || cityId === "jeju"
+    ? "KRW"
+    : "JPY";
+}
+
+export function formatMoney(
+  n: number,
+  currency: "JPY" | "KRW" = "JPY",
+): string {
+  if (currency === "KRW") return `${Math.round(n).toLocaleString("ko-KR")}원`;
+  return `¥${Math.round(n).toLocaleString("ja-JP")}`;
+}
+
+export function formatYen(n: number): string {
+  return formatMoney(n, "JPY");
+}
+
 export function buildCostSummary(trip: Trip): CostSummary {
   const byCategory: CostSummary["byCategory"] = {};
   for (const p of trip.places) {
@@ -37,14 +55,10 @@ export function buildCostSummary(trip: Trip): CostSummary {
   return {
     plannedTotal,
     actualTotal,
-    currency: "JPY",
+    currency: currencyForCity(trip.cityId),
     byCategory,
     variance: actualTotal - plannedTotal,
   };
-}
-
-export function formatYen(n: number): string {
-  return `¥${Math.round(n).toLocaleString("ja-JP")}`;
 }
 
 export const CATEGORY_LABEL: Record<string, string> = {
