@@ -76,7 +76,6 @@ import {
   citiesInCountry,
   getCountryForCity,
 } from "../data/destinations";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../theme/ThemeContext";
 import { space } from "../theme/tokens";
 import {
