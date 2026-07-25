@@ -1193,6 +1193,8 @@ export function PlanScreen({
       (typeof getIndex === "function" ? getIndex() : undefined) ??
       dayPlaces.findIndex((p) => p.id === item.id);
     const routeNo = mapNo >= 0 ? mapNo + 1 : null;
+    const hasPreviousPlace =
+      mapPlaces.findIndex((place) => place.id === item.id) > 0;
     const hotelBreakfastPrice =
       item.category === "hotel"
         ? formatHotelBreakfastPrice(item.breakfastPricePerPerson, currency)
@@ -1225,7 +1227,7 @@ export function PlanScreen({
               { backgroundColor: colors.bgElevated, borderColor: colors.border },
             ]}
           >
-          {travel ? (
+          {hasPreviousPlace && (travel ? (
             <Pressable
               onPress={() => void openTransportCompare(item)}
               style={[styles.compareChip, { backgroundColor: colors.accentMuted }]}
@@ -1250,7 +1252,7 @@ export function PlanScreen({
                 {routeNo != null ? `${routeNo} · ` : ""}이동 · 비교
               </Text>
             </Pressable>
-          )}
+          ))}
           <Pressable
             onPress={() => setSelectedPlaceId(item.id)}
             style={[
