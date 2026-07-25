@@ -98,9 +98,15 @@ if [ ! -d .git ]; then
   exit 1
 fi
 
-dirty="$(git status --porcelain 2>/dev/null || true)"
+data_dirty="$(git status --porcelain --untracked-files=all 2>/dev/null \
+  | awk '/^\?\? apps\/api\/data(\/|$)/' || true)"
+dirty="$(git status --porcelain --untracked-files=all 2>/dev/null \
+  | awk '!/^\?\? apps\/api\/data(\/|$)/' || true)"
+if [ -n "${data_dirty}" ]; then
+  log "INFO: allowing untracked apps/api/data runtime diary data"
+fi
 if [ -n "${dirty}" ]; then
-  log "ERROR: working tree is dirty. Commit/stash/discard on the server, then retry."
+  log "ERROR: working tree is dirty outside apps/api/data/. Commit/stash/discard on the server, then retry."
   git status --short || true
   exit 1
 fi

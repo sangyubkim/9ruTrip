@@ -5,6 +5,9 @@ node_modules/
 dist/
 build/
 
+# API runtime data (for example, persisted diary.json)
+apps/api/data/
+
 # Expo
 .expo/
 .expo-shared/
