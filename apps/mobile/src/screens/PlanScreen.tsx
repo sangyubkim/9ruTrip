@@ -107,6 +107,7 @@ type Props = {
   trip: Trip;
   onChangeTrip: (trip: Trip) => void;
   onBack: () => void;
+  onTripEnded?: () => void;
   onMap: (dayIndex?: number) => void;
   onCapture: () => void;
   onExpenses: () => void;
@@ -148,6 +149,7 @@ export function PlanScreen({
   trip,
   onChangeTrip,
   onBack,
+  onTripEnded,
   onMap,
   onCapture,
   onExpenses,
@@ -192,6 +194,8 @@ export function PlanScreen({
   const [startTimeEditOpen, setStartTimeEditOpen] = useState(false);
   const [reflectRequest, setReflectRequest] = useState("");
   const [reflectRequestOpen, setReflectRequestOpen] = useState(false);
+  const [completionBriefingVisible, setCompletionBriefingVisible] =
+    useState(false);
   const [domesticNavPlace, setDomesticNavPlace] =
     useState<ItineraryPlace | null>(null);
   const [domesticNavApp, setDomesticNavApp] = useState<"naver" | "google">(
@@ -625,6 +629,42 @@ export function PlanScreen({
         }
       });
     }
+  };
+
+  const finishTrip = () => {
+    const completedPlaceIds = Array.from(
+      new Set([
+        ...(trip.completedPlaceIds ?? []),
+        ...trip.places.map((place) => place.id),
+      ]),
+    );
+    onChangeTrip({
+      ...trip,
+      completedPlaceIds,
+      status: "done",
+      updatedAt: new Date().toISOString(),
+    });
+    setCompletionBriefingVisible(true);
+  };
+
+  const endTrip = () => {
+    const completed = new Set(trip.completedPlaceIds ?? []);
+    const incompleteCount = trip.places.filter(
+      (place) => !completed.has(place.id),
+    ).length;
+    if (incompleteCount === 0) {
+      finishTrip();
+      return;
+    }
+
+    Alert.alert(
+      "여행 종료",
+      `미완료 장소 ${incompleteCount}곳이 있어요. 그래도 종료할까요?`,
+      [
+        { text: "취소", style: "cancel" },
+        { text: "그래도 종료", style: "destructive", onPress: finishTrip },
+      ],
+    );
   };
 
   const toggle = (key: "aiRerouteEnabled" | "guideAlarmsEnabled") => {
@@ -1910,7 +1950,7 @@ export function PlanScreen({
             </View>
             <Pressable
               style={styles.fieldEndHit}
-              onPress={() => setStatus("done")}
+              onPress={endTrip}
               accessibilityRole="button"
               accessibilityLabel="여행 종료"
             >
@@ -2161,7 +2201,7 @@ export function PlanScreen({
                 </Pressable>
                 <Pressable
                   style={styles.btnAlt}
-                  onPress={() => setStatus("done")}
+                  onPress={endTrip}
                   accessibilityRole="button"
                   accessibilityLabel="여행 종료"
                 >
@@ -2195,7 +2235,7 @@ export function PlanScreen({
               )}
               <Pressable
                 style={styles.btnAlt}
-                onPress={() => setStatus("done")}
+                onPress={endTrip}
                 accessibilityRole="button"
                 accessibilityLabel="여행 종료"
               >
@@ -2364,6 +2404,62 @@ export function PlanScreen({
         </Pressable>
       </Modal>
 
+      <Modal
+        visible={completionBriefingVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={onTripEnded}
+      >
+        <View style={styles.completionBackdrop}>
+          <View
+            style={[
+              styles.completionCard,
+              { backgroundColor: colors.bgElevated },
+            ]}
+          >
+            <Text style={[styles.completionTitle, { color: colors.text }]}>
+              여행 완료
+            </Text>
+            <Text
+              style={[styles.completionDestination, { color: colors.accent }]}
+            >
+              {tripCitiesLabel(trip)}
+            </Text>
+            <Text
+              style={[styles.completionMeta, { color: colors.textSecondary }]}
+            >
+              {trip.nights}박 {trip.days}일 · 장소 {trip.places.length}곳
+            </Text>
+            <Text
+              style={[styles.completionMeta, { color: colors.textSecondary }]}
+            >
+              계획 예산 {money(trip.plannedBudget)}
+            </Text>
+            <Text style={[styles.completionMessage, { color: colors.text }]}>
+              수고하셨어요. 이번 여행의 추억을 다이어리에 남겨보세요.
+            </Text>
+            <Pressable
+              style={[
+                styles.completionButton,
+                { backgroundColor: colors.primary },
+              ]}
+              onPress={onTripEnded}
+              accessibilityRole="button"
+              accessibilityLabel="홈으로 이동"
+            >
+              <Text
+                style={[
+                  styles.completionButtonText,
+                  { color: colors.primaryFg },
+                ]}
+              >
+                확인
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <PlaceSuggestModal
         visible={suggestVisible}
         category={suggestCategory}
@@ -2423,6 +2519,25 @@ export function PlanScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  completionBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.48)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  completionCard: { borderRadius: 20, padding: 24 },
+  completionTitle: { fontSize: 24, fontWeight: "800" },
+  completionDestination: { marginTop: 12, fontSize: 18, fontWeight: "800" },
+  completionMeta: { marginTop: 6, fontSize: 14, fontWeight: "600" },
+  completionMessage: { marginTop: 20, fontSize: 15, lineHeight: 23 },
+  completionButton: {
+    minHeight: 52,
+    marginTop: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  completionButtonText: { fontSize: 16, fontWeight: "800" },
   listRoot: { flex: 1 },
   listHeaderTop: { paddingHorizontal: 12 },
   gestureHintBar: {

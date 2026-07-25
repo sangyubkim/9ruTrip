@@ -403,6 +403,10 @@ function AppInner() {
             setActive(null);
             setScreen("home");
           }}
+          onTripEnded={() => {
+            setActive(null);
+            setScreen("home");
+          }}
           onMap={(dayIndex) => {
             setMapDayIndex(dayIndex);
             setScreen("map");
