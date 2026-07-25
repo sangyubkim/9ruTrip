@@ -11,10 +11,10 @@ import {
   Text,
   TextInput,
   View,
-  type NativeSyntheticEvent,
-  type TextInputFocusEventData,
+  type FocusEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { DateRangeCalendar } from "../components/DateRangeCalendar";
 import { ProvinceCityPicker } from "../components/ProvinceCityPicker";
 import {
   CITIES,
@@ -51,6 +51,8 @@ export type CreateTripInput = {
   departureCityId: DepartureCityId;
   nights: number;
   days: number;
+  startDate: string;
+  endDate: string;
   partySize: number;
   startAddress?: string;
   startLat?: number;
@@ -77,6 +79,13 @@ function normalizeStartTime(raw: string): string {
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
+}
+
+function dateSpan(startDate: string, endDate: string) {
+  const start = Date.parse(`${startDate}T00:00:00Z`);
+  const end = Date.parse(`${endDate}T00:00:00Z`);
+  const nights = Math.round((end - start) / 86_400_000);
+  return { nights, days: nights + 1 };
 }
 
 type StepperProps = {
@@ -172,6 +181,8 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const [selected, setSelected] = useState<MvpCityId[]>([]);
   const [nights, setNights] = useState(2);
   const [days, setDays] = useState(3);
+  const [startDate, setStartDate] = useState<string>();
+  const [endDate, setEndDate] = useState<string>();
   const [party, setParty] = useState(2);
   const [startAddress, setStartAddress] = useState("");
   const [startLat, setStartLat] = useState<number | undefined>();
@@ -201,7 +212,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   }, []);
 
   const scrollFocusedIntoView = (
-    e: NativeSyntheticEvent<TextInputFocusEventData>,
+    e: FocusEvent,
   ) => {
     const target = e?.nativeEvent?.target;
     setTimeout(
@@ -231,18 +242,14 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
     );
   };
 
-  const changeNights = (n: number) => {
-    const next = clamp(n, 0, 14);
-    setNights(next);
-    // 박수 변경 시 일수를 최소 박수+1로 맞춤 (당일치기 0박 1일)
-    setDays((d) => Math.max(d, next + 1));
-  };
-
-  const changeDays = (d: number) => {
-    const next = clamp(d, 1, 15);
-    setDays(next);
-    // 일수가 박수보다 작아지지 않게 (nights <= days-1)
-    setNights((n) => Math.min(n, Math.max(0, next - 1)));
+  const changeDateRange = (nextStartDate: string, nextEndDate?: string) => {
+    setStartDate(nextStartDate);
+    setEndDate(nextEndDate);
+    if (nextEndDate) {
+      const span = dateSpan(nextStartDate, nextEndDate);
+      setNights(span.nights);
+      setDays(span.days);
+    }
   };
 
   const useCurrentLocation = async () => {
@@ -304,8 +311,11 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       Alert.alert("여행지 필요", "여행 도시를 하나 이상 선택해 주세요.");
       return;
     }
-    const n = clamp(nights, 0, 14);
-    const d = clamp(Math.max(days, n + 1), 1, 15);
+    if (!startDate || !endDate) {
+      Alert.alert("여행 날짜 필요", "출발일과 복귀일을 모두 선택해 주세요.");
+      return;
+    }
+    const { nights: n, days: d } = dateSpan(startDate, endDate);
     const p = clamp(party, 1, 12);
     const cityIds = selected;
     const dep = CITIES[departureCityId];
@@ -316,6 +326,8 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       departureCityId,
       nights: n,
       days: d,
+      startDate,
+      endDate,
       partySize: p,
       startAddress: addr || dep?.nameKo,
       startLat: startLat ?? dep?.center.lat,
@@ -458,25 +470,22 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
           maxCities={MAX_SELECTED_CITIES}
         />
 
+        <Text style={[styles.label, { color: colors.textSecondary }]}>
+          여행 날짜
+        </Text>
+        <DateRangeCalendar
+          startDate={startDate}
+          endDate={endDate}
+          onChange={changeDateRange}
+          colors={stepperColors}
+        />
+        <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+          {startDate && endDate
+            ? `${startDate.replaceAll("-", "/")}–${endDate.replaceAll("-", "/")} · ${nights}박 ${days}일`
+            : "출발일을 선택한 뒤 복귀일을 선택해 주세요."}
+        </Text>
+
         <View style={styles.fieldGrid}>
-          <NumberStepper
-            label="박수"
-            value={nights}
-            min={0}
-            max={14}
-            unit="박"
-            onChange={changeNights}
-            colors={stepperColors}
-          />
-          <NumberStepper
-            label="일수"
-            value={days}
-            min={1}
-            max={15}
-            unit="일"
-            onChange={changeDays}
-            colors={stepperColors}
-          />
           <NumberStepper
             label="인원"
             value={party}

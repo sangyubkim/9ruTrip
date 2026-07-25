@@ -166,6 +166,28 @@ export type PlaceReview = Step & {
 
 export type TripStatus = "planning" | "active" | "done";
 
+/** 서비스·기기·백업 간에 JSON으로 교환하는 완료 여행 다이어리 요약 */
+export type TravelDiaryEntry = {
+  id: string;
+  tripId: string;
+  title: string;
+  cityIds: string[];
+  cityNames: string[];
+  startDate?: string;
+  endDate?: string;
+  nights: number;
+  days: number;
+  completedAt: string;
+  partySize: number;
+  plannedBudget?: number;
+  currency?: "KRW" | "JPY" | "USD";
+  notes?: string;
+  coverPlaceName?: string;
+  placeCount: number;
+  updatedAt: string;
+  syncStatus?: "local" | "synced" | "pending";
+};
+
 export type Trip = {
   id: string;
   /** 주 도시 (하위 호환 · cities[0]과 동기) */
@@ -178,6 +200,10 @@ export type Trip = {
   cities?: TripCityLeg[];
   nights: number;
   days: number;
+  /** 여행 출발일 YYYY-MM-DD */
+  startDate?: string;
+  /** 여행 복귀일 YYYY-MM-DD */
+  endDate?: string;
   partySize: number;
   /** 출발지 주소 (국내 주소 또는 GPS) */
   startAddress?: string;

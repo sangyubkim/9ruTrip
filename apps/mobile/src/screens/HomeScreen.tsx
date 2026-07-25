@@ -19,6 +19,7 @@ type Props = {
   trips: Trip[];
   loading: boolean;
   onCreate: () => void;
+  onDiary: () => void;
   onOpen: (trip: Trip) => void;
   onSettings: () => void;
   onDelete: (trip: Trip) => void;
@@ -34,10 +35,20 @@ const STATUS_CHIP: Record<
   done: { bg: "#f1f5f9", fg: "#475569", border: "#cbd5e1" },
 };
 
+function formatTripDateRange(trip: Trip): string | undefined {
+  if (!trip.startDate || !trip.endDate) return undefined;
+  const shortDate = (date: string) => {
+    const [, month, day] = date.split("-");
+    return month && day ? `${Number(month)}/${Number(day)}` : date;
+  };
+  return `${shortDate(trip.startDate)}–${shortDate(trip.endDate)} · ${trip.nights}박 ${trip.days}일`;
+}
+
 export function HomeScreen({
   trips,
   loading,
   onCreate,
+  onDiary,
   onOpen,
   onSettings,
   onDelete,
@@ -115,6 +126,14 @@ export function HomeScreen({
         >
           <Text style={styles.ghostText}>설정 · 테마 · API</Text>
         </Pressable>
+        <Pressable
+          style={styles.diary}
+          onPress={onDiary}
+          accessibilityRole="button"
+          accessibilityLabel="여행 다이어리"
+        >
+          <Text style={styles.diaryText}>여행 다이어리</Text>
+        </Pressable>
       </View>
 
       <View style={styles.sectionRow}>
@@ -148,6 +167,7 @@ export function HomeScreen({
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           renderItem={({ item }) => {
             const chip = STATUS_CHIP[item.status] ?? STATUS_CHIP.planning;
+            const dateRange = formatTripDateRange(item);
             return (
               <Pressable
                 style={[
@@ -167,7 +187,7 @@ export function HomeScreen({
                   <Text
                     style={[styles.cardTitle, { color: colors.textSecondary }]}
                   >
-                    {tripCitiesLabel(item)} · {item.nights}박 {item.days}일
+                    {tripCitiesLabel(item)}
                   </Text>
                   <Pressable
                     onPress={() => openTripMenu(item)}
@@ -187,6 +207,9 @@ export function HomeScreen({
                     </Text>
                   </Pressable>
                 </View>
+                <Text style={[styles.cardDate, { color: colors.textMuted }]}>
+                  {dateRange ?? `${item.nights}박 ${item.days}일`}
+                </Text>
                 <View style={styles.chipRow}>
                   <View
                     style={[
@@ -262,6 +285,13 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   ghostText: { color: "#bae6fd", fontSize: 14, fontWeight: "600" },
+  diary: {
+    marginTop: space.xs,
+    alignItems: "center",
+    padding: 10,
+    minHeight: 44,
+  },
+  diaryText: { color: "#e0f2fe", fontSize: 14, fontWeight: "800" },
   sectionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -294,6 +324,7 @@ const styles = StyleSheet.create({
     gap: space.sm,
   },
   cardTitle: { flex: 1, fontSize: 16, fontWeight: "800" },
+  cardDate: { marginTop: 4, fontSize: 14, fontWeight: "700" },
   menuBtn: {
     minWidth: 44,
     minHeight: 44,

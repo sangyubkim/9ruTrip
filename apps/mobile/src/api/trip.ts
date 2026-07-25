@@ -7,6 +7,7 @@ import type {
   OutboundTransportMode,
   PlaceRef,
   TransportOption,
+  TravelDiaryEntry,
   Trip,
   TripPreferenceWeights,
 } from "../types";
@@ -17,6 +18,10 @@ export type ItineraryRequest = {
   cityIds?: MvpCityId[];
   nights: number;
   days: number;
+  /** 여행 출발일 YYYY-MM-DD */
+  startDate?: string;
+  /** 여행 복귀일 YYYY-MM-DD */
+  endDate?: string;
   partySize: number;
   origin?: PlaceRef | null;
   endPoint?: PlaceRef | null;
@@ -122,6 +127,43 @@ export async function exportTripDraft(trip: unknown): Promise<ExportDraftRespons
     throw new Error(json.error ?? `Export failed: ${res.status}`);
   }
   return json;
+}
+
+export async function fetchDiaryEntries(year?: string): Promise<TravelDiaryEntry[]> {
+  const suffix = year ? `?year=${encodeURIComponent(year)}` : "";
+  const res = await apiFetch(`/diary${suffix}`);
+  const json = await readApiJson<{ entries?: TravelDiaryEntry[]; error?: string }>(res);
+  if (!res.ok) throw new Error(json.error ?? `Diary fetch failed: ${res.status}`);
+  return json.entries ?? [];
+}
+
+export async function upsertDiaryFromTrip(trip: Trip): Promise<TravelDiaryEntry> {
+  const res = await apiFetch("/diary/from-trip", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trip }),
+  });
+  const json = await readApiJson<{ entry?: TravelDiaryEntry; error?: string }>(res);
+  if (!res.ok || !json.entry) {
+    throw new Error(json.error ?? `Diary sync failed: ${res.status}`);
+  }
+  return json.entry;
+}
+
+export async function updateDiaryEntry(
+  id: string,
+  patch: Pick<TravelDiaryEntry, "notes">,
+): Promise<TravelDiaryEntry> {
+  const res = await apiFetch(`/diary/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const json = await readApiJson<{ entry?: TravelDiaryEntry; error?: string }>(res);
+  if (!res.ok || !json.entry) {
+    throw new Error(json.error ?? `Diary update failed: ${res.status}`);
+  }
+  return json.entry;
 }
 
 export type PublishRequest = {

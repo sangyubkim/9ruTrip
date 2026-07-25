@@ -158,6 +158,8 @@ export function createEmptyTrip(input: {
   cityIds?: import("../types").MvpCityId[];
   nights: number;
   days: number;
+  startDate?: string;
+  endDate?: string;
   partySize: number;
   origin?: import("../types").PlaceRef | null;
   endPoint?: import("../types").PlaceRef | null;
@@ -203,6 +205,8 @@ export function createEmptyTrip(input: {
     routeOutline: input.routeOutline,
     nights: input.nights,
     days: input.days,
+    startDate: input.startDate,
+    endDate: input.endDate,
     partySize: input.partySize,
     places: [],
     expenses: [],

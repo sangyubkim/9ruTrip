@@ -5,7 +5,11 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { space } from "./src/theme/tokens";
 import Constants from "expo-constants";
-import { generateItinerary } from "./src/api/trip";
+import {
+  fetchDiaryEntries,
+  generateItinerary,
+  upsertDiaryFromTrip,
+} from "./src/api/trip";
 import { setApiClientBaseUrl } from "./src/api/client";
 import { ensureOvernightHotelsInPlaces } from "./src/utils/overnightHotels";
 import { ErrorBoundary } from "./src/components/ErrorBoundary";
@@ -23,7 +27,13 @@ import {
   loadTrips,
   upsertTrip,
 } from "./src/storage/tripStorage";
-import type { Screen, Trip } from "./src/types";
+import { loadDiaryEntries, upsertDiaryEntry } from "./src/storage/diaryStorage";
+import {
+  enqueueDiarySync,
+  flushDiarySyncQueue,
+} from "./src/storage/diarySyncQueueStorage";
+import { tripToDiaryEntry } from "./src/utils/diary";
+import type { Screen, TravelDiaryEntry, Trip } from "./src/types";
 import {
   buildCityLegs,
   buildRouteOutline,
@@ -44,6 +54,7 @@ import { CaptureScreen } from "./src/screens/CaptureScreen";
 import { ExpensesScreen } from "./src/screens/ExpensesScreen";
 import { SummaryScreen } from "./src/screens/SummaryScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
+import { DiaryScreen } from "./src/screens/DiaryScreen";
 
 function AppInner() {
   const { apiBaseUrl, ready } = useApi();
@@ -51,6 +62,7 @@ function AppInner() {
   const [screen, setScreen] = useState<Screen>("home");
   const [showSettings, setShowSettings] = useState(false);
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [diaryEntries, setDiaryEntries] = useState<TravelDiaryEntry[]>([]);
   const [active, setActive] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -72,6 +84,10 @@ function AppInner() {
       }
       if (screen === "home") return false;
       if (screen === "tripType") {
+        setScreen("home");
+        return true;
+      }
+      if (screen === "diary") {
         setScreen("home");
         return true;
       }
@@ -110,11 +126,17 @@ function AppInner() {
     if (!ready) return;
     void (async () => {
       try {
-        const [saved, seen] = await Promise.all([
+        const [saved, seen, savedDiary] = await Promise.all([
           loadTrips(),
           hasSeenOnboarding(),
+          loadDiaryEntries(),
         ]);
         setTrips(saved);
+        setDiaryEntries(savedDiary);
+        void flushDiarySyncQueue(async (queuedTrip) => {
+          const entry = await upsertDiaryFromTrip(queuedTrip);
+          setDiaryEntries(await upsertDiaryEntry(entry));
+        });
         if (!seen) setShowOnboarding(true);
       } catch (e) {
         setBootError(e instanceof Error ? e.message : "초기화 실패");
@@ -124,11 +146,34 @@ function AppInner() {
     })();
   }, [ready]);
 
+  const syncCompletedTrip = useCallback(async (trip: Trip) => {
+    const pending = tripToDiaryEntry(trip, "pending");
+    setDiaryEntries(await upsertDiaryEntry(pending));
+    try {
+      const synced = await upsertDiaryFromTrip(trip);
+      setDiaryEntries(await upsertDiaryEntry(synced));
+    } catch {
+      await enqueueDiarySync(trip);
+    }
+  }, []);
+
+  const refreshDiary = useCallback(async () => {
+    try {
+      const remote = await fetchDiaryEntries();
+      let cached = await loadDiaryEntries();
+      for (const entry of remote) cached = await upsertDiaryEntry(entry);
+      setDiaryEntries(cached);
+    } catch {
+      // 오프라인에서는 이미 표시 중인 로컬 캐시를 그대로 사용한다.
+    }
+  }, []);
+
   const persist = useCallback(async (trip: Trip) => {
     setActive(trip);
     const next = await upsertTrip(trip);
     setTrips(next);
-  }, []);
+    if (trip.status === "done") await syncCompletedTrip(trip);
+  }, [syncCompletedTrip]);
 
   const handleDeleteTrip = useCallback(
     async (trip: Trip) => {
@@ -174,6 +219,8 @@ function AppInner() {
           cityIds: input.cityIds,
           nights: input.nights,
           days: input.days,
+          startDate: input.startDate,
+          endDate: input.endDate,
           partySize: input.partySize,
           origin,
           startAddress: input.startAddress,
@@ -309,6 +356,10 @@ function AppInner() {
           trips={trips}
           loading={loading}
           onCreate={() => setScreen("tripType")}
+          onDiary={() => {
+            setScreen("diary");
+            void refreshDiary();
+          }}
           onOpen={(t) => {
             setActive(t);
             setScreen("plan");
@@ -322,6 +373,12 @@ function AppInner() {
         <TripTypeScreen
           onBack={() => setScreen("home")}
           onSelectDomestic={() => setScreen("create")}
+        />
+      )}
+      {screen === "diary" && (
+        <DiaryScreen
+          entries={diaryEntries}
+          onBack={() => setScreen("home")}
         />
       )}
       {screen === "create" && (

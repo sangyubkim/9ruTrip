@@ -191,6 +191,7 @@ export function PlanScreen({
   const [returnTimeEditOpen, setReturnTimeEditOpen] = useState(false);
   const [startTimeEditOpen, setStartTimeEditOpen] = useState(false);
   const [reflectRequest, setReflectRequest] = useState("");
+  const [reflectRequestOpen, setReflectRequestOpen] = useState(false);
   const [domesticNavPlace, setDomesticNavPlace] =
     useState<ItineraryPlace | null>(null);
   const [domesticNavApp, setDomesticNavApp] = useState<"naver" | "google">(
@@ -1389,36 +1390,59 @@ export function PlanScreen({
           <Text style={styles.optimizeBtnText}>동선 최적화</Text>
         )}
       </Pressable>
-      <Text style={[styles.sectionLabel, { color: colors.text }]}>
-        재일정 반영 요청
-      </Text>
-      <Text style={[styles.settingsHint, { color: colors.textMuted }]}>
-        Day {day + 1} 일정에 반영할 요청을 적고 AI로 경로를 다시 받을 수 있습니다.
-      </Text>
-      <TextInput
-        style={styles.reflectInput}
-        value={reflectRequest}
-        onChangeText={setReflectRequest}
-        placeholder="예: 점심은 비빔밥, 오후는 여유롭게, 비 오면 실내 위주"
-        placeholderTextColor="#94a3b8"
-        multiline
-        maxLength={800}
-        editable={!rerouting}
-        textAlignVertical="top"
-      />
       <Pressable
-        style={[styles.reflectBtn, rerouting && { opacity: 0.6 }]}
-        disabled={rerouting}
-        onPress={() => void runReflectRequest()}
-        accessibilityRole="button"
-        accessibilityLabel="여행 재계획"
+        style={styles.reflectToggle}
+        onPress={() => setReflectRequestOpen((open) => !open)}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: reflectRequestOpen }}
+        accessibilityLabel="재일정 반영 요청"
+        accessibilityHint="선택하면 요청 입력과 여행 재계획 버튼이 표시됩니다"
       >
-        {rerouting ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.reflectBtnText}>여행 재계획</Text>
-        )}
+        <View
+          style={[
+            styles.reflectCheckbox,
+            reflectRequestOpen && styles.reflectCheckboxOn,
+          ]}
+        >
+          {reflectRequestOpen ? (
+            <Text style={styles.reflectCheckmark}>✓</Text>
+          ) : null}
+        </View>
+        <Text style={[styles.sectionLabel, { color: colors.text, marginBottom: 0 }]}>
+          재일정 반영 요청
+        </Text>
       </Pressable>
+      {reflectRequestOpen ? (
+        <>
+          <Text style={[styles.settingsHint, { color: colors.textMuted }]}>
+            Day {day + 1} 일정에 반영할 요청을 적고 AI로 경로를 다시 받을 수 있습니다.
+          </Text>
+          <TextInput
+            style={styles.reflectInput}
+            value={reflectRequest}
+            onChangeText={setReflectRequest}
+            placeholder="예: 점심은 비빔밥, 오후는 여유롭게, 비 오면 실내 위주"
+            placeholderTextColor="#94a3b8"
+            multiline
+            maxLength={800}
+            editable={!rerouting}
+            textAlignVertical="top"
+          />
+          <Pressable
+            style={[styles.reflectBtn, rerouting && { opacity: 0.6 }]}
+            disabled={rerouting}
+            onPress={() => void runReflectRequest()}
+            accessibilityRole="button"
+            accessibilityLabel="여행 재계획"
+          >
+            {rerouting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.reflectBtnText}>여행 재계획</Text>
+            )}
+          </Pressable>
+        </>
+      ) : null}
       <Text style={[styles.sectionLabel, { color: colors.text }]}>필터</Text>
       <View style={styles.tabs}>
         {FILTERS.map((f) => (
@@ -1443,20 +1467,64 @@ export function PlanScreen({
 
   const listHeader = (
     <View>
-      <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
-        <Text style={[styles.back, { color: colors.accent }]}>← 목록</Text>
-      </Pressable>
+      <View style={styles.listHeaderTop}>
+        <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
+          <Text style={[styles.back, { color: colors.accent }]}>← 목록</Text>
+        </Pressable>
 
-      <Pressable
-        style={styles.moreBtn}
-        onPress={() => setSettingsOpen((v) => !v)}
-      >
-        <Text style={styles.moreBtnText}>
-          {settingsOpen ? "▾ 여행 설정" : "⋯ 여행 설정"}
+        <View style={styles.modeToggleRow}>
+          {(
+            [
+              { id: "easy" as const, label: "쉽게" },
+              { id: "detailed" as const, label: "자세히" },
+            ] as const
+          ).map((opt) => {
+            const on = planUiMode === opt.id;
+            return (
+              <Pressable
+                key={opt.id}
+                style={[
+                  styles.modeChip,
+                  {
+                    backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                  },
+                ]}
+                onPress={() => setUiMode(opt.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={`표시 ${opt.label}`}
+              >
+                <Text
+                  style={{
+                    color: on ? colors.chipOnFg : colors.chipFg,
+                    fontWeight: "800",
+                    fontSize: 13,
+                  }}
+                >
+                  {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={[styles.title, { color: colors.text }]}>
+          {tripCitiesLabel(trip)} {trip.nights}박 {trip.days}일
         </Text>
-      </Pressable>
-      {settingsOpen ? (
-        <View style={styles.settingsBox}>
+        <Text style={styles.sub}>
+          {trip.partySize}명 · 계획 {money(trip.plannedBudget)} ·{" "}
+          {STATUS_LABEL[trip.status] ?? trip.status}
+        </Text>
+
+        <Pressable
+          style={styles.moreBtn}
+          onPress={() => setSettingsOpen((v) => !v)}
+        >
+          <Text style={styles.moreBtnText}>
+            {settingsOpen ? "▾ 여행 설정" : "⋯ 여행 설정"}
+          </Text>
+        </Pressable>
+        {settingsOpen ? (
+          <View style={styles.settingsBox}>
           <View style={styles.toggles}>
             <Pressable
               style={[
@@ -1636,16 +1704,10 @@ export function PlanScreen({
               </Text>
             </Pressable>
           ) : null}
-        </View>
-      ) : null}
+          </View>
+        ) : null}
+      </View>
 
-      <Text style={[styles.title, { color: colors.text }]}>
-        {tripCitiesLabel(trip)} {trip.nights}박 {trip.days}일
-      </Text>
-      <Text style={styles.sub}>
-        {trip.partySize}명 · 계획 {money(trip.plannedBudget)} ·{" "}
-        {STATUS_LABEL[trip.status] ?? trip.status}
-      </Text>
       {!isEasy ? <WeatherCrowdChip cityId={dayCityId} /> : null}
       {enriching ? (
         <View style={styles.enrichBar}>
@@ -1936,41 +1998,6 @@ export function PlanScreen({
         </View>
       ) : (
         <View style={styles.listRoot}>
-          <View style={styles.modeToggleRow}>
-            {(
-              [
-                { id: "easy" as const, label: "쉽게" },
-                { id: "detailed" as const, label: "자세히" },
-              ] as const
-            ).map((opt) => {
-              const on = planUiMode === opt.id;
-              return (
-                <Pressable
-                  key={opt.id}
-                  style={[
-                    styles.modeChip,
-                    {
-                      backgroundColor: on ? colors.chipOnBg : colors.chipBg,
-                    },
-                  ]}
-                  onPress={() => setUiMode(opt.id)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={`표시 ${opt.label}`}
-                >
-                  <Text
-                    style={{
-                      color: on ? colors.chipOnFg : colors.chipFg,
-                      fontWeight: "800",
-                      fontSize: 13,
-                    }}
-                  >
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
           <DraggableFlatList
             data={dayPlaces}
             keyExtractor={(item) => item.id}
@@ -2397,6 +2424,7 @@ export function PlanScreen({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   listRoot: { flex: 1 },
+  listHeaderTop: { paddingHorizontal: 12 },
   gestureHintBar: {
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -2413,8 +2441,7 @@ const styles = StyleSheet.create({
   modeToggleRow: {
     flexDirection: "row",
     gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    marginBottom: 8,
   },
   modeChip: {
     flex: 1,
@@ -2428,7 +2455,7 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     minHeight: TOUCH_MIN,
     justifyContent: "center",
-    marginBottom: 2,
+    marginBottom: 4,
   },
   back: { color: "#0369a1", fontWeight: "700", fontSize: 15 },
   title: { fontSize: 20, fontWeight: "800", color: "#0c4a6e" },
@@ -2584,6 +2611,29 @@ const styles = StyleSheet.create({
     color: "#0f172a",
     lineHeight: 18,
   },
+  reflectToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 8,
+    minHeight: TOUCH_MIN,
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  reflectCheckbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderRadius: 5,
+    borderColor: "#94a3b8",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reflectCheckboxOn: {
+    borderColor: "#0c4a6e",
+    backgroundColor: "#0c4a6e",
+  },
+  reflectCheckmark: { color: "#fff", fontSize: 14, fontWeight: "900" },
   reflectBtn: {
     marginBottom: 10,
     paddingVertical: 12,

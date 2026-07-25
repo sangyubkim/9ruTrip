@@ -1,4 +1,11 @@
-import type { CostSummary, Expense, ItineraryPlace, PlaceReview, Trip } from "./types.js";
+import type {
+  CostSummary,
+  Expense,
+  ItineraryPlace,
+  PlaceReview,
+  TravelDiaryEntry,
+  Trip,
+} from "./types.js";
 import type { BlogDraft, Step } from "./types.js";
 
 export function sumPlannedCost(places: ItineraryPlace[]): number {
@@ -64,6 +71,36 @@ export function tripReviewsToBlogDraft(trip: Trip): BlogDraft {
     tags: [trip.cityName, "여행", "9ruTrip", trip.cityId],
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+/** 완료 여행을 외부 서비스에도 전달 가능한 평면 JSON 다이어리 엔트리로 변환한다. */
+export function tripToDiaryEntry(trip: Trip): TravelDiaryEntry {
+  const cityIds = trip.cities?.map((city) => city.cityId) ?? [trip.cityId];
+  const cityNames = trip.cities?.map((city) => city.cityName) ?? [trip.cityName];
+  const currency =
+    trip.cityId === "tokyo" || trip.cityId === "osaka" ? "JPY" : "KRW";
+  const completedAt = trip.updatedAt || new Date().toISOString();
+
+  return {
+    id: `diary-${trip.id}`,
+    tripId: trip.id,
+    title: cityNames.join(" · "),
+    cityIds,
+    cityNames,
+    nights: trip.nights,
+    days: trip.days,
+    ...(trip.startDate ? { startDate: trip.startDate } : {}),
+    ...(trip.endDate ? { endDate: trip.endDate } : {}),
+    completedAt,
+    partySize: trip.partySize,
+    ...(trip.plannedBudget > 0
+      ? { plannedBudget: trip.plannedBudget, currency }
+      : {}),
+    coverPlaceName: trip.places[0]?.name,
+    placeCount: trip.places.length,
+    updatedAt: completedAt,
+    syncStatus: "local",
   };
 }
 

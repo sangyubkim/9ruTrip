@@ -18,8 +18,10 @@ import {
 } from "./lib/transport.mjs";
 import { isKnownCityId, listCityIds } from "./lib/cities.mjs";
 import { searchPlaces } from "./lib/places-search.mjs";
+import { createDiaryStore } from "./lib/diary-store.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const diaryStore = createDiaryStore(join(__dirname, "data", "diary.json"));
 loadEnv(join(__dirname, ".env"));
 // 루트 .env도 허용
 loadEnv(join(__dirname, "../../.env"));
@@ -168,12 +170,40 @@ async function handle(req, res) {
             "POST /trip/compare-transport",
             "POST /trip/suggest-places",
             "POST /trip/optimize-day",
+            "GET /diary?year=2026",
+            "POST /diary/from-trip",
+            "PUT /diary/:id",
             "POST /places/search",
             "POST /wordpress/publish",
           ],
         },
         origin,
       );
+      return;
+    }
+
+    if (method === "GET" && matchRoute(url, "/diary")) {
+      const year = new URL(rawUrl, "http://localhost").searchParams.get("year");
+      const entries = await diaryStore.list(year);
+      send(res, 200, { entries }, origin);
+      return;
+    }
+
+    if (method === "POST" && matchRoute(url, "/diary/from-trip")) {
+      const body = await readBody(req);
+      const entry = await diaryStore.upsertFromTrip(body?.trip ?? body);
+      send(res, 200, { entry }, origin);
+      return;
+    }
+
+    const diaryId = pathname.match(/^\/diary\/([^/]+)$/)?.[1];
+    if (method === "PUT" && diaryId) {
+      const entry = await diaryStore.update(decodeURIComponent(diaryId), await readBody(req));
+      if (!entry) {
+        send(res, 404, { error: "Diary entry not found" }, origin);
+        return;
+      }
+      send(res, 200, { entry }, origin);
       return;
     }
 
