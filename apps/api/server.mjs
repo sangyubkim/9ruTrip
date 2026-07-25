@@ -18,6 +18,7 @@ import {
 } from "./lib/transport.mjs";
 import { isKnownCityId, listCityIds } from "./lib/cities.mjs";
 import { searchPlaces } from "./lib/places-search.mjs";
+import { enrichPlace } from "./lib/place-enrich.mjs";
 import { createDiaryStore } from "./lib/diary-store.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -95,7 +96,7 @@ function corsHeaders(origin) {
     "Access-Control-Allow-Origin": allow
       ? origin || "*"
       : env.corsOrigins[0] || "*",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Content-Type": "application/json; charset=utf-8",
     // Apache/CDN이 /health 등을 오래 캐시하지 않도록
@@ -173,7 +174,9 @@ async function handle(req, res) {
             "GET /diary?year=2026",
             "POST /diary/from-trip",
             "PUT /diary/:id",
+            "DELETE /diary/:id",
             "POST /places/search",
+            "POST /places/enrich",
             "POST /wordpress/publish",
           ],
         },
@@ -204,6 +207,15 @@ async function handle(req, res) {
         return;
       }
       send(res, 200, { entry }, origin);
+      return;
+    }
+    if (method === "DELETE" && diaryId) {
+      const deleted = await diaryStore.remove(decodeURIComponent(diaryId));
+      if (!deleted) {
+        send(res, 404, { error: "Diary entry not found" }, origin);
+        return;
+      }
+      send(res, 200, { deleted: true }, origin);
       return;
     }
 
@@ -357,6 +369,13 @@ async function handle(req, res) {
       const body = await readBody(req);
       const result = await searchPlaces(body, env);
       send(res, 200, result, origin);
+      return;
+    }
+
+    if (method === "POST" && matchRoute(url, "/places/enrich")) {
+      const body = await readBody(req);
+      const place = await enrichPlace(body, env);
+      send(res, 200, { place }, origin);
       return;
     }
 

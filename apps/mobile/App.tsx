@@ -6,6 +6,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { space } from "./src/theme/tokens";
 import Constants from "expo-constants";
 import {
+  deleteDiaryEntry,
   fetchDiaryEntries,
   generateItinerary,
   upsertDiaryFromTrip,
@@ -27,7 +28,11 @@ import {
   loadTrips,
   upsertTrip,
 } from "./src/storage/tripStorage";
-import { loadDiaryEntries, upsertDiaryEntry } from "./src/storage/diaryStorage";
+import {
+  loadDiaryEntries,
+  removeDiaryEntry,
+  upsertDiaryEntry,
+} from "./src/storage/diaryStorage";
 import {
   enqueueDiarySync,
   flushDiarySyncQueue,
@@ -165,6 +170,19 @@ function AppInner() {
       setDiaryEntries(cached);
     } catch {
       // 오프라인에서는 이미 표시 중인 로컬 캐시를 그대로 사용한다.
+    }
+  }, []);
+
+  const handleDeleteDiaryEntry = useCallback(async (entry: TravelDiaryEntry) => {
+    setDiaryEntries(await removeDiaryEntry(entry.id));
+    try {
+      await deleteDiaryEntry(entry.id);
+    } catch (error) {
+      Alert.alert(
+        "서버 삭제 보류",
+        "이 기기에서는 삭제했습니다. 네트워크 연결 후 서버 기록은 다시 삭제해 주세요.\n\n" +
+          (error instanceof Error ? error.message : ""),
+      );
     }
   }, []);
 
@@ -379,6 +397,7 @@ function AppInner() {
         <DiaryScreen
           entries={diaryEntries}
           onBack={() => setScreen("home")}
+          onDelete={handleDeleteDiaryEntry}
         />
       )}
       {screen === "create" && (

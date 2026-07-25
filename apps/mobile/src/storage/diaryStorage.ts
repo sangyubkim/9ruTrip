@@ -26,3 +26,9 @@ export async function upsertDiaryEntry(
   await AsyncStorage.setItem(KEY, JSON.stringify(next));
   return next;
 }
+
+export async function removeDiaryEntry(id: string): Promise<TravelDiaryEntry[]> {
+  const next = (await loadDiaryEntries()).filter((entry) => entry.id !== id);
+  await AsyncStorage.setItem(KEY, JSON.stringify(next));
+  return next;
+}

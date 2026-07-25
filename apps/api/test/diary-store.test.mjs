@@ -34,4 +34,8 @@ test("완료 여행 다이어리를 디스크에 upsert하고 연도별로 조�
   const updated = await restartedStore.update(created.id, { notes: "비 오는 날의 서울" });
   assert.equal(updated.notes, "비 오는 날의 서울");
   assert.match(await readFile(filePath, "utf8"), /비 오는 날의 서울/);
+
+  assert.equal(await restartedStore.remove(created.id), true);
+  assert.equal((await restartedStore.list("2026")).length, 0);
+  assert.equal(await restartedStore.remove(created.id), false);
 });

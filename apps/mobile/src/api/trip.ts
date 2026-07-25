@@ -166,6 +166,16 @@ export async function updateDiaryEntry(
   return json.entry;
 }
 
+export async function deleteDiaryEntry(id: string): Promise<void> {
+  const res = await apiFetch(`/diary/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  const json = await readApiJson<{ deleted?: boolean; error?: string }>(res);
+  if (!res.ok || !json.deleted) {
+    throw new Error(json.error ?? `Diary delete failed: ${res.status}`);
+  }
+}
+
 export type PublishRequest = {
   trip?: Trip;
   title?: string;
@@ -344,6 +354,36 @@ export async function searchPlaces(payload: {
     throw new Error(json.error ?? `Place search failed: ${res.status}`);
   }
   return { results: json.results ?? [], source: json.source };
+}
+
+export type EnrichedPlace = {
+  name: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
+  category: Exclude<PlaceCategory, "hotel">;
+  estimatedCost: number;
+  notes?: string;
+  engine?: string;
+};
+
+export async function enrichPlace(payload: {
+  name: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
+  cityId: string;
+}): Promise<EnrichedPlace> {
+  const res = await apiFetch("/places/enrich", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = await readApiJson<{ place?: EnrichedPlace; error?: string }>(res);
+  if (!res.ok || !json.place) {
+    throw new Error(json.error ?? `Place enrich failed: ${res.status}`);
+  }
+  return json.place;
 }
 
 export type OptimizeDayResponse = {

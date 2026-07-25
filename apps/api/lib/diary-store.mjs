@@ -104,5 +104,12 @@ export function createDiaryStore(filePath) {
       await save(entries);
       return entries[index];
     },
+    async remove(id) {
+      const entries = await load();
+      const next = entries.filter((entry) => entry.id !== id);
+      if (next.length === entries.length) return false;
+      await save(next);
+      return true;
+    },
   };
 }

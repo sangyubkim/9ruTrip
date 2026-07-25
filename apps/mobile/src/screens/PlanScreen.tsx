@@ -22,6 +22,7 @@ import { Swipeable } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   compareTransport,
+  type EnrichedPlace,
   enrichTransport,
   optimizeDay,
   rerouteTrip,
@@ -31,6 +32,7 @@ import { DeviationBanner } from "../components/DeviationBanner";
 import { EmptyState } from "../components/EmptyState";
 import { FadeIn } from "../components/FadeIn";
 import { InlineToast } from "../components/InlineToast";
+import { ManualPlaceModal } from "../components/ManualPlaceModal";
 import { NextActionBanner } from "../components/NextActionBanner";
 import { PlaceSuggestModal } from "../components/PlaceSuggestModal";
 import { PlanCoachmark } from "../components/PlanCoachmark";
@@ -178,6 +180,7 @@ export function PlanScreen({
   const [undoDepth, setUndoDepth] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [suggestVisible, setSuggestVisible] = useState(false);
+  const [manualPlaceVisible, setManualPlaceVisible] = useState(false);
   const [suggestCategory, setSuggestCategory] =
     useState<PlaceCategory>("food");
   const [suggestList, setSuggestList] = useState<ItineraryPlace[]>([]);
@@ -801,6 +804,32 @@ export function PlanScreen({
     }
     await applyPlaces(renumberGlobal([...trip.places, ...added]));
     flashInline(`추가됨 · ${added.length}곳 (Day ${day + 1})`);
+  };
+
+  const confirmManualPlace = async (place: EnrichedPlace) => {
+    const dayList = trip.places.filter((item) => item.dayIndex === day);
+    const maxOrder = dayList.reduce((max, item) => Math.max(max, item.order), -1);
+    const cityCenter = CITIES[dayCityId]?.center;
+    const lat = Number.isFinite(place.lat) ? place.lat! : cityCenter?.lat ?? 0;
+    const lng = Number.isFinite(place.lng) ? place.lng! : cityCenter?.lng ?? 0;
+    const addressNote = place.address ? `주소: ${place.address}` : "";
+    const notes = [place.notes, addressNote].filter(Boolean).join(" · ");
+    const added: ItineraryPlace = {
+      id: `place-${Date.now()}-manual`,
+      name: place.name,
+      category: place.category,
+      lat,
+      lng,
+      estimatedCost: place.estimatedCost,
+      ...(notes ? { notes } : {}),
+      dayIndex: day,
+      order: maxOrder + 1,
+      cityId: dayCityId,
+    };
+    pushUndoSnapshot();
+    setManualPlaceVisible(false);
+    await applyPlaces(renumberGlobal([...trip.places, added]));
+    flashInline(`직접 추가됨 · Day ${day + 1}`);
   };
 
   const savePlannedTime = (hhmm: string) => {
@@ -1642,6 +1671,27 @@ export function PlanScreen({
               복귀 {lodgingReturnTime}
             </Text>
           </Pressable>
+          <Text
+            style={[
+              styles.sectionLabel,
+              { color: colors.textOnCard, marginTop: 10 },
+            ]}
+          >
+            일정 장소
+          </Text>
+          <Text
+            style={[styles.settingsHint, { color: colors.textMutedOnCard }]}
+          >
+            AI 추천에 없는 장소도 현재 선택한 Day에 추가할 수 있습니다.
+          </Text>
+          <Pressable
+            style={styles.addCityBtn}
+            onPress={() => setManualPlaceVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="장소 직접 추가"
+          >
+            <Text style={styles.addCityBtnText}>장소 직접 추가</Text>
+          </Pressable>
           {canPickDomesticCities ? (
             <View style={styles.easyExtras}>
               <Text style={[styles.sectionLabel, { color: colors.textOnCard }]}>
@@ -2475,6 +2525,13 @@ export function PlanScreen({
         loading={suggesting}
         onConfirm={(picks) => void confirmSuggested(picks)}
         onClose={() => setSuggestVisible(false)}
+      />
+
+      <ManualPlaceModal
+        visible={manualPlaceVisible}
+        cityId={dayCityId}
+        onConfirm={(place) => void confirmManualPlace(place)}
+        onClose={() => setManualPlaceVisible(false)}
       />
 
       <ProvinceCityPickerModal

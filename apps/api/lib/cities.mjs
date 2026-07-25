@@ -17,26 +17,83 @@ export const COUNTRIES = [
       "ulsan",
       "sejong",
       "suwon",
+      "seongnam",
+      "uijeongbu",
+      "anyang",
+      "bucheon",
+      "gwangmyeong",
+      "pyeongtaek",
+      "dongducheon",
+      "ansan",
+      "goyang",
+      "gwacheon",
+      "guri",
+      "namyangju",
+      "osan",
+      "siheung",
+      "gunpo",
+      "uiwang",
+      "hanam",
+      "yongin",
+      "paju",
+      "icheon",
+      "anseong",
+      "gimpo",
+      "hwaseong",
+      "gwangju_gyeonggi",
+      "yangju",
+      "pocheon",
+      "yeoju",
       "gapyeong",
       "yangpyeong",
       "chuncheon",
       "gangneung",
+      "donghae",
+      "samcheok",
       "sokcho",
+      "wonju",
+      "taebaek",
       "cheongju",
+      "chungju",
+      "jecheon",
       "daniyang",
+      "gyeryong",
       "gongju",
+      "nonsan",
+      "dangjin",
       "boryeong",
+      "seosan",
+      "asan",
+      "cheonan",
       "taean",
       "jeonju",
+      "jeongeup",
       "gunsan",
+      "gimje",
+      "namwon",
+      "iksan",
       "yeosu",
       "suncheon",
       "mokpo",
+      "gwangyang",
+      "naju",
       "gyeongju",
+      "gimcheon",
       "andong",
+      "gumi",
+      "yeongju",
+      "yeongcheon",
+      "sangju",
+      "mungyeong",
+      "gyeongsan",
       "pohang",
+      "changwon",
       "tongyeong",
       "geoje",
+      "gimhae",
+      "miryang",
+      "sacheon",
+      "yangsan",
       "jinju",
       "jeju",
       "seogwipo"
@@ -565,6 +622,384 @@ export const CITIES = {
     "region": "domestic",
     "mapProvider": "naver"
   },
+  "seongnam": {
+    "id": "seongnam",
+    "nameKo": "성남",
+    "nameEn": "Seongnam",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.42,
+      "lng": 127.1265
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "uijeongbu": {
+    "id": "uijeongbu",
+    "nameKo": "의정부",
+    "nameEn": "Uijeongbu",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.7381,
+      "lng": 127.0337
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "anyang": {
+    "id": "anyang",
+    "nameKo": "안양",
+    "nameEn": "Anyang",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.3943,
+      "lng": 126.9568
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "bucheon": {
+    "id": "bucheon",
+    "nameKo": "부천",
+    "nameEn": "Bucheon",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.5034,
+      "lng": 126.766
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "gwangmyeong": {
+    "id": "gwangmyeong",
+    "nameKo": "광명",
+    "nameEn": "Gwangmyeong",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.4786,
+      "lng": 126.8644
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "pyeongtaek": {
+    "id": "pyeongtaek",
+    "nameKo": "평택",
+    "nameEn": "Pyeongtaek",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.9921,
+      "lng": 127.1129
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "dongducheon": {
+    "id": "dongducheon",
+    "nameKo": "동두천",
+    "nameEn": "Dongducheon",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.9034,
+      "lng": 127.0604
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "ansan": {
+    "id": "ansan",
+    "nameKo": "안산",
+    "nameEn": "Ansan",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.3219,
+      "lng": 126.8309
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "goyang": {
+    "id": "goyang",
+    "nameKo": "고양",
+    "nameEn": "Goyang",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.6584,
+      "lng": 126.832
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "gwacheon": {
+    "id": "gwacheon",
+    "nameKo": "과천",
+    "nameEn": "Gwacheon",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.4292,
+      "lng": 126.9877
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "guri": {
+    "id": "guri",
+    "nameKo": "구리",
+    "nameEn": "Guri",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.5943,
+      "lng": 127.1296
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "namyangju": {
+    "id": "namyangju",
+    "nameKo": "남양주",
+    "nameEn": "Namyangju",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.636,
+      "lng": 127.2165
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "osan": {
+    "id": "osan",
+    "nameKo": "오산",
+    "nameEn": "Osan",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.1498,
+      "lng": 127.0772
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "siheung": {
+    "id": "siheung",
+    "nameKo": "시흥",
+    "nameEn": "Siheung",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.3801,
+      "lng": 126.8029
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "gunpo": {
+    "id": "gunpo",
+    "nameKo": "군포",
+    "nameEn": "Gunpo",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.3616,
+      "lng": 126.9352
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "uiwang": {
+    "id": "uiwang",
+    "nameKo": "의왕",
+    "nameEn": "Uiwang",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.3449,
+      "lng": 126.9683
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "hanam": {
+    "id": "hanam",
+    "nameKo": "하남",
+    "nameEn": "Hanam",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.5393,
+      "lng": 127.2148
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "yongin": {
+    "id": "yongin",
+    "nameKo": "용인",
+    "nameEn": "Yongin",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.2411,
+      "lng": 127.1776
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "paju": {
+    "id": "paju",
+    "nameKo": "파주",
+    "nameEn": "Paju",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.7599,
+      "lng": 126.7805
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "icheon": {
+    "id": "icheon",
+    "nameKo": "이천",
+    "nameEn": "Icheon",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.272,
+      "lng": 127.435
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "anseong": {
+    "id": "anseong",
+    "nameKo": "안성",
+    "nameEn": "Anseong",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.0081,
+      "lng": 127.2799
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "gimpo": {
+    "id": "gimpo",
+    "nameKo": "김포",
+    "nameEn": "Gimpo",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.6152,
+      "lng": 126.7156
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "hwaseong": {
+    "id": "hwaseong",
+    "nameKo": "화성",
+    "nameEn": "Hwaseong",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.1996,
+      "lng": 126.8312
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "gwangju_gyeonggi": {
+    "id": "gwangju_gyeonggi",
+    "nameKo": "광주",
+    "nameEn": "Gwangju (Gyeonggi)",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.4294,
+      "lng": 127.255
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "yangju": {
+    "id": "yangju",
+    "nameKo": "양주",
+    "nameEn": "Yangju",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.7853,
+      "lng": 127.0458
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "pocheon": {
+    "id": "pocheon",
+    "nameKo": "포천",
+    "nameEn": "Pocheon",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.8949,
+      "lng": 127.2003
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "yeoju": {
+    "id": "yeoju",
+    "nameKo": "여주",
+    "nameEn": "Yeoju",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.2982,
+      "lng": 127.6372
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
   "gapyeong": {
     "id": "gapyeong",
     "nameKo": "가평",
@@ -621,6 +1056,34 @@ export const CITIES = {
     "region": "domestic",
     "mapProvider": "naver"
   },
+  "donghae": {
+    "id": "donghae",
+    "nameKo": "동해",
+    "nameEn": "Donghae",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.5247,
+      "lng": 129.1143
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "samcheok": {
+    "id": "samcheok",
+    "nameKo": "삼척",
+    "nameEn": "Samcheok",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.4499,
+      "lng": 129.1652
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
   "sokcho": {
     "id": "sokcho",
     "nameKo": "속초",
@@ -630,6 +1093,34 @@ export const CITIES = {
     "center": {
       "lat": 38.207,
       "lng": 128.5918
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "wonju": {
+    "id": "wonju",
+    "nameKo": "원주",
+    "nameEn": "Wonju",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.3422,
+      "lng": 127.9202
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "taebaek": {
+    "id": "taebaek",
+    "nameKo": "태백",
+    "nameEn": "Taebaek",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.1641,
+      "lng": 128.9856
     },
     "timezone": "Asia/Seoul",
     "region": "domestic",
@@ -649,6 +1140,34 @@ export const CITIES = {
     "region": "domestic",
     "mapProvider": "naver"
   },
+  "chungju": {
+    "id": "chungju",
+    "nameKo": "충주",
+    "nameEn": "Chungju",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.991,
+      "lng": 127.9259
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "jecheon": {
+    "id": "jecheon",
+    "nameKo": "제천",
+    "nameEn": "Jecheon",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 37.1326,
+      "lng": 128.1909
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
   "daniyang": {
     "id": "daniyang",
     "nameKo": "단양",
@@ -658,6 +1177,20 @@ export const CITIES = {
     "center": {
       "lat": 36.9846,
       "lng": 128.3656
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "gyeryong": {
+    "id": "gyeryong",
+    "nameKo": "계룡",
+    "nameEn": "Gyeryong",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.2745,
+      "lng": 127.2487
     },
     "timezone": "Asia/Seoul",
     "region": "domestic",
@@ -677,6 +1210,34 @@ export const CITIES = {
     "region": "domestic",
     "mapProvider": "naver"
   },
+  "nonsan": {
+    "id": "nonsan",
+    "nameKo": "논산",
+    "nameEn": "Nonsan",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.1871,
+      "lng": 127.0987
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "dangjin": {
+    "id": "dangjin",
+    "nameKo": "당진",
+    "nameEn": "Dangjin",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.889,
+      "lng": 126.6459
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
   "boryeong": {
     "id": "boryeong",
     "nameKo": "보령",
@@ -686,6 +1247,48 @@ export const CITIES = {
     "center": {
       "lat": 36.3334,
       "lng": 126.6129
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "seosan": {
+    "id": "seosan",
+    "nameKo": "서산",
+    "nameEn": "Seosan",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.7845,
+      "lng": 126.4503
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "asan": {
+    "id": "asan",
+    "nameKo": "아산",
+    "nameEn": "Asan",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.7898,
+      "lng": 127.0018
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "cheonan": {
+    "id": "cheonan",
+    "nameKo": "천안",
+    "nameEn": "Cheonan",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.8151,
+      "lng": 127.1139
     },
     "timezone": "Asia/Seoul",
     "region": "domestic",
@@ -719,6 +1322,20 @@ export const CITIES = {
     "region": "domestic",
     "mapProvider": "naver"
   },
+  "jeongeup": {
+    "id": "jeongeup",
+    "nameKo": "정읍",
+    "nameEn": "Jeongeup",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.5699,
+      "lng": 126.8559
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
   "gunsan": {
     "id": "gunsan",
     "nameKo": "군산",
@@ -728,6 +1345,48 @@ export const CITIES = {
     "center": {
       "lat": 35.9676,
       "lng": 126.7369
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "gimje": {
+    "id": "gimje",
+    "nameKo": "김제",
+    "nameEn": "Gimje",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.8036,
+      "lng": 126.8809
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "namwon": {
+    "id": "namwon",
+    "nameKo": "남원",
+    "nameEn": "Namwon",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.4164,
+      "lng": 127.3904
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "iksan": {
+    "id": "iksan",
+    "nameKo": "익산",
+    "nameEn": "Iksan",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.9483,
+      "lng": 126.9576
     },
     "timezone": "Asia/Seoul",
     "region": "domestic",
@@ -775,6 +1434,34 @@ export const CITIES = {
     "region": "domestic",
     "mapProvider": "naver"
   },
+  "gwangyang": {
+    "id": "gwangyang",
+    "nameKo": "광양",
+    "nameEn": "Gwangyang",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 34.9407,
+      "lng": 127.6959
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "naju": {
+    "id": "naju",
+    "nameKo": "나주",
+    "nameEn": "Naju",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.0158,
+      "lng": 126.7108
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
   "gyeongju": {
     "id": "gyeongju",
     "nameKo": "경주",
@@ -784,6 +1471,20 @@ export const CITIES = {
     "center": {
       "lat": 35.8562,
       "lng": 129.2247
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "gimcheon": {
+    "id": "gimcheon",
+    "nameKo": "김천",
+    "nameEn": "Gimcheon",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.1398,
+      "lng": 128.1136
     },
     "timezone": "Asia/Seoul",
     "region": "domestic",
@@ -803,6 +1504,90 @@ export const CITIES = {
     "region": "domestic",
     "mapProvider": "naver"
   },
+  "gumi": {
+    "id": "gumi",
+    "nameKo": "구미",
+    "nameEn": "Gumi",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.1195,
+      "lng": 128.3446
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "yeongju": {
+    "id": "yeongju",
+    "nameKo": "영주",
+    "nameEn": "Yeongju",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.8057,
+      "lng": 128.6241
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "yeongcheon": {
+    "id": "yeongcheon",
+    "nameKo": "영천",
+    "nameEn": "Yeongcheon",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.9733,
+      "lng": 128.9386
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "sangju": {
+    "id": "sangju",
+    "nameKo": "상주",
+    "nameEn": "Sangju",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.4107,
+      "lng": 128.159
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "mungyeong": {
+    "id": "mungyeong",
+    "nameKo": "문경",
+    "nameEn": "Mungyeong",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 36.5865,
+      "lng": 128.1868
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "gyeongsan": {
+    "id": "gyeongsan",
+    "nameKo": "경산",
+    "nameEn": "Gyeongsan",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.8251,
+      "lng": 128.7412
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
   "pohang": {
     "id": "pohang",
     "nameKo": "포항",
@@ -812,6 +1597,20 @@ export const CITIES = {
     "center": {
       "lat": 36.019,
       "lng": 129.3435
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "changwon": {
+    "id": "changwon",
+    "nameKo": "창원",
+    "nameEn": "Changwon",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.2281,
+      "lng": 128.6811
     },
     "timezone": "Asia/Seoul",
     "region": "domestic",
@@ -840,6 +1639,62 @@ export const CITIES = {
     "center": {
       "lat": 34.8806,
       "lng": 128.6211
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "gimhae": {
+    "id": "gimhae",
+    "nameKo": "김해",
+    "nameEn": "Gimhae",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.2285,
+      "lng": 128.8894
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "miryang": {
+    "id": "miryang",
+    "nameKo": "밀양",
+    "nameEn": "Miryang",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.5038,
+      "lng": 128.7467
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "sacheon": {
+    "id": "sacheon",
+    "nameKo": "사천",
+    "nameEn": "Sacheon",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.0037,
+      "lng": 128.0642
+    },
+    "timezone": "Asia/Seoul",
+    "region": "domestic",
+    "mapProvider": "naver"
+  },
+  "yangsan": {
+    "id": "yangsan",
+    "nameKo": "양산",
+    "nameEn": "Yangsan",
+    "countryId": "kr",
+    "currency": "KRW",
+    "center": {
+      "lat": 35.335,
+      "lng": 129.0372
     },
     "timezone": "Asia/Seoul",
     "region": "domestic",
