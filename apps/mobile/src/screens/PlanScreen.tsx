@@ -5,6 +5,7 @@ import {
   Animated,
   Dimensions,
   LayoutAnimation,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -90,7 +91,9 @@ import {
   STATUS_LABEL,
 } from "../utils/cost";
 import {
+  naverModeFromTransport,
   openMapsDirections,
+  openNaverMapsDirections,
   openTransitDeepLink,
 } from "../utils/mapsNavigation";
 import { formatTravelGlance, getNextAction } from "../utils/nextAction";
@@ -188,6 +191,11 @@ export function PlanScreen({
   const [returnTimeEditOpen, setReturnTimeEditOpen] = useState(false);
   const [startTimeEditOpen, setStartTimeEditOpen] = useState(false);
   const [reflectRequest, setReflectRequest] = useState("");
+  const [domesticNavPlace, setDomesticNavPlace] =
+    useState<ItineraryPlace | null>(null);
+  const [domesticNavApp, setDomesticNavApp] = useState<"naver" | "google">(
+    "naver",
+  );
 
   const undoStackRef = useRef<ItineraryPlace[][]>([]);
   const inlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -955,54 +963,104 @@ export function PlanScreen({
     };
   };
 
+  const showNavigationError = (e: unknown) => {
+    Alert.alert(
+      "길안내 실패",
+      e instanceof Error ? e.message : "지도를 열 수 없습니다.",
+    );
+  };
+
+  const openSelectedDomesticNavigation = () => {
+    if (!domesticNavPlace) return;
+    const place = domesticNavPlace;
+    const app = domesticNavApp;
+    const { dest, origin, transitOpt } = resolveNavEndpoints(place);
+    const preferTransit =
+      place.preferredTransportMode === "transit" ||
+      !place.preferredTransportMode;
+    const naverMode = naverModeFromTransport(place.preferredTransportMode);
+
+    setDomesticNavPlace(null);
+    if (app === "naver") {
+      if (preferTransit) {
+        void openTransitDeepLink(
+          "naver",
+          dest,
+          origin,
+          transitOpt?.deepLinks,
+          naverMode,
+        ).catch(showNavigationError);
+        return;
+      }
+      void openNaverMapsDirections(dest, origin, naverMode).catch(
+        showNavigationError,
+      );
+      return;
+    }
+
+    if (preferTransit) {
+      void openTransitDeepLink(
+        "google",
+        dest,
+        origin,
+        transitOpt?.deepLinks,
+      ).catch(showNavigationError);
+      return;
+    }
+    void openMapsDirections(dest, origin).catch(showNavigationError);
+  };
+
   const openNavToPlace = (place: ItineraryPlace) => {
     const { dest, origin, transitOpt } = resolveNavEndpoints(place);
     const preferTransit =
       place.preferredTransportMode === "transit" ||
       !place.preferredTransportMode;
+    const domestic = isDomesticCityId(dayCityId);
+    if (domestic) {
+      setDomesticNavApp("naver");
+      setDomesticNavPlace(place);
+      return;
+    }
 
-    const onFail = (e: unknown) => {
-      Alert.alert(
-        "길안내 실패",
-        e instanceof Error ? e.message : "지도를 열 수 없습니다.",
-      );
-    };
-
-    // 대중교통: Google Maps transit URL 기본 + Yahoo 선택
+    // 해외 대중교통: Google + Yahoo
     if (preferTransit) {
+      const buttons: {
+        text: string;
+        style?: "cancel" | "default" | "destructive";
+        onPress?: () => void;
+      }[] = [];
+      buttons.push({
+        text: "Google 환승",
+        onPress: () => {
+          void openTransitDeepLink(
+            "google",
+            dest,
+            origin,
+            transitOpt?.deepLinks,
+          ).catch(showNavigationError);
+        },
+      });
+      buttons.push({
+        text: "Yahoo 환승",
+        onPress: () => {
+          void openTransitDeepLink(
+            "yahoo",
+            dest,
+            origin,
+            transitOpt?.deepLinks,
+          ).catch(showNavigationError);
+        },
+      });
+      buttons.push({ text: "취소", style: "cancel" });
       Alert.alert(
         "환승 길안내",
         "정확한 환승은 외부 앱에서 확인하세요. (추정만으로는 환승 불가)",
-        [
-          {
-            text: "Google 환승",
-            onPress: () => {
-              void openTransitDeepLink(
-                "google",
-                dest,
-                origin,
-                transitOpt?.deepLinks,
-              ).catch(onFail);
-            },
-          },
-          {
-            text: "Yahoo 환승",
-            onPress: () => {
-              void openTransitDeepLink(
-                "yahoo",
-                dest,
-                origin,
-                transitOpt?.deepLinks,
-              ).catch(onFail);
-            },
-          },
-          { text: "취소", style: "cancel" },
-        ],
+        buttons,
       );
       return;
     }
 
-    void openMapsDirections(dest, origin).catch(onFail);
+    void openMapsDirections(dest, origin).catch(showNavigationError);
   };
 
   const openNavSelectedOrNext = () => {
@@ -2131,6 +2189,29 @@ export function PlanScreen({
         currency={currencyForCity(trip.cityId)}
         onSelect={applyTransportMode}
         onClose={() => setComparePlace(null)}
+        onOpenNaverTransit={
+          comparePlace && isDomesticCityId(dayCityId)
+            ? () => {
+                const { dest, origin, transitOpt } =
+                  resolveNavEndpoints(comparePlace);
+                void openTransitDeepLink(
+                  "naver",
+                  dest,
+                  origin,
+                  transitOpt?.deepLinks ??
+                    compareOptions.find((o) => o.mode === "transit")?.deepLinks,
+                  "public",
+                ).catch((e) => {
+                  Alert.alert(
+                    "길안내 실패",
+                    e instanceof Error
+                      ? e.message
+                      : "네이버 지도를 열 수 없습니다.",
+                  );
+                });
+              }
+            : undefined
+        }
         onOpenMapsTransit={
           comparePlace
             ? () => {
@@ -2152,7 +2233,7 @@ export function PlanScreen({
             : undefined
         }
         onOpenYahooTransit={
-          comparePlace
+          comparePlace && !isDomesticCityId(dayCityId)
             ? () => {
                 const { dest, origin, transitOpt } =
                   resolveNavEndpoints(comparePlace);
@@ -2174,6 +2255,87 @@ export function PlanScreen({
             : undefined
         }
       />
+
+      <Modal
+        visible={domesticNavPlace != null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDomesticNavPlace(null)}
+      >
+        <Pressable
+          style={styles.navigationBackdrop}
+          onPress={() => setDomesticNavPlace(null)}
+        >
+          <Pressable
+            style={styles.navigationSheet}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <View style={styles.navigationHandle} />
+            <Text style={styles.navigationTitle}>길안내 앱 선택</Text>
+            <Text style={styles.navigationSub} numberOfLines={1}>
+              → {domesticNavPlace?.name}
+            </Text>
+            <Text style={styles.navigationHint}>
+              사용할 지도 앱을 선택한 뒤 길안내를 열어주세요.
+            </Text>
+            {[
+              { id: "naver" as const, label: "네이버 지도" },
+              { id: "google" as const, label: "Google 지도" },
+            ].map((app) => {
+              const selected = domesticNavApp === app.id;
+              return (
+                <Pressable
+                  key={app.id}
+                  style={[
+                    styles.navigationOption,
+                    selected && styles.navigationOptionSelected,
+                  ]}
+                  onPress={() => setDomesticNavApp(app.id)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${app.label}${selected ? " 선택됨" : ""}`}
+                >
+                  <View
+                    style={[
+                      styles.navigationRadio,
+                      selected && styles.navigationRadioSelected,
+                    ]}
+                  >
+                    {selected ? <View style={styles.navigationRadioDot} /> : null}
+                  </View>
+                  <Text
+                    style={[
+                      styles.navigationOptionText,
+                      selected && styles.navigationOptionTextSelected,
+                    ]}
+                  >
+                    {app.label}
+                  </Text>
+                  {app.id === "naver" ? (
+                    <Text style={styles.navigationDefault}>기본</Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+            <Pressable
+              style={styles.navigationOpenButton}
+              onPress={openSelectedDomesticNavigation}
+              accessibilityRole="button"
+              accessibilityLabel={`${domesticNavApp === "naver" ? "네이버 지도" : "Google 지도"}로 길안내 열기`}
+            >
+              <Text style={styles.navigationOpenButtonText}>길안내 열기</Text>
+            </Pressable>
+            <Pressable
+              style={styles.navigationCancelButton}
+              onPress={() => setDomesticNavPlace(null)}
+              accessibilityRole="button"
+              accessibilityLabel="길안내 앱 선택 닫기"
+            >
+              <Text style={styles.navigationCancelButtonText}>취소</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <PlaceSuggestModal
         visible={suggestVisible}
@@ -2626,6 +2788,97 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   undoBtnText: { color: "#0c4a6e", fontWeight: "800", fontSize: 13 },
+  navigationBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.45)",
+    justifyContent: "flex-end",
+  },
+  navigationSheet: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 24,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    backgroundColor: "#fff",
+  },
+  navigationHandle: {
+    alignSelf: "center",
+    width: 40,
+    height: 4,
+    marginBottom: 12,
+    borderRadius: 2,
+    backgroundColor: "#cbd5e1",
+  },
+  navigationTitle: { fontSize: 17, fontWeight: "800", color: "#0f172a" },
+  navigationSub: { marginTop: 4, fontSize: 13, color: "#64748b" },
+  navigationHint: { marginTop: 8, fontSize: 12, color: "#64748b" },
+  navigationOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: TOUCH_MIN,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderRadius: 12,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+  },
+  navigationOptionSelected: {
+    borderColor: "#0284c7",
+    backgroundColor: "#e0f2fe",
+  },
+  navigationRadio: {
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderRadius: 10,
+    borderColor: "#94a3b8",
+  },
+  navigationRadioSelected: { borderColor: "#0284c7" },
+  navigationRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#0284c7",
+  },
+  navigationOptionText: {
+    marginLeft: 10,
+    color: "#334155",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  navigationOptionTextSelected: { color: "#075985" },
+  navigationDefault: {
+    marginLeft: "auto",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: "#bae6fd",
+    color: "#075985",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  navigationOpenButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: TOUCH_MIN,
+    marginTop: 16,
+    borderRadius: 10,
+    backgroundColor: "#0c4a6e",
+  },
+  navigationOpenButtonText: { color: "#fff", fontSize: 14, fontWeight: "800" },
+  navigationCancelButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: TOUCH_MIN,
+    marginTop: 8,
+    borderRadius: 10,
+    backgroundColor: "#e2e8f0",
+  },
+  navigationCancelButtonText: { color: "#334155", fontWeight: "700" },
   footerCatLabel: {
     fontSize: 11,
     fontWeight: "800",

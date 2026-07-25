@@ -15,12 +15,14 @@ export function MapScreen({ trip, dayIndex, onBack }: Props) {
   const mapRef = useRef<MapView>(null);
   const places = useMemo(
     () =>
-      trip.places.filter(
-        (p) =>
-          (dayIndex == null || p.dayIndex === dayIndex) &&
-          Number.isFinite(p.lat) &&
-          Number.isFinite(p.lng),
-      ),
+      trip.places
+        .filter(
+          (p) =>
+            (dayIndex == null || p.dayIndex === dayIndex) &&
+            Number.isFinite(p.lat) &&
+            Number.isFinite(p.lng),
+        )
+        .sort((a, b) => a.dayIndex - b.dayIndex || a.order - b.order),
     [dayIndex, trip.places],
   );
 
@@ -89,9 +91,9 @@ export function MapScreen({ trip, dayIndex, onBack }: Props) {
               "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY를 apps/mobile/.env에 넣고 APK를 재빌드하세요."}
           </Text>
           <Text style={styles.count}>장소 {places.length}곳 (목록만)</Text>
-          {places.map((p) => (
+          {places.map((p, i) => (
             <Text key={p.id} style={styles.listItem}>
-              · {p.name}
+              {i + 1}. {p.name}
             </Text>
           ))}
         </View>
@@ -117,13 +119,22 @@ export function MapScreen({ trip, dayIndex, onBack }: Props) {
                   lineJoin="round"
                 />
               ) : null}
-              {places.map((p) => (
+              {places.map((p, i) => (
                 <Marker
                   key={p.id}
                   coordinate={{ latitude: p.lat, longitude: p.lng }}
-                  title={p.name}
-                  description={`Day ${p.dayIndex + 1}`}
-                />
+                  title={`${i + 1}. ${p.name}`}
+                  description={
+                    p.plannedTime
+                      ? `Day ${p.dayIndex + 1} · ${p.plannedTime}`
+                      : `Day ${p.dayIndex + 1}`
+                  }
+                  accessibilityLabel={`${i + 1}번 ${p.name}`}
+                >
+                  <View style={styles.customPin}>
+                    <Text style={styles.customPinText}>{i + 1}</Text>
+                  </View>
+                </Marker>
               ))}
             </MapView>
           </View>
@@ -148,6 +159,22 @@ const styles = StyleSheet.create({
   },
   map: { width: "100%", height: "100%" },
   count: { marginTop: 8, color: "#64748b", fontSize: 13 },
+  customPin: {
+    minWidth: 28,
+    minHeight: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: "#fff",
+    backgroundColor: "#0369a1",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  customPinText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900",
+  },
   stub: {
     flex: 1,
     backgroundColor: "#f1f5f9",

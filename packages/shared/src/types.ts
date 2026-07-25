@@ -46,6 +46,7 @@ export type TransportOption = {
   deepLinks?: {
     google?: string;
     yahoo?: string;
+    naver?: string;
   };
   /** JP transit 안내 (한국어) */
   note?: string;

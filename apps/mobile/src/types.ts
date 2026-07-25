@@ -47,6 +47,7 @@ export type TransportOption = {
   deepLinks?: {
     google?: string;
     yahoo?: string;
+    naver?: string;
   };
   note?: string;
 };

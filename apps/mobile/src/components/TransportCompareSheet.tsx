@@ -28,6 +28,8 @@ type Props = {
   currency?: "JPY" | "KRW";
   onSelect: (mode: TransportMode) => void;
   onClose: () => void;
+  /** 네이버 지도 대중교통 길안내 (국내) */
+  onOpenNaverTransit?: () => void;
   /** Google Maps transit 길안내 */
   onOpenMapsTransit?: () => void;
   /** Yahoo!乗換案内 */
@@ -44,6 +46,7 @@ export function TransportCompareSheet({
   currency = "KRW",
   onSelect,
   onClose,
+  onOpenNaverTransit,
   onOpenMapsTransit,
   onOpenYahooTransit,
 }: Props) {
@@ -51,13 +54,14 @@ export function TransportCompareSheet({
   const transitOpt = options.find((o) => o.mode === "transit");
   const isPartner = Boolean(transitOpt?.engine?.startsWith("partner:"));
   const showJpHonesty =
+    currency !== "KRW" &&
     !isPartner &&
     (Boolean(transitOpt?.engine?.includes("haversine:transit")) ||
       Boolean(transitOpt?.note) ||
       Boolean(engineHint?.includes("haversine")));
   const honestyText = transitOpt?.note || JP_TRANSIT_NOTE;
   const showTransitLinks =
-    Boolean(onOpenMapsTransit || onOpenYahooTransit) &&
+    Boolean(onOpenNaverTransit || onOpenMapsTransit || onOpenYahooTransit) &&
     (selectedMode === "transit" || selectedMode == null);
 
   return (
@@ -141,12 +145,12 @@ export function TransportCompareSheet({
 
           {showTransitLinks ? (
             <View style={styles.linkRow}>
-              {onOpenYahooTransit ? (
+              {onOpenNaverTransit ? (
                 <Pressable
-                  style={[styles.linkCta, styles.linkYahoo]}
-                  onPress={onOpenYahooTransit}
+                  style={[styles.linkCta, styles.linkNaver]}
+                  onPress={onOpenNaverTransit}
                 >
-                  <Text style={styles.linkCtaText}>Yahoo 환승</Text>
+                  <Text style={styles.linkCtaText}>네이버 지도</Text>
                 </Pressable>
               ) : null}
               {onOpenMapsTransit ? (
@@ -155,6 +159,14 @@ export function TransportCompareSheet({
                   onPress={onOpenMapsTransit}
                 >
                   <Text style={styles.linkCtaText}>Google 환승</Text>
+                </Pressable>
+              ) : null}
+              {onOpenYahooTransit ? (
+                <Pressable
+                  style={[styles.linkCta, styles.linkYahoo]}
+                  onPress={onOpenYahooTransit}
+                >
+                  <Text style={styles.linkCtaText}>Yahoo 환승</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -270,6 +282,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
   },
+  linkNaver: { backgroundColor: "#03c75a" },
   linkYahoo: { backgroundColor: "#ff0033" },
   linkGoogle: { backgroundColor: "#0c4a6e" },
   linkCtaText: { color: "#fff", fontWeight: "800", fontSize: 14 },

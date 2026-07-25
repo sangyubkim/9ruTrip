@@ -86,6 +86,7 @@ export const transportOptionSchema = z.object({
     .object({
       google: z.string().optional(),
       yahoo: z.string().optional(),
+      naver: z.string().optional(),
     })
     .optional(),
   note: z.string().optional(),

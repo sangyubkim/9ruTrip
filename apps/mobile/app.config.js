@@ -34,6 +34,7 @@ const expoConfig = {
       NSPhotoLibraryUsageDescription: "갤러리에서 여행 사진을 선택합니다.",
       NSLocationWhenInUseUsageDescription:
         "일정 지도 표시와 경로 이탈 시 재루트 안내에 사용합니다.",
+      LSApplicationQueriesSchemes: ["nmap"],
       NSAppTransportSecurity: {
         NSAllowsLocalNetworking: true,
       },
