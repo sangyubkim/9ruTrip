@@ -593,7 +593,10 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
         <Pressable
           style={[
             styles.gpsBtn,
-            { borderColor: colors.accent, backgroundColor: colors.accentMuted },
+            {
+              borderColor: datesReady ? colors.primary : colors.border,
+              backgroundColor: datesReady ? colors.primary : colors.chipBg,
+            },
             (!datesReady || festivalLoading) && { opacity: 0.45 },
           ]}
           onPress={() => void loadFestivals()}
@@ -604,7 +607,12 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
           {festivalLoading ? (
             <ActivityIndicator color={colors.accent} />
           ) : (
-            <Text style={[styles.gpsBtnText, { color: colors.accent }]}>
+            <Text
+              style={[
+                styles.gpsBtnText,
+                { color: datesReady ? colors.primaryFg : colors.textMuted },
+              ]}
+            >
               {datesReady ? "여행 기간 축제 보기" : "여행 날짜를 먼저 선택해 주세요"}
             </Text>
           )}

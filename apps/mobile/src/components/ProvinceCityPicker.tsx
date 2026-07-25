@@ -87,15 +87,27 @@ export function ProvinceCityPicker({
     .join(" · ");
 
   return (
-    <View style={styles.root}>
+    <View
+      style={[styles.root, disabled && styles.rootDisabled]}
+      pointerEvents={disabled ? "none" : "auto"}
+      accessibilityState={{ disabled }}
+    >
       <View style={styles.split}>
         <View
           style={[
             styles.mapPane,
-            { borderColor: colors.border, backgroundColor: colors.bgElevated },
+            {
+              borderColor: disabled ? colors.textMuted : colors.border,
+              backgroundColor: disabled ? colors.chipBg : colors.bgElevated,
+            },
           ]}
         >
-          <Text style={[styles.paneTitle, { color: colors.textSecondary }]}>
+          <Text
+            style={[
+              styles.paneTitle,
+              { color: disabled ? colors.textMuted : colors.textSecondary },
+            ]}
+          >
             도 (다중 선택)
           </Text>
           <View style={styles.mapGrid}>
@@ -114,10 +126,14 @@ export function ProvinceCityPicker({
                       style={[
                         styles.mapCell,
                         {
-                          backgroundColor: on
+                          backgroundColor: disabled
+                            ? colors.chipBg
+                            : on
                             ? colors.chipOnBg
                             : colors.chipBg,
-                          borderColor: focusedOn
+                          borderColor: disabled
+                            ? colors.textMuted
+                            : focusedOn
                             ? colors.primary
                             : on
                               ? colors.primary
@@ -135,7 +151,13 @@ export function ProvinceCityPicker({
                       <Text
                         style={[
                           styles.mapCellText,
-                          { color: on ? colors.chipOnFg : colors.chipFg },
+                          {
+                            color: disabled
+                              ? colors.textMuted
+                              : on
+                                ? colors.chipOnFg
+                                : colors.chipFg,
+                          },
                         ]}
                         numberOfLines={1}
                       >
@@ -152,10 +174,18 @@ export function ProvinceCityPicker({
         <View
           style={[
             styles.cityPane,
-            { borderColor: colors.border, backgroundColor: colors.bgElevated },
+            {
+              borderColor: disabled ? colors.textMuted : colors.border,
+              backgroundColor: disabled ? colors.chipBg : colors.bgElevated,
+            },
           ]}
         >
-          <Text style={[styles.paneTitle, { color: colors.textSecondary }]}>
+          <Text
+            style={[
+              styles.paneTitle,
+              { color: disabled ? colors.textMuted : colors.textSecondary },
+            ]}
+          >
             {focused ? `${focused.shortKo} 도시` : "도시"} (다중)
           </Text>
           <ScrollView
@@ -175,8 +205,16 @@ export function ProvinceCityPicker({
                   style={[
                     styles.cityChip,
                     {
-                      backgroundColor: on ? colors.chipOnBg : colors.chipBg,
-                      borderColor: on ? colors.primary : colors.border,
+                      backgroundColor: disabled
+                        ? colors.chipBg
+                        : on
+                          ? colors.chipOnBg
+                          : colors.chipBg,
+                      borderColor: disabled
+                        ? colors.textMuted
+                        : on
+                          ? colors.primary
+                          : colors.border,
                       opacity: cityDisabled ? 0.45 : 1,
                     },
                   ]}
@@ -189,7 +227,13 @@ export function ProvinceCityPicker({
                   <Text
                     style={[
                       styles.cityChipText,
-                      { color: on ? colors.chipOnFg : colors.chipFg },
+                    {
+                      color: disabled
+                        ? colors.textMuted
+                        : on
+                          ? colors.chipOnFg
+                          : colors.chipFg,
+                    },
                     ]}
                   >
                     {meta.nameKo}
@@ -206,8 +250,18 @@ export function ProvinceCityPicker({
         </View>
       </View>
 
-      <View style={[styles.summary, { backgroundColor: colors.accentMuted }]}>
-        <Text style={[styles.summaryText, { color: colors.accent }]}>
+      <View
+        style={[
+          styles.summary,
+          { backgroundColor: disabled ? colors.chipBg : colors.accentMuted },
+        ]}
+      >
+        <Text
+          style={[
+            styles.summaryText,
+            { color: disabled ? colors.textMuted : colors.accent },
+          ]}
+        >
           {selectedLabel
             ? `${selectedLabel}${selectedCityIds.length > 1 ? " · Day 균등 분할" : ""}`
             : "여행 도시를 하나 이상 선택하세요"}
@@ -222,6 +276,7 @@ export function ProvinceCityPicker({
 
 const styles = StyleSheet.create({
   root: { marginTop: space.sm },
+  rootDisabled: { opacity: 0.45 },
   split: { flexDirection: "row", gap: space.sm, minHeight: 220 },
   mapPane: {
     flex: 1.15,
