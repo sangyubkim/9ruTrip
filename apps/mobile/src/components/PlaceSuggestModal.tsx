@@ -16,7 +16,6 @@ import {
   currencyForCity,
   formatHotelBreakfastLabel,
   formatHotelBreakfastPrice,
-  formatHotelPerPersonMoney,
   formatMoney,
   formatPlaceMoney,
 } from "../utils/cost";
@@ -44,8 +43,6 @@ type Props = {
   /** 이미 AI 추천 경로에 들어간 장소명 (체크+AI 표시) */
   aiRouteNames?: string[];
   cityId?: string;
-  /** 숙소 인당가 계산용 */
-  partySize?: number;
   source?: string;
   loading?: boolean;
   onConfirm: (places: ItineraryPlace[]) => void;
@@ -63,7 +60,6 @@ export function PlaceSuggestModal({
   places,
   aiRouteNames = [],
   cityId = "seoul",
-  partySize = 2,
   source,
   loading,
   onConfirm,
@@ -73,7 +69,6 @@ export function PlaceSuggestModal({
   const currency = currencyForCity(cityId);
   const isHotel = category === "hotel";
   const isFood = category === "food";
-  const party = Math.max(1, Number(partySize) || 1);
   const aiSet = useMemo(
     () => new Set(aiRouteNames.map(normName)),
     [aiRouteNames],
@@ -359,19 +354,16 @@ export function PlaceSuggestModal({
                             <Text style={styles.metaStrong}>
                               {formatHotelBreakfastLabel(p.breakfastIncluded)}
                             </Text>
-                            <Text style={styles.metaStrong}>
-                              {formatHotelPerPersonMoney(p, party, currency)}
-                            </Text>
-                            <Text style={styles.estimateHint}>
-                              추정가 · 확정 아님
-                            </Text>
                             {hotelBreakfastPrice ? (
                               <Text style={styles.meta}>
                                 {hotelBreakfastPrice}
                               </Text>
                             ) : null}
-                            <Text style={styles.meta}>
+                            <Text style={styles.metaStrong}>
                               1박 · {formatMoney(p.estimatedCost, currency)}
+                            </Text>
+                            <Text style={styles.estimateHint}>
+                              추정가 · 확정 아님
                             </Text>
                             <View style={styles.reasonBox}>
                               <Text style={styles.reasonTitle}>

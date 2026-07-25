@@ -84,7 +84,6 @@ import {
   currencyForCity,
   formatHotelBreakfastLabel,
   formatHotelBreakfastPrice,
-  formatHotelPerPersonMoney,
   formatMoney,
   formatPlaceMoney,
   placeBudgetAmount,
@@ -1084,12 +1083,17 @@ export function PlanScreen({
     item,
     drag,
     isActive,
+    getIndex,
   }: RenderItemParams<ItineraryPlace>) => {
     const done = (trip.completedPlaceIds ?? []).includes(item.id);
     const currency = currencyForCity(trip.cityId);
     const travel = formatTravelGlance(item, currency);
     const selected = selectedPlaceId === item.id;
     const swipeEnabled = !listDragging && !isActive;
+    const mapNo =
+      (typeof getIndex === "function" ? getIndex() : undefined) ??
+      dayPlaces.findIndex((p) => p.id === item.id);
+    const routeNo = mapNo >= 0 ? mapNo + 1 : null;
     const hotelBreakfastPrice =
       item.category === "hotel"
         ? formatHotelBreakfastPrice(item.breakfastPricePerPerson, currency)
@@ -1131,7 +1135,7 @@ export function PlanScreen({
               accessibilityLabel="이동 비교"
             >
               <Text style={[styles.compareChipText, { color: colors.accent }]}>
-                이동 · 비교 › {travel}
+                {routeNo != null ? `${routeNo} · ` : ""}이동 · 비교 › {travel}
               </Text>
             </Pressable>
           ) : (
@@ -1144,7 +1148,7 @@ export function PlanScreen({
               <Text
                 style={[styles.compareChipMutedText, { color: colors.textMuted }]}
               >
-                이동 · 비교
+                {routeNo != null ? `${routeNo} · ` : ""}이동 · 비교
               </Text>
             </Pressable>
           )}
@@ -1170,6 +1174,30 @@ export function PlanScreen({
                 ≡
               </Text>
             </Pressable>
+            {routeNo != null ? (
+              <View
+                style={[
+                  styles.mapNoBadge,
+                  {
+                    backgroundColor: selected
+                      ? colors.primary
+                      : colors.chipOnBg,
+                  },
+                ]}
+                accessibilityLabel={`지도 ${routeNo}번`}
+              >
+                <Text
+                  style={[
+                    styles.mapNoBadgeText,
+                    {
+                      color: selected ? colors.primaryFg : colors.chipOnFg,
+                    },
+                  ]}
+                >
+                  {routeNo}
+                </Text>
+              </View>
+            ) : null}
             <View style={{ flex: 1 }}>
               <View style={styles.nameRow}>
                 <Pressable
@@ -1201,7 +1229,7 @@ export function PlanScreen({
                   >
                     숙소 · {formatHotelBreakfastLabel(item.breakfastIncluded)}
                     {" · "}
-                    {formatHotelPerPersonMoney(item, trip.partySize, currency)}
+                    1박 · {formatMoney(item.estimatedCost, currency)}
                     {hotelBreakfastPrice ? ` · ${hotelBreakfastPrice}` : ""}
                     {item.lodgingScore
                       ? ` · 숙소점수 ${item.lodgingScore}`
@@ -1957,85 +1985,139 @@ export function PlanScreen({
 
       {!isFieldMode ? (
         <View style={{ paddingBottom: Math.max(insets.bottom, space.sm) }}>
-          <View style={styles.actions}>
-            <Pressable
-              style={styles.btnPrimary}
-              onPress={openNavSelectedOrNext}
-              accessibilityRole="button"
-              accessibilityLabel="길안내"
-            >
-              <Text style={styles.btnPrimaryText}>길안내</Text>
-            </Pressable>
-            {!isEasy ? (
-              <>
-                <Pressable style={styles.btn} onPress={onExpenses}>
+          {!isEasy ? (
+            <>
+              <Text
+                style={[styles.footerCatLabel, { color: colors.textMuted }]}
+              >
+                보기 · 기록
+              </Text>
+              <View style={styles.actions}>
+                <Pressable
+                  style={styles.btnGhost}
+                  onPress={() => onMap(day)}
+                  accessibilityRole="button"
+                  accessibilityLabel="전체지도"
+                >
+                  <Text style={styles.btnGhostText}>전체지도</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.btn}
+                  onPress={onExpenses}
+                  accessibilityRole="button"
+                  accessibilityLabel="경비"
+                >
                   <Text style={styles.btnText}>경비</Text>
                 </Pressable>
-                <Pressable style={styles.btn} onPress={onSummary}>
+                <Pressable
+                  style={styles.btn}
+                  onPress={onSummary}
+                  accessibilityRole="button"
+                  accessibilityLabel="요약"
+                >
                   <Text style={styles.btnText}>요약</Text>
                 </Pressable>
-              </>
-            ) : null}
-          </View>
-          {!isEasy ? (
+                <Pressable
+                  style={styles.btnGhost}
+                  onPress={onCapture}
+                  accessibilityRole="button"
+                  accessibilityLabel="리뷰"
+                >
+                  <Text style={styles.btnGhostText}>리뷰</Text>
+                </Pressable>
+              </View>
+              <Text
+                style={[
+                  styles.footerCatLabel,
+                  { color: colors.textMuted, marginTop: 10 },
+                ]}
+              >
+                여행
+              </Text>
+              <View style={styles.actions}>
+                {trip.status !== "active" ? (
+                  <Pressable
+                    style={styles.btnAlt}
+                    onPress={() => setStatus("active")}
+                    accessibilityRole="button"
+                    accessibilityLabel="여행 시작"
+                  >
+                    <Text style={styles.btnAltText}>여행 시작</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    style={styles.btnAlt}
+                    onPress={() => {
+                      setViewMode("field");
+                      setBannerHidden(false);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="현장 모드"
+                  >
+                    <Text style={styles.btnAltText}>현장 모드</Text>
+                  </Pressable>
+                )}
+                <Pressable
+                  style={[styles.btnAlt, rerouting && { opacity: 0.6 }]}
+                  disabled={rerouting}
+                  onPress={() =>
+                    void runReroute(
+                      "사용자가 동선에서 벗어남 / 남은 일정 재조정",
+                    )
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="이탈 재루트"
+                >
+                  {rerouting ? (
+                    <ActivityIndicator color="#075985" />
+                  ) : (
+                    <Text style={styles.btnAltText}>이탈·재루트</Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  style={styles.btnAlt}
+                  onPress={() => setStatus("done")}
+                  accessibilityRole="button"
+                  accessibilityLabel="여행 종료"
+                >
+                  <Text style={styles.btnAltText}>여행 종료</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
             <View style={styles.actions}>
-              <Pressable style={styles.btnGhost} onPress={() => onMap(day)}>
-                <Text style={styles.btnGhostText}>전체지도</Text>
-              </Pressable>
-              <Pressable style={styles.btnGhost} onPress={onCapture}>
-                <Text style={styles.btnGhostText}>리뷰</Text>
+              {trip.status !== "active" ? (
+                <Pressable
+                  style={styles.btnAlt}
+                  onPress={() => setStatus("active")}
+                  accessibilityRole="button"
+                  accessibilityLabel="여행 시작"
+                >
+                  <Text style={styles.btnAltText}>여행 시작</Text>
+                </Pressable>
+              ) : (
+                <Pressable
+                  style={styles.btnAlt}
+                  onPress={() => {
+                    setViewMode("field");
+                    setBannerHidden(false);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="현장 모드"
+                >
+                  <Text style={styles.btnAltText}>현장 모드</Text>
+                </Pressable>
+              )}
+              <Pressable
+                style={styles.btnAlt}
+                onPress={() => setStatus("done")}
+                accessibilityRole="button"
+                accessibilityLabel="여행 종료"
+              >
+                <Text style={styles.btnAltText}>여행 종료</Text>
               </Pressable>
             </View>
-          ) : null}
-          <View style={styles.actions}>
-            {trip.status !== "active" ? (
-              <Pressable
-                style={styles.btnAlt}
-                onPress={() => setStatus("active")}
-                accessibilityRole="button"
-                accessibilityLabel="여행 시작"
-              >
-                <Text style={styles.btnAltText}>여행 시작</Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                style={styles.btnAlt}
-                onPress={() => {
-                  setViewMode("field");
-                  setBannerHidden(false);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="현장 모드"
-              >
-                <Text style={styles.btnAltText}>현장 모드</Text>
-              </Pressable>
-            )}
-            {!isEasy ? (
-              <Pressable
-                style={[styles.btnAlt, rerouting && { opacity: 0.6 }]}
-                disabled={rerouting}
-                onPress={() =>
-                  void runReroute(
-                    "사용자가 동선에서 벗어남 / 남은 일정 재조정",
-                  )
-                }
-              >
-                {rerouting ? (
-                  <ActivityIndicator color="#075985" />
-                ) : (
-                  <Text style={styles.btnAltText}>이탈·재루트</Text>
-                )}
-              </Pressable>
-            ) : null}
-            <Pressable
-              style={styles.btnAlt}
-              onPress={() => setStatus("done")}
-              accessibilityRole="button"
-              accessibilityLabel="여행 종료"
-            >
-              <Text style={styles.btnAltText}>여행 종료</Text>
-            </Pressable>
-          </View>
+          )}
         </View>
       ) : null}
 
@@ -2102,7 +2184,6 @@ export function PlanScreen({
           .filter((p) => p.dayIndex === day)
           .map((p) => p.name)}
         cityId={dayCityId}
-        partySize={trip.partySize}
         source={suggestSource}
         loading={suggesting}
         onConfirm={(picks) => void confirmSuggested(picks)}
@@ -2454,6 +2535,17 @@ const styles = StyleSheet.create({
     minHeight: TOUCH_MIN,
   },
   drag: { fontSize: 22, color: "#64748b", width: 22, textAlign: "center" },
+  mapNoBadge: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+    marginTop: 6,
+    paddingHorizontal: 6,
+  },
+  mapNoBadgeText: { fontSize: 13, fontWeight: "900" },
   name: { flex: 1, fontWeight: "700", color: "#0f172a", fontSize: 15 },
   meta: { marginTop: 4, fontSize: 12, color: "#64748b" },
   estimateHint: { marginTop: 2, fontSize: 11, color: "#94a3b8" },
@@ -2534,17 +2626,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   undoBtnText: { color: "#0c4a6e", fontWeight: "800", fontSize: 13 },
-  actions: { flexDirection: "row", gap: 8, marginTop: 8 },
-  btnPrimary: {
-    flex: 1.4,
-    backgroundColor: "#0c4a6e",
-    paddingVertical: 14,
-    minHeight: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
+  footerCatLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+    marginTop: 6,
+    marginBottom: 2,
+    paddingHorizontal: 2,
   },
-  btnPrimaryText: { color: "#fff", fontWeight: "900", fontSize: 15 },
+  actions: { flexDirection: "row", gap: 8, marginTop: 4 },
   btn: {
     flex: 1,
     backgroundColor: "#0369a1",
