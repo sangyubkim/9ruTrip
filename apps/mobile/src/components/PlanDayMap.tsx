@@ -21,6 +21,8 @@ type Props = {
   onMoveInDay?: (placeId: string, direction: "up" | "down") => void;
   /** 순서 모드 스트립에서 전체 재정렬 (id 배열) */
   onReorderDay?: (orderedIds: string[]) => void;
+  /** 해당 Day 경로를 전체 지도에서 보기 */
+  onOpenMap?: () => void;
 };
 
 /**
@@ -35,6 +37,7 @@ export function PlanDayMap({
   onSelectPlace,
   onMoveInDay,
   onReorderDay,
+  onOpenMap,
 }: Props) {
   const { colors, isDark } = useTheme();
   const mapRef = useRef<MapView>(null);
@@ -195,6 +198,16 @@ export function PlanDayMap({
             …외 {coords.length - 8}곳 (아래 일정 리스트에서 확인)
           </Text>
         ) : null}
+        {onOpenMap ? (
+          <Pressable
+            style={styles.stubOpenMapButton}
+            onPress={onOpenMap}
+            accessibilityRole="button"
+            accessibilityLabel="Day 경로 크게 보기"
+          >
+            <Text style={styles.openMapButtonText}>Day 경로 크게 보기</Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   }
@@ -296,6 +309,17 @@ export function PlanDayMap({
       {!mapCfg.hasCredentials ? (
         <Pressable style={styles.keyHint} pointerEvents="none">
           <Text style={styles.keyHintText}>Maps 키 없음 · 기본 지도</Text>
+        </Pressable>
+      ) : null}
+      {onOpenMap && !orderMode ? (
+        <Pressable
+          style={styles.openMapButton}
+          onPress={onOpenMap}
+          accessibilityRole="button"
+          accessibilityLabel="Day 경로 크게 보기"
+          accessibilityHint="이 Day의 장소가 모두 보이도록 전체 지도를 엽니다"
+        >
+          <Text style={styles.openMapButtonText}>Day 경로 크게 보기</Text>
         </Pressable>
       ) : null}
 
@@ -520,6 +544,13 @@ const styles = StyleSheet.create({
   stubText: { fontSize: 12, textAlign: "center", fontWeight: "700" },
   stubHint: { fontSize: 10, textAlign: "center", marginTop: 2, paddingHorizontal: 4 },
   stubItem: { fontSize: 11, alignSelf: "stretch", marginTop: 2 },
+  stubOpenMapButton: {
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#e0f2fe",
+  },
   emptyOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
@@ -537,6 +568,18 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   keyHintText: { color: "#f0f9ff", fontSize: 10, fontWeight: "600" },
+  openMapButton: {
+    position: "absolute",
+    right: 8,
+    bottom: 8,
+    backgroundColor: "rgba(255,255,255,0.94)",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#bae6fd",
+  },
+  openMapButtonText: { color: "#0369a1", fontSize: 11, fontWeight: "800" },
   customPin: {
     minWidth: 28,
     minHeight: 28,

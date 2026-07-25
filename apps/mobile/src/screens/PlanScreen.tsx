@@ -105,7 +105,7 @@ type Props = {
   trip: Trip;
   onChangeTrip: (trip: Trip) => void;
   onBack: () => void;
-  onMap: () => void;
+  onMap: (dayIndex?: number) => void;
   onCapture: () => void;
   onExpenses: () => void;
   onSummary: () => void;
@@ -1207,6 +1207,11 @@ export function PlanScreen({
                       ? ` · 숙소점수 ${item.lodgingScore}`
                       : ""}
                   </Text>
+                  <Text
+                    style={[styles.estimateHint, { color: colors.textMutedOnCard }]}
+                  >
+                    추정가 · 확정 아님
+                  </Text>
                   {item.notes ? (
                     <Text
                       style={[styles.meta, { color: colors.textMutedOnCard }]}
@@ -1638,6 +1643,7 @@ export function PlanScreen({
           onSelectPlace={setSelectedPlaceId}
           onMoveInDay={movePlaceInDay}
           onReorderDay={reorderDayByIds}
+          onOpenMap={() => onMap(day)}
         />
       </View>
 
@@ -1733,66 +1739,40 @@ export function PlanScreen({
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }]}>
       {isFieldMode ? (
-        <View style={styles.fieldRoot}>
-          <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
-            <Text style={[styles.back, { color: colors.accent }]}>← 목록</Text>
-          </Pressable>
-          <View style={styles.modeToggleRow}>
-            {(
-              [
-                { id: "easy" as const, label: "쉽게" },
-                { id: "detailed" as const, label: "자세히" },
-              ] as const
-            ).map((opt) => {
-              const on = planUiMode === opt.id;
-              return (
-                <Pressable
-                  key={opt.id}
-                  style={[
-                    styles.modeChip,
-                    {
-                      backgroundColor: on ? colors.chipOnBg : colors.chipBg,
-                    },
-                  ]}
-                  onPress={() => setUiMode(opt.id)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={`표시 ${opt.label}`}
-                >
-                  <Text
-                    style={{
-                      color: on ? colors.chipOnFg : colors.chipFg,
-                      fontWeight: "800",
-                      fontSize: 13,
-                    }}
-                  >
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
+        <View
+          style={[
+            styles.fieldRoot,
+            { paddingBottom: Math.max(insets.bottom, 8) },
+          ]}
+        >
+          <View style={styles.fieldHeader}>
+            <Pressable onPress={onBack} style={styles.backHit} hitSlop={8}>
+              <Text style={[styles.back, { color: colors.accent }]}>← 목록</Text>
+            </Pressable>
+            <View style={styles.fieldHeaderCenter}>
+              <Text
+                style={[styles.fieldHeaderTitle, { color: colors.text }]}
+                numberOfLines={1}
+              >
+                {tripCitiesLabel(trip)} · 현장
+              </Text>
+              <Text style={[styles.fieldHeaderSub, { color: colors.textMuted }]}>
+                Day {day + 1} · 다음 장소만 집중
+              </Text>
+            </View>
+            <Pressable
+              style={styles.fieldEndHit}
+              onPress={() => setStatus("done")}
+              accessibilityRole="button"
+              accessibilityLabel="여행 종료"
+            >
+              <Text style={[styles.fieldEndText, { color: colors.textMuted }]}>
+                종료
+              </Text>
+            </Pressable>
           </View>
-          <Text style={[styles.title, { color: colors.text }]}>
-            {tripCitiesLabel(trip)} · 현장
-          </Text>
-          <Text style={[styles.sub, { color: colors.textMuted }]}>
-            Day {day + 1} · 한 손 · 다음 장소만 크게
-          </Text>
-          {!isEasy ? <WeatherCrowdChip cityId={dayCityId} /> : null}
+
           {inlineMsg ? <InlineToast message={inlineMsg} /> : null}
-          <NextActionBanner
-            fieldMode
-            next={nextAction}
-            rerouting={rerouting}
-            onMarkDone={
-              nextAction ? () => markDone(nextAction.place.id) : undefined
-            }
-            onNavigate={openNavSelectedOrNext}
-            onReroute={() =>
-              void runReroute("현장: 사용자가 남은 일정 재조정 요청")
-            }
-            onDismiss={() => setViewMode("list")}
-          />
           {gpsDev.showBanner ? (
             <DeviationBanner
               distanceKm={gpsDev.distanceKm}
@@ -1806,37 +1786,40 @@ export function PlanScreen({
               }}
             />
           ) : null}
-          <Text style={[styles.sectionLabel, { color: colors.text }]}>Day</Text>
-          <View style={styles.tabs}>
-            {days.map((d) => (
-              <Pressable
-                key={d}
-                style={[
-                  styles.tab,
-                  day === d && [styles.tabOn, { backgroundColor: colors.chipOnBg }],
-                ]}
-                onPress={() => {
-                  runLayoutAnim();
-                  setDay(d);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  isMultiCity
-                    ? `Day ${d + 1} ${CITIES[cityIdForDay(trip, d)].nameKo}`
-                    : `Day ${d + 1}`
-                }
-              >
-                <Text style={[styles.tabText, day === d && styles.tabTextOn]}>
-                  Day {d + 1}
-                </Text>
-                {isMultiCity ? (
-                  <Text style={styles.tabCityHint}>
-                    {CITIES[cityIdForDay(trip, d)].nameKo}
+
+          <View style={styles.fieldDayRow}>
+            {days.map((d) => {
+              const on = day === d;
+              return (
+                <Pressable
+                  key={d}
+                  style={[
+                    styles.fieldDayChip,
+                    {
+                      backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                    },
+                  ]}
+                  onPress={() => {
+                    runLayoutAnim();
+                    setDay(d);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`Day ${d + 1}`}
+                >
+                  <Text
+                    style={[
+                      styles.fieldDayChipText,
+                      { color: on ? colors.chipOnFg : colors.chipFg },
+                    ]}
+                  >
+                    D{d + 1}
                   </Text>
-                ) : null}
-              </Pressable>
-            ))}
+                </Pressable>
+              );
+            })}
           </View>
+
           <View style={styles.fieldMap}>
             <PlanDayMap
               cityId={dayCityId}
@@ -1845,14 +1828,25 @@ export function PlanScreen({
               onSelectPlace={setSelectedPlaceId}
               onMoveInDay={movePlaceInDay}
               onReorderDay={reorderDayByIds}
+              onOpenMap={() => onMap(day)}
             />
           </View>
-          <Pressable
-            style={styles.fieldListLink}
-            onPress={() => setViewMode("list")}
-          >
-            <Text style={styles.fieldListLinkText}>전체 일정·지도 보기</Text>
-          </Pressable>
+
+          <View style={styles.fieldBottomSheet}>
+            <NextActionBanner
+              fieldMode
+              next={nextAction}
+              rerouting={rerouting}
+              onMarkDone={
+                nextAction ? () => markDone(nextAction.place.id) : undefined
+              }
+              onNavigate={openNavSelectedOrNext}
+              onReroute={() =>
+                void runReroute("현장: 사용자가 남은 일정 재조정 요청")
+              }
+              onDismiss={() => setViewMode("list")}
+            />
+          </View>
         </View>
       ) : (
         <View style={styles.listRoot}>
@@ -1961,66 +1955,89 @@ export function PlanScreen({
         </Animated.View>
       ) : null}
 
-      <View style={{ paddingBottom: Math.max(insets.bottom, space.sm) }}>
-        <View style={styles.actions}>
-          <Pressable
-            style={styles.btnPrimary}
-            onPress={openNavSelectedOrNext}
-            accessibilityRole="button"
-            accessibilityLabel="길안내"
-          >
-            <Text style={styles.btnPrimaryText}>길안내</Text>
-          </Pressable>
-          {!isEasy ? (
-            <>
-              <Pressable style={styles.btn} onPress={onExpenses}>
-                <Text style={styles.btnText}>경비</Text>
-              </Pressable>
-              <Pressable style={styles.btn} onPress={onSummary}>
-                <Text style={styles.btnText}>요약</Text>
-              </Pressable>
-            </>
-          ) : null}
-        </View>
-        {!isEasy ? (
+      {!isFieldMode ? (
+        <View style={{ paddingBottom: Math.max(insets.bottom, space.sm) }}>
           <View style={styles.actions}>
-            <Pressable style={styles.btnGhost} onPress={onMap}>
-              <Text style={styles.btnGhostText}>전체지도</Text>
+            <Pressable
+              style={styles.btnPrimary}
+              onPress={openNavSelectedOrNext}
+              accessibilityRole="button"
+              accessibilityLabel="길안내"
+            >
+              <Text style={styles.btnPrimaryText}>길안내</Text>
             </Pressable>
-            <Pressable style={styles.btnGhost} onPress={onCapture}>
-              <Text style={styles.btnGhostText}>리뷰</Text>
+            {!isEasy ? (
+              <>
+                <Pressable style={styles.btn} onPress={onExpenses}>
+                  <Text style={styles.btnText}>경비</Text>
+                </Pressable>
+                <Pressable style={styles.btn} onPress={onSummary}>
+                  <Text style={styles.btnText}>요약</Text>
+                </Pressable>
+              </>
+            ) : null}
+          </View>
+          {!isEasy ? (
+            <View style={styles.actions}>
+              <Pressable style={styles.btnGhost} onPress={() => onMap(day)}>
+                <Text style={styles.btnGhostText}>전체지도</Text>
+              </Pressable>
+              <Pressable style={styles.btnGhost} onPress={onCapture}>
+                <Text style={styles.btnGhostText}>리뷰</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          <View style={styles.actions}>
+            {trip.status !== "active" ? (
+              <Pressable
+                style={styles.btnAlt}
+                onPress={() => setStatus("active")}
+                accessibilityRole="button"
+                accessibilityLabel="여행 시작"
+              >
+                <Text style={styles.btnAltText}>여행 시작</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                style={styles.btnAlt}
+                onPress={() => {
+                  setViewMode("field");
+                  setBannerHidden(false);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="현장 모드"
+              >
+                <Text style={styles.btnAltText}>현장 모드</Text>
+              </Pressable>
+            )}
+            {!isEasy ? (
+              <Pressable
+                style={[styles.btnAlt, rerouting && { opacity: 0.6 }]}
+                disabled={rerouting}
+                onPress={() =>
+                  void runReroute(
+                    "사용자가 동선에서 벗어남 / 남은 일정 재조정",
+                  )
+                }
+              >
+                {rerouting ? (
+                  <ActivityIndicator color="#075985" />
+                ) : (
+                  <Text style={styles.btnAltText}>이탈·재루트</Text>
+                )}
+              </Pressable>
+            ) : null}
+            <Pressable
+              style={styles.btnAlt}
+              onPress={() => setStatus("done")}
+              accessibilityRole="button"
+              accessibilityLabel="여행 종료"
+            >
+              <Text style={styles.btnAltText}>여행 종료</Text>
             </Pressable>
           </View>
-        ) : null}
-        <View style={styles.actions}>
-          <Pressable
-            style={styles.btnAlt}
-            onPress={() => setStatus("active")}
-            accessibilityRole="button"
-            accessibilityLabel="여행 시작"
-          >
-            <Text style={styles.btnAltText}>여행 시작</Text>
-          </Pressable>
-          {!isEasy ? (
-            <Pressable
-              style={[styles.btnAlt, rerouting && { opacity: 0.6 }]}
-              disabled={rerouting}
-              onPress={() =>
-                void runReroute("사용자가 동선에서 벗어남 / 남은 일정 재조정")
-              }
-            >
-              {rerouting ? (
-                <ActivityIndicator color="#075985" />
-              ) : (
-                <Text style={styles.btnAltText}>이탈·재루트</Text>
-              )}
-            </Pressable>
-          ) : null}
-          <Pressable style={styles.btnAlt} onPress={() => setStatus("done")}>
-            <Text style={styles.btnAltText}>여행 종료</Text>
-          </Pressable>
         </View>
-      </View>
+      ) : null}
 
       <TransportCompareSheet
         visible={comparePlace != null}
@@ -2334,16 +2351,50 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   reflectBtnText: { color: "#fff", fontWeight: "800", fontSize: 13 },
-  fieldRoot: { flex: 1, paddingBottom: 4 },
-  fieldMap: { flex: 1, minHeight: 180, marginTop: 8, marginBottom: 8 },
-  fieldListLink: {
-    alignSelf: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+  fieldRoot: { flex: 1, paddingHorizontal: 4 },
+  fieldHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 4,
     minHeight: TOUCH_MIN,
+  },
+  fieldHeaderCenter: { flex: 1, minWidth: 0 },
+  fieldHeaderTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  fieldHeaderSub: { marginTop: 2, fontSize: 12, fontWeight: "600" },
+  fieldEndHit: {
+    minHeight: TOUCH_MIN,
+    minWidth: TOUCH_MIN,
+    paddingHorizontal: 8,
+    justifyContent: "center",
+    alignItems: "flex-end",
+  },
+  fieldEndText: { fontSize: 13, fontWeight: "800" },
+  fieldDayRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    paddingHorizontal: 4,
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  fieldDayChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: 36,
+    borderRadius: 10,
     justifyContent: "center",
   },
-  fieldListLinkText: { color: "#0369a1", fontWeight: "700", fontSize: 14 },
+  fieldDayChipText: { fontSize: 13, fontWeight: "800" },
+  fieldMap: { flex: 1, minHeight: 160, marginHorizontal: 4, borderRadius: 12, overflow: "hidden" },
+  fieldBottomSheet: {
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
   placeCard: { marginBottom: 10 },
   compareChip: {
     alignSelf: "flex-start",
@@ -2405,6 +2456,7 @@ const styles = StyleSheet.create({
   drag: { fontSize: 22, color: "#64748b", width: 22, textAlign: "center" },
   name: { flex: 1, fontWeight: "700", color: "#0f172a", fontSize: 15 },
   meta: { marginTop: 4, fontSize: 12, color: "#64748b" },
+  estimateHint: { marginTop: 2, fontSize: 11, color: "#94a3b8" },
   actionRow: {
     flexDirection: "row",
     flexWrap: "wrap",

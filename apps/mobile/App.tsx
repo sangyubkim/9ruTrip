@@ -56,6 +56,7 @@ function AppInner() {
   const [generating, setGenerating] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [mapDayIndex, setMapDayIndex] = useState<number | undefined>();
 
   useEffect(() => {
     setApiClientBaseUrl(apiBaseUrl);
@@ -345,14 +346,21 @@ function AppInner() {
             setActive(null);
             setScreen("home");
           }}
-          onMap={() => setScreen("map")}
+          onMap={(dayIndex) => {
+            setMapDayIndex(dayIndex);
+            setScreen("map");
+          }}
           onCapture={() => setScreen("capture")}
           onExpenses={() => setScreen("expenses")}
           onSummary={() => setScreen("summary")}
         />
       )}
       {screen === "map" && active && (
-        <MapScreen trip={active} onBack={() => setScreen("plan")} />
+        <MapScreen
+          trip={active}
+          dayIndex={mapDayIndex}
+          onBack={() => setScreen("plan")}
+        />
       )}
       {screen === "capture" && active && (
         <CaptureScreen

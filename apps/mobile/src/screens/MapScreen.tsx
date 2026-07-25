@@ -1,36 +1,73 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import MapView, { Marker } from "react-native-maps";
+import MapView, { Marker, Polyline } from "react-native-maps";
 import type { Trip } from "../types";
-import { getCityMeta } from "../types";
+import { cityIdForDay, getCityMeta } from "../types";
 import { getMapViewConfig } from "../maps/provider";
 
 type Props = {
   trip: Trip;
+  dayIndex?: number;
   onBack: () => void;
 };
 
-export function MapScreen({ trip, onBack }: Props) {
+export function MapScreen({ trip, dayIndex, onBack }: Props) {
+  const mapRef = useRef<MapView>(null);
   const places = useMemo(
-    () => trip.places.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)),
-    [trip.places],
+    () =>
+      trip.places.filter(
+        (p) =>
+          (dayIndex == null || p.dayIndex === dayIndex) &&
+          Number.isFinite(p.lat) &&
+          Number.isFinite(p.lng),
+      ),
+    [dayIndex, trip.places],
   );
 
-  const city = getCityMeta(trip.cityId);
-  const mapCfg = getMapViewConfig(trip.cityId);
+  const mapCityId = dayIndex == null ? trip.cityId : cityIdForDay(trip, dayIndex);
+  const city = getCityMeta(mapCityId);
+  const mapCfg = getMapViewConfig(mapCityId);
   const region = {
     latitude: places[0]?.lat ?? city.center.lat,
     longitude: places[0]?.lng ?? city.center.lng,
     latitudeDelta: 0.12,
     longitudeDelta: 0.12,
   };
+  const fitDayRoute = () => {
+    if (!mapRef.current || places.length === 0) return;
+    if (places.length === 1) {
+      mapRef.current.animateToRegion(
+        {
+          latitude: places[0].lat,
+          longitude: places[0].lng,
+          latitudeDelta: 0.025,
+          longitudeDelta: 0.025,
+        },
+        0,
+      );
+      return;
+    }
+    mapRef.current.fitToCoordinates(
+      places.map((p) => ({ latitude: p.lat, longitude: p.lng })),
+      {
+        animated: false,
+        edgePadding: { top: 72, right: 40, bottom: 72, left: 40 },
+      },
+    );
+  };
+
+  useEffect(() => {
+    fitDayRoute();
+  }, [dayIndex, places]);
 
   return (
     <View style={styles.root}>
       <Pressable onPress={onBack}>
         <Text style={styles.back}>← 일정</Text>
       </Pressable>
-      <Text style={styles.title}>지도 · {trip.cityName}</Text>
+      <Text style={styles.title}>
+        지도 · {dayIndex == null ? trip.cityName : `Day ${dayIndex + 1} · ${city.nameKo}`}
+      </Text>
       <Text style={styles.hint}>
         {mapCfg.providerId === "google" ? "Google Maps" : "Naver Maps"} (
         {trip.mapProvider || mapCfg.providerId})
@@ -62,10 +99,24 @@ export function MapScreen({ trip, onBack }: Props) {
         <>
           <View style={styles.mapWrap}>
             <MapView
+              ref={mapRef}
               style={styles.map}
               provider={mapCfg.rnProvider}
               initialRegion={region}
+              onMapReady={fitDayRoute}
             >
+              {places.length >= 2 ? (
+                <Polyline
+                  coordinates={places.map((p) => ({
+                    latitude: p.lat,
+                    longitude: p.lng,
+                  }))}
+                  strokeColor="#0369a1"
+                  strokeWidth={3}
+                  lineCap="round"
+                  lineJoin="round"
+                />
+              ) : null}
               {places.map((p) => (
                 <Marker
                   key={p.id}

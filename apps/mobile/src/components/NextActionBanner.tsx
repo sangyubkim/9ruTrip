@@ -210,20 +210,13 @@ export function NextActionBanner({
         </View>
         {onReroute ? (
           <Pressable
-            style={[
-              styles.ctaGhost,
-              {
-                backgroundColor: colors.bgElevated,
-                borderColor: colors.mapBorder,
-                opacity: rerouting ? 0.55 : 1,
-              },
-            ]}
+            style={[styles.rerouteLink, { opacity: rerouting ? 0.55 : 1 }]}
             disabled={rerouting}
             onPress={onReroute}
             accessibilityRole="button"
             accessibilityLabel="일정 재루트"
           >
-            <Text style={[styles.ctaGhostText, { color: colors.accent }]}>
+            <Text style={[styles.rerouteLinkText, { color: colors.textMuted }]}>
               {rerouting ? "재루트 중…" : "일정 재루트"}
             </Text>
           </Pressable>
@@ -296,40 +289,39 @@ const styles = StyleSheet.create({
   },
   field: {
     borderRadius: radius.lg,
-    padding: space.lg,
-    marginBottom: space.md,
-    minHeight: 188,
-    borderWidth: 2,
+    padding: space.md,
+    marginBottom: 0,
+    borderWidth: 1.5,
   },
   fieldTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  kicker: { fontSize: 13, fontWeight: "800" },
+  kicker: { fontSize: 12, fontWeight: "800" },
   title: { marginTop: 2, fontWeight: "800", fontSize: 15 },
   fieldTitle: {
     marginTop: space.sm,
     fontWeight: "900",
-    fontSize: 28,
-    lineHeight: 34,
-    letterSpacing: -0.4,
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.3,
   },
   meta: { marginTop: space.sm, fontSize: 13, lineHeight: 19 },
   fieldMeta: {
-    marginTop: space.sm,
-    fontSize: 14,
+    marginTop: 4,
+    fontSize: 13,
     fontWeight: "600",
-    lineHeight: 20,
+    lineHeight: 18,
   },
   timingChip: {
     alignSelf: "flex-start",
-    marginTop: space.md,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    marginTop: space.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: radius.pill,
   },
-  timingChipText: { fontSize: 13, fontWeight: "900" },
+  timingChipText: { fontSize: 12, fontWeight: "900" },
   timingChipCompact: {
     alignSelf: "flex-start",
     marginTop: 6,
@@ -341,36 +333,34 @@ const styles = StyleSheet.create({
   timingChipTextCompact: { fontSize: 12, fontWeight: "700" },
   ctaRow: {
     flexDirection: "row",
-    gap: space.md,
-    marginTop: space.lg,
+    gap: space.sm,
+    marginTop: space.md,
   },
   ctaPrimary: {
     flex: 1,
-    paddingVertical: 16,
-    minHeight: 54,
+    paddingVertical: 14,
+    minHeight: 48,
     borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
   ctaPrimaryDone: {
     flex: 1,
-    paddingVertical: 16,
-    minHeight: 54,
+    paddingVertical: 14,
+    minHeight: 48,
     borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  ctaPrimaryText: { fontWeight: "900", fontSize: 17 },
-  ctaGhost: {
-    marginTop: space.md,
-    borderWidth: 1,
-    paddingVertical: 12,
-    minHeight: 44,
-    borderRadius: radius.md,
-    alignItems: "center",
+  ctaPrimaryText: { fontWeight: "900", fontSize: 16 },
+  rerouteLink: {
+    marginTop: space.sm,
+    alignSelf: "center",
+    paddingVertical: 8,
+    minHeight: 36,
     justifyContent: "center",
   },
-  ctaGhostText: { fontWeight: "700", fontSize: 14 },
+  rerouteLinkText: { fontWeight: "700", fontSize: 13 },
   listLink: {
     marginTop: space.md,
     alignSelf: "flex-start",

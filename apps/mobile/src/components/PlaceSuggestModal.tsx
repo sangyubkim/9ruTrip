@@ -362,6 +362,9 @@ export function PlaceSuggestModal({
                             <Text style={styles.metaStrong}>
                               {formatHotelPerPersonMoney(p, party, currency)}
                             </Text>
+                            <Text style={styles.estimateHint}>
+                              추정가 · 확정 아님
+                            </Text>
                             {hotelBreakfastPrice ? (
                               <Text style={styles.meta}>
                                 {hotelBreakfastPrice}
@@ -509,6 +512,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#334155",
   },
+  estimateHint: { marginTop: 2, fontSize: 11, color: "#94a3b8" },
   reasonBox: {
     marginTop: 6,
     padding: 8,
