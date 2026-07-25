@@ -351,7 +351,19 @@ export function PlanScreen({
     onChangeTrip(localTrip);
     setEnriching(true);
     try {
-      const res = await enrichTransport(places, true, trip.cityId);
+      const startHour = (() => {
+        const m = String(trip.startTime || DEFAULT_START_TIME).match(
+          /^(\d{1,2})/,
+        );
+        const h = m ? Number(m[1]) : 9;
+        return Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : 9;
+      })();
+      const res = await enrichTransport(places, true, trip.cityId, {
+        startHour,
+        startTime: trip.startTime || DEFAULT_START_TIME,
+        lodgingReturnTime:
+          trip.lodgingReturnTime || DEFAULT_LODGING_RETURN_TIME,
+      });
       onChangeTrip({
         ...localTrip,
         places: res.places,
@@ -784,6 +796,8 @@ export function PlanScreen({
                 lodgingCandidates: trip.lodgingCandidates,
                 preferredLodgingId: trip.preferredLodgingId,
                 cityId: trip.cityId,
+                lodgingReturnTime:
+                  trip.lodgingReturnTime || DEFAULT_LODGING_RETURN_TIME,
               });
               onChangeTrip({
                 ...trip,
@@ -895,6 +909,8 @@ export function PlanScreen({
                 lodgingCandidates: trip.lodgingCandidates,
                 preferredLodgingId: trip.preferredLodgingId,
                 cityId: trip.cityId,
+                lodgingReturnTime:
+                  trip.lodgingReturnTime || DEFAULT_LODGING_RETURN_TIME,
               });
               onChangeTrip({
                 ...trip,

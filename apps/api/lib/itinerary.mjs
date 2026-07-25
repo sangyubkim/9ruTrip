@@ -641,6 +641,18 @@ export function placeOvernightHotelsAtDayEnd(places, { days, nights } = {}) {
  * Day 체인: 전날 마지막 장소 = 다음날 시작 장소.
  * 저녁 숙소를 옮기지 않고, 아침에 복사본을 앞에 삽입한다.
  */
+/** 체인 아침 출발 슬롯 — 전날 저녁 plannedTime/이동값을 남기지 않음 */
+function clearChainDepartureSchedule(p) {
+  if (!p) return p;
+  delete p.plannedTime;
+  p.travelFromPrevMinutes = 0;
+  p.travelFromPrevCost = 0;
+  p.transportOptions = undefined;
+  p.preferredTransportMode = undefined;
+  p.transportEngine = undefined;
+  return p;
+}
+
 export function chainDayStarts(places) {
   if (!Array.isArray(places) || places.length === 0) return [];
   const byDay = new Map();
@@ -666,21 +678,21 @@ export function chainDayStarts(places) {
           ? `${first.notes} · 전날 연결 출발`
           : "전날 마지막 장소에서 출발";
       }
+      // 전날 저녁 시각이 다음날 아침으로 남지 않도록 비움 → enrich가 startTime 부여
+      clearChainDepartureSchedule(first);
       continue;
     }
 
-    list.unshift({
-      ...prevLast,
-      id: uid("chain"),
-      dayIndex: dayKeys[i],
-      order: -1,
-      estimatedCost: 0,
-      notes: "전날 마지막 장소 · 출발",
-      travelFromPrevMinutes: 0,
-      travelFromPrevCost: 0,
-      transportOptions: undefined,
-      preferredTransportMode: undefined,
-    });
+    list.unshift(
+      clearChainDepartureSchedule({
+        ...prevLast,
+        id: uid("chain"),
+        dayIndex: dayKeys[i],
+        order: -1,
+        estimatedCost: 0,
+        notes: "전날 마지막 장소 · 출발",
+      }),
+    );
   }
 
   const out = [];
@@ -957,6 +969,14 @@ export async function generateItinerary(body, env) {
   );
   const startTime = body?.startTime;
   const startHour = parseStartHour(startTime);
+  const lodgingReturnTime = (() => {
+    const raw = String(body?.lodgingReturnTime || "21:00").trim();
+    const m = raw.match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return "21:00";
+    const h = Math.min(23, Math.max(0, Number(m[1])));
+    const min = Math.min(59, Math.max(0, Number(m[2])));
+    return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+  })();
   const userRequest = String(
     body?.userRequest || body?.mainRequest || body?.extraRequest || "",
   ).trim();
@@ -995,6 +1015,7 @@ export async function generateItinerary(body, env) {
       forceRecalc: false,
       cityId,
       startHour,
+      lodgingReturnTime,
     });
     const partyCost = (p) => {
       const c = Math.max(0, Number(p.estimatedCost) || 0);

@@ -291,6 +291,7 @@ export async function rerouteItinerary(body, env) {
     forceRecalc: true,
     cityId,
     startHour,
+    lodgingReturnTime,
   });
   const plannedBudget = enriched.reduce((s, p) => {
     const c = Math.max(0, Number(p.estimatedCost) || 0);

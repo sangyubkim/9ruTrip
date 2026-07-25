@@ -31,24 +31,45 @@ export function ensureOvernightHotelsInPlaces(
     lodgingCandidates?: LodgingCandidate[];
     preferredLodgingId?: string | null;
     cityId?: string;
+    /** 숙소 복귀 시각 HH:mm (기본 21:00) */
+    lodgingReturnTime?: string;
   },
 ): ItineraryPlace[] {
   const overnight = overnightDayIndexes(opts.days, opts.nights);
   const list = Array.isArray(places) ? [...places] : [];
-  if (!overnight.length) return list;
+  const clearChainMorning = (p: ItineraryPlace): ItineraryPlace =>
+    isChainDeparturePlace(p)
+      ? {
+          ...p,
+          plannedTime: undefined,
+          travelFromPrevMinutes: 0,
+          travelFromPrevCost: 0,
+          transportOptions: undefined,
+          preferredTransportMode: undefined,
+        }
+      : p;
+
+  if (!overnight.length) {
+    // 체인 아침 출발에 전날 저녁 plannedTime이 남아 있으면 제거
+    return list.map(clearChainMorning);
+  }
 
   const pool = Array.isArray(opts.lodgingCandidates)
     ? opts.lodgingCandidates
     : [];
   const preferred =
     pool.find((c) => c.id === opts.preferredLodgingId) || pool[0];
-  if (!preferred) return list;
+  if (!preferred) return list.map(clearChainMorning);
 
   const nights = Math.max(0, Math.floor(Number(opts.nights) || 0));
   const perNight =
     nights > 0
       ? Math.round(Math.max(0, Number(preferred.estimatedCost) || 0) / nights)
       : Math.max(0, Number(preferred.estimatedCost) || 0);
+  const returnHhmm =
+    opts.lodgingReturnTime && /^\d{1,2}:\d{2}$/.test(opts.lodgingReturnTime)
+      ? opts.lodgingReturnTime
+      : "21:00";
 
   for (const d of overnight) {
     const hasStay = list.some(
@@ -76,6 +97,7 @@ export function ensureOvernightHotelsInPlaces(
       cityId: opts.cityId,
       lodgingScore: preferred.lodgingScore,
       scoreBreakdown: preferred.scoreBreakdown,
+      plannedTime: returnHhmm,
     });
   }
 
@@ -95,8 +117,16 @@ export function ensureOvernightHotelsInPlaces(
       const hotels = arr.filter((p) => p.category === "hotel");
       const rest = arr.filter((p) => p.category !== "hotel");
       const stay = hotels.filter((p) => !isChainDeparturePlace(p));
-      const last = stay[stay.length - 1] || hotels[hotels.length - 1];
-      const dayList = last ? [...rest, last] : rest;
+      const chainMorning = hotels.filter((p) => isChainDeparturePlace(p));
+      // 체인 아침 출발은 앞에 두고 plannedTime 비움; 저녁 숙소는 끝 + 복귀 시각
+      const last = stay[stay.length - 1];
+      const dayList = last
+        ? [
+            ...chainMorning.map(clearChainMorning),
+            ...rest,
+            { ...last, plannedTime: returnHhmm },
+          ]
+        : [...chainMorning.map(clearChainMorning), ...rest];
       dayList.forEach((p, i) => {
         p.order = i;
         p.dayIndex = d;
@@ -104,9 +134,19 @@ export function ensureOvernightHotelsInPlaces(
       });
     } else {
       arr.forEach((p, i) => {
-        p.order = i;
-        p.dayIndex = d;
-        out.push(p);
+        const next = isChainDeparturePlace(p)
+          ? {
+              ...p,
+              plannedTime: undefined,
+              travelFromPrevMinutes: 0,
+              travelFromPrevCost: 0,
+              transportOptions: undefined,
+              preferredTransportMode: undefined,
+            }
+          : p;
+        next.order = i;
+        next.dayIndex = d;
+        out.push(next);
       });
     }
   }

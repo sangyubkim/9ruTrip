@@ -182,11 +182,23 @@ export async function enrichTransport(
   places: ItineraryPlace[],
   forceRecalc = true,
   cityId?: MvpCityId,
+  opts?: {
+    startHour?: number;
+    startTime?: string;
+    lodgingReturnTime?: string;
+  },
 ): Promise<{ places: ItineraryPlace[]; transportEngine?: string }> {
   const res = await apiFetch("/trip/enrich-transport", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ places, forceRecalc, cityId }),
+    body: JSON.stringify({
+      places,
+      forceRecalc,
+      cityId,
+      startHour: opts?.startHour,
+      startTime: opts?.startTime,
+      lodgingReturnTime: opts?.lodgingReturnTime || "21:00",
+    }),
   });
   const json = await readApiJson<{
     places: ItineraryPlace[];

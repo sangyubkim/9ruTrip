@@ -943,10 +943,26 @@ export function buildLodgingCandidates({
   return scored.slice(0, topN);
 }
 
+function isChainDeparturePlaceForEnrich(p) {
+  if (!p || p.category !== "hotel") return false;
+  const notes = String(p.notes || "");
+  return /전날|연결\s*출발|출발$/.test(notes) && !(Number(p.estimatedCost) > 0);
+}
+
+function normalizeLodgingReturnHhmm(value, fallback = "21:00") {
+  const m = String(value ?? "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return fallback;
+  const h = Math.min(23, Math.max(0, Number(m[1])));
+  const min = Math.min(59, Math.max(0, Number(m[2])));
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
 /**
  * day별 순서대로 travelFromPrev* / plannedTime / lodgingScore / transportOptions 보강
  * forceRecalc=true 이면 기존 travelFromPrev* 덮어씀 (DnD 후 재계산)
  * preferredTransportMode 가 있으면 해당 모드의 분·비용을 travelFromPrev*에 반영
+ * 하루 첫 장소·체인 출발은 항상 startHour 기준으로 plannedTime 재부여
+ * 숙박 Day 마지막 숙소(호텔)는 lodgingReturnTime(기본 21:00)으로 고정
  */
 export async function enrichPlacesWithTransport(
   places,
@@ -955,9 +971,15 @@ export async function enrichPlacesWithTransport(
     forceRecalc = false,
     mapsApiKey = "",
     cityId,
+    lodgingReturnTime,
   } = {},
 ) {
   if (!Array.isArray(places) || places.length === 0) return [];
+
+  const returnHhmm =
+    lodgingReturnTime != null && String(lodgingReturnTime).trim()
+      ? normalizeLodgingReturnHhmm(lodgingReturnTime, "21:00")
+      : null;
 
   const byDay = new Map();
   for (const p of places) {
@@ -973,6 +995,7 @@ export async function enrichPlacesWithTransport(
     let prev = null;
     for (let i = 0; i < dayList.length; i++) {
       let p = { ...dayList[i] };
+      const isDayStart = i === 0 || isChainDeparturePlaceForEnrich(p);
       if (prev) {
         const needRecalc =
           forceRecalc ||
@@ -1002,8 +1025,13 @@ export async function enrichPlacesWithTransport(
         p.transportOptions = undefined;
       }
 
+      if (isDayStart) {
+        minutesFromStart = startHour * 60;
+      }
+
       if (
         forceRecalc ||
+        isDayStart ||
         !p.plannedTime ||
         !/^\d{1,2}:\d{2}$/.test(String(p.plannedTime))
       ) {
@@ -1014,6 +1042,20 @@ export async function enrichPlacesWithTransport(
         const [h, m] = String(p.plannedTime).split(":").map(Number);
         if (Number.isFinite(h) && Number.isFinite(m)) {
           minutesFromStart = h * 60 + m;
+        }
+      }
+
+      // 저녁 숙소 복귀: 그날 마지막 stay hotel은 lodgingReturnTime으로 고정
+      const isLastStayHotel =
+        returnHhmm &&
+        i === dayList.length - 1 &&
+        p.category === "hotel" &&
+        !isChainDeparturePlaceForEnrich(p);
+      if (isLastStayHotel) {
+        p.plannedTime = returnHhmm;
+        const [rh, rm] = returnHhmm.split(":").map(Number);
+        if (Number.isFinite(rh) && Number.isFinite(rm)) {
+          minutesFromStart = rh * 60 + rm;
         }
       }
 

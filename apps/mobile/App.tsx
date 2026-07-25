@@ -232,6 +232,7 @@ function AppInner() {
             lodgingCandidates: result.lodgingCandidates,
             preferredLodgingId: result.preferredLodgingId,
             cityId: resolvedCityId,
+            lodgingReturnTime: trip.lodgingReturnTime,
           },
         );
         const next: Trip = {

@@ -218,11 +218,18 @@ async function handle(req, res) {
 
     if (method === "POST" && matchRoute(url, "/trip/enrich-transport")) {
       const body = await readBody(req);
+      const startHourFromTime = (() => {
+        const m = String(body?.startTime || "").match(/^(\d{1,2})/);
+        if (!m) return null;
+        const h = Number(m[1]);
+        return Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : null;
+      })();
       const places = await enrichPlacesWithTransport(body?.places ?? [], {
         forceRecalc: Boolean(body?.forceRecalc),
         mapsApiKey: env.googleMapsApiKey,
-        startHour: Number(body?.startHour) || 9,
+        startHour: Number(body?.startHour) || startHourFromTime || 9,
         cityId: isKnownCityId(body?.cityId) ? body.cityId : undefined,
+        lodgingReturnTime: body?.lodgingReturnTime || "21:00",
       });
       send(
         res,

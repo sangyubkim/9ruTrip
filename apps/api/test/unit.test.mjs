@@ -429,6 +429,98 @@ describe("multi-city itinerary", () => {
     assert.equal(day1[0].name, "호텔X");
     assert.ok(/전날/.test(String(day1[0].notes || "")));
   });
+
+  it("chainDayStarts clears plannedTime on morning chain insert", () => {
+    const linked = chainDayStarts([
+      {
+        id: "d0a",
+        name: "명소A",
+        category: "attraction",
+        lat: 37.5,
+        lng: 127,
+        estimatedCost: 0,
+        dayIndex: 0,
+        order: 0,
+        plannedTime: "10:00",
+      },
+      {
+        id: "d0h",
+        name: "호텔X",
+        category: "hotel",
+        lat: 37.51,
+        lng: 127.01,
+        estimatedCost: 100000,
+        dayIndex: 0,
+        order: 1,
+        plannedTime: "18:00",
+      },
+      {
+        id: "d1a",
+        name: "명소B",
+        category: "attraction",
+        lat: 37.52,
+        lng: 127.02,
+        estimatedCost: 0,
+        dayIndex: 1,
+        order: 0,
+        plannedTime: "09:30",
+      },
+    ]);
+    const day1 = linked
+      .filter((p) => p.dayIndex === 1)
+      .sort((a, b) => a.order - b.order);
+    assert.equal(day1[0].name, "호텔X");
+    assert.equal(day1[0].plannedTime, undefined);
+    assert.equal(day1[0].travelFromPrevMinutes, 0);
+    assert.ok(/전날/.test(String(day1[0].notes || "")));
+    // 전날 저녁 숙소 plannedTime은 그대로
+    const day0Hotel = linked.find((p) => p.id === "d0h");
+    assert.equal(day0Hotel?.plannedTime, "18:00");
+  });
+
+  it("chainDayStarts clears plannedTime when day already starts with prev last", () => {
+    const linked = chainDayStarts([
+      {
+        id: "d0h",
+        name: "라마다 군산 호텔",
+        category: "hotel",
+        lat: 35.96,
+        lng: 126.71,
+        estimatedCost: 90000,
+        dayIndex: 0,
+        order: 0,
+        plannedTime: "18:00",
+      },
+      {
+        id: "d1h",
+        name: "라마다 군산 호텔",
+        category: "hotel",
+        lat: 35.96,
+        lng: 126.71,
+        estimatedCost: 0,
+        dayIndex: 1,
+        order: 0,
+        plannedTime: "18:00",
+        notes: "전날 마지막 장소 · 출발",
+      },
+      {
+        id: "d1a",
+        name: "경암동",
+        category: "attraction",
+        lat: 35.97,
+        lng: 126.72,
+        estimatedCost: 0,
+        dayIndex: 1,
+        order: 1,
+        plannedTime: "09:30",
+      },
+    ]);
+    const day1 = linked
+      .filter((p) => p.dayIndex === 1)
+      .sort((a, b) => a.order - b.order);
+    assert.equal(day1[0].name, "라마다 군산 호텔");
+    assert.equal(day1[0].plannedTime, undefined);
+  });
 });
 
 /** crowd hour heuristic mirrored from mobile utils/weather.ts */
