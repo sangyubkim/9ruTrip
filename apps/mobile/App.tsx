@@ -179,6 +179,7 @@ function AppInner() {
           startLat: input.startLat,
           startLng: input.startLng,
           startTime: input.startTime,
+          outboundTransportMode: input.outboundTransportMode,
           userRequest: input.userRequest,
           mainRequest: input.userRequest,
         });
@@ -252,6 +253,7 @@ function AppInner() {
           startLat: input.startLat,
           startLng: input.startLng,
           startTime: input.startTime,
+          outboundTransportMode: input.outboundTransportMode || "car",
           userRequest: input.userRequest,
           status: "planning",
           updatedAt: new Date().toISOString(),

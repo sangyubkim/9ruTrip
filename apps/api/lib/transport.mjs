@@ -16,6 +16,189 @@ export function haversineKm(a, b) {
 
 export const TRANSPORT_MODES = ["walking", "transit", "taxi"];
 
+/** 출발지 → 첫 여행지 장거리 이동수단 */
+export const OUTBOUND_TRANSPORT_MODES = ["car", "train", "bus", "flight"];
+
+export const OUTBOUND_MODE_LABEL = {
+  car: "자차",
+  train: "기차",
+  bus: "버스",
+  flight: "비행기",
+};
+
+export function normalizeOutboundTransportMode(raw) {
+  const m = String(raw || "").trim().toLowerCase();
+  if (OUTBOUND_TRANSPORT_MODES.includes(m)) return m;
+  return "car";
+}
+
+/**
+ * 국내 출발→첫 목적지 하버사인 휴리스틱
+ * - car: 톨비 + 이동 분
+ * - train/bus/flight: 교통비 + 이동 분
+ */
+export function estimateOutboundLegHaversine(from, to, mode = "car") {
+  const outboundMode = normalizeOutboundTransportMode(mode);
+  if (!from || !to) {
+    return {
+      mode: outboundMode,
+      modeLabel: OUTBOUND_MODE_LABEL[outboundMode],
+      minutes: 0,
+      estimatedCost: 0,
+      costKind: outboundMode === "car" ? "toll" : "fare",
+      engine: "none",
+      note: `${OUTBOUND_MODE_LABEL[outboundMode]} · ${
+        outboundMode === "car" ? "톨비" : "교통비"
+      }`,
+    };
+  }
+  const km = haversineKm(
+    { lat: Number(from.lat), lng: Number(from.lng) },
+    { lat: Number(to.lat), lng: Number(to.lng) },
+  );
+  const dist = Number.isFinite(km) ? Math.max(0, km) : 0;
+
+  if (outboundMode === "car") {
+    // 고속도로 체감 ~75km/h + 시내 접근 버퍼
+    const minutes = Math.max(25, Math.round((dist / 75) * 60 + 18));
+    // 거리 기반 톨비 프록시 (단거리는 낮게)
+    const toll =
+      dist < 15
+        ? 0
+        : Math.round(1200 + Math.max(0, dist - 15) * 105);
+    return {
+      mode: "car",
+      modeLabel: "자차",
+      minutes,
+      estimatedCost: Math.max(0, toll),
+      costKind: "toll",
+      engine: "haversine:outbound:car",
+      note: "자차 · 톨비",
+      distanceKm: dist,
+    };
+  }
+
+  if (outboundMode === "train") {
+    const minutes = Math.max(40, Math.round((dist / 105) * 60 + 35));
+    const fare = Math.round(4500 + dist * 95);
+    return {
+      mode: "train",
+      modeLabel: "기차",
+      minutes,
+      estimatedCost: Math.max(5000, fare),
+      costKind: "fare",
+      engine: "haversine:outbound:train",
+      note: "기차 · 교통비",
+      distanceKm: dist,
+    };
+  }
+
+  if (outboundMode === "bus") {
+    const minutes = Math.max(50, Math.round((dist / 68) * 60 + 28));
+    const fare = Math.round(2800 + dist * 58);
+    return {
+      mode: "bus",
+      modeLabel: "버스",
+      minutes,
+      estimatedCost: Math.max(3500, fare),
+      costKind: "fare",
+      engine: "haversine:outbound:bus",
+      note: "버스 · 교통비",
+      distanceKm: dist,
+    };
+  }
+
+  // flight — 단거리는 기차 추정으로 폴백
+  if (dist < 160) {
+    const train = estimateOutboundLegHaversine(from, to, "train");
+    return {
+      ...train,
+      mode: "flight",
+      modeLabel: "비행기",
+      note: "비행기(단거리) · 기차 추정 · 교통비",
+      engine: "haversine:outbound:flight-short",
+    };
+  }
+  // 공항 수속·이동 + 순항
+  const airMin = Math.max(50, Math.round((dist / 720) * 60));
+  const minutes = 55 + airMin + 40;
+  const fare = Math.round(65000 + dist * 35);
+  return {
+    mode: "flight",
+    modeLabel: "비행기",
+    minutes,
+    estimatedCost: Math.max(70000, Math.min(180000, fare)),
+    costKind: "fare",
+    engine: "haversine:outbound:flight",
+    note: "비행기 · 교통비",
+    distanceKm: dist,
+  };
+}
+
+/**
+ * Maps 키가 있으면 car→driving / train·bus→transit, flight는 휴리스틱
+ */
+export async function estimateOutboundLeg(from, to, mode, apiKey = "") {
+  const outboundMode = normalizeOutboundTransportMode(mode);
+  const fallback = estimateOutboundLegHaversine(from, to, outboundMode);
+  if (!from || !to || !apiKey || outboundMode === "flight") {
+    return fallback;
+  }
+
+  try {
+    if (outboundMode === "car") {
+      const opt = await estimateLegByModeDirections(from, to, "taxi", apiKey);
+      const km =
+        fallback.distanceKm ??
+        haversineKm(
+          { lat: Number(from.lat), lng: Number(from.lng) },
+          { lat: Number(to.lat), lng: Number(to.lng) },
+        );
+      const toll =
+        km < 15 ? 0 : Math.round(1200 + Math.max(0, km - 15) * 105);
+      return {
+        mode: "car",
+        modeLabel: "자차",
+        minutes: Math.max(25, Number(opt.minutes) || fallback.minutes),
+        estimatedCost: Math.max(0, toll),
+        costKind: "toll",
+        engine: String(opt.engine || "").startsWith("directions:")
+          ? "directions:outbound:car"
+          : fallback.engine,
+        note: "자차 · 톨비",
+        distanceKm: km,
+      };
+    }
+
+    // train / bus — transit Directions + 모드별 요금 휴리스틱
+    const opt = await estimateLegByModeDirections(from, to, "transit", apiKey);
+    const usedDirections = String(opt.engine || "").startsWith("directions:");
+    const minutes = Math.max(
+      outboundMode === "bus" ? 50 : 40,
+      Number(opt.minutes) || fallback.minutes,
+    );
+    // Directions fare가 있으면 우선, 없으면 모드 휴리스틱
+    const fareFromApi =
+      usedDirections && Number(opt.estimatedCost) > 2000
+        ? Number(opt.estimatedCost)
+        : fallback.estimatedCost;
+    return {
+      mode: outboundMode,
+      modeLabel: OUTBOUND_MODE_LABEL[outboundMode],
+      minutes,
+      estimatedCost: Math.max(0, fareFromApi),
+      costKind: "fare",
+      engine: usedDirections
+        ? `directions:outbound:${outboundMode}`
+        : fallback.engine,
+      note: `${OUTBOUND_MODE_LABEL[outboundMode]} · 교통비`,
+      distanceKm: fallback.distanceKm,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * 모드별 하버사인 추정 (키 없을 때 / Directions 실패 시)
  * - walking: ~4.5km/h, 비용 0
@@ -961,17 +1144,21 @@ function normalizeLodgingReturnHhmm(value, fallback = "21:00") {
  * day별 순서대로 travelFromPrev* / plannedTime / lodgingScore / transportOptions 보강
  * forceRecalc=true 이면 기존 travelFromPrev* 덮어씀 (DnD 후 재계산)
  * preferredTransportMode 가 있으면 해당 모드의 분·비용을 travelFromPrev*에 반영
- * 하루 첫 장소·체인 출발은 항상 startHour 기준으로 plannedTime 재부여
+ * 하루 첫 장소·체인 출발은 항상 startHour/startMinutes 기준으로 plannedTime 재부여
+ * Day0 첫 장소는 origin+outboundTransportMode 가 있으면 출발→첫 목적지 구간 추정
  * 숙박 Day 마지막 숙소(호텔)는 lodgingReturnTime(기본 21:00)으로 고정
  */
 export async function enrichPlacesWithTransport(
   places,
   {
     startHour = 9,
+    startMinutes,
     forceRecalc = false,
     mapsApiKey = "",
     cityId,
     lodgingReturnTime,
+    origin = null,
+    outboundTransportMode = "car",
   } = {},
 ) {
   if (!Array.isArray(places) || places.length === 0) return [];
@@ -981,6 +1168,18 @@ export async function enrichPlacesWithTransport(
       ? normalizeLodgingReturnHhmm(lodgingReturnTime, "21:00")
       : null;
 
+  const dayStartMinutes = Number.isFinite(Number(startMinutes))
+    ? Math.max(0, Math.min(24 * 60 - 1, Math.floor(Number(startMinutes))))
+    : Math.max(0, Math.min(23, Number(startHour) || 9)) * 60;
+
+  const originPoint =
+    origin &&
+    Number.isFinite(Number(origin.lat)) &&
+    Number.isFinite(Number(origin.lng))
+      ? { lat: Number(origin.lat), lng: Number(origin.lng) }
+      : null;
+  const outboundMode = normalizeOutboundTransportMode(outboundTransportMode);
+
   const byDay = new Map();
   for (const p of places) {
     const d = Number(p.dayIndex) || 0;
@@ -989,13 +1188,21 @@ export async function enrichPlacesWithTransport(
   }
 
   const out = [];
-  for (const [, dayList] of [...byDay.entries()].sort((a, b) => a[0] - b[0])) {
+  for (const [dayIndex, dayList] of [...byDay.entries()].sort(
+    (a, b) => a[0] - b[0],
+  )) {
     dayList.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    let minutesFromStart = startHour * 60;
+    let minutesFromStart = dayStartMinutes;
     let prev = null;
     for (let i = 0; i < dayList.length; i++) {
       let p = { ...dayList[i] };
       const isDayStart = i === 0 || isChainDeparturePlaceForEnrich(p);
+      const isOutboundFirst =
+        Number(dayIndex) === 0 &&
+        i === 0 &&
+        originPoint != null &&
+        !isChainDeparturePlaceForEnrich(p);
+
       if (prev) {
         const needRecalc =
           forceRecalc ||
@@ -1018,6 +1225,21 @@ export async function enrichPlacesWithTransport(
           );
         }
         minutesFromStart += Number(p.travelFromPrevMinutes) || 0;
+      } else if (isOutboundFirst) {
+        const leg = await estimateOutboundLeg(
+          originPoint,
+          p,
+          outboundMode,
+          mapsApiKey,
+        );
+        p.travelFromPrevMinutes = leg.minutes;
+        p.travelFromPrevCost = leg.estimatedCost;
+        p.travelFromPrevCostKind = leg.costKind;
+        p.transportEngine = leg.engine;
+        p.transportOptions = undefined;
+        if (leg.note && !(p.notes && String(p.notes).includes(leg.note))) {
+          p.notes = p.notes ? `${p.notes} · ${leg.note}` : leg.note;
+        }
       } else {
         p.travelFromPrevMinutes = 0;
         p.travelFromPrevCost = 0;
@@ -1026,7 +1248,11 @@ export async function enrichPlacesWithTransport(
       }
 
       if (isDayStart) {
-        minutesFromStart = startHour * 60;
+        const outboundMins =
+          isOutboundFirst && Number(p.travelFromPrevMinutes) > 0
+            ? Number(p.travelFromPrevMinutes)
+            : 0;
+        minutesFromStart = dayStartMinutes + outboundMins;
       }
 
       if (

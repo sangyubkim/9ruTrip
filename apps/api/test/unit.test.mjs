@@ -11,8 +11,10 @@ import {
   clearDirectionsCache,
   compareLegTransport,
   directionsCacheKey,
+  estimateOutboundLegHaversine,
   haversineKm,
   lodgingScoreBreakdown,
+  normalizeOutboundTransportMode,
 } from "../lib/transport.mjs";
 import {
   buildFallbackItinerary,
@@ -110,6 +112,26 @@ describe("haversine + transport compare", () => {
       namba.scoreBreakdown.centrality > nambaAsTokyo.scoreBreakdown.centrality,
       `osaka hub ${namba.scoreBreakdown.centrality} vs tokyo hub ${nambaAsTokyo.scoreBreakdown.centrality}`,
     );
+  });
+
+  it("estimateOutboundLegHaversine: seoul→busan car has toll, train has fare", () => {
+    assert.equal(normalizeOutboundTransportMode("기차"), "car");
+    assert.equal(normalizeOutboundTransportMode("train"), "train");
+    const seoul = { lat: 37.5665, lng: 126.978 };
+    const busan = { lat: 35.1796, lng: 129.0756 };
+    const car = estimateOutboundLegHaversine(seoul, busan, "car");
+    const train = estimateOutboundLegHaversine(seoul, busan, "train");
+    const flight = estimateOutboundLegHaversine(seoul, busan, "flight");
+    assert.equal(car.costKind, "toll");
+    assert.ok(car.minutes > 120, `car minutes=${car.minutes}`);
+    assert.ok(car.estimatedCost > 10000, `toll=${car.estimatedCost}`);
+    assert.match(car.note, /톨비/);
+    assert.equal(train.costKind, "fare");
+    assert.ok(train.estimatedCost > 20000);
+    assert.match(train.note, /교통비/);
+    assert.equal(flight.costKind, "fare");
+    assert.ok(flight.minutes > 100);
+    assert.ok(flight.estimatedCost >= 70000);
   });
 });
 

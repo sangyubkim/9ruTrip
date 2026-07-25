@@ -363,6 +363,9 @@ export function PlanScreen({
         startTime: trip.startTime || DEFAULT_START_TIME,
         lodgingReturnTime:
           trip.lodgingReturnTime || DEFAULT_LODGING_RETURN_TIME,
+        startLat: trip.startLat,
+        startLng: trip.startLng,
+        outboundTransportMode: trip.outboundTransportMode || "car",
       });
       onChangeTrip({
         ...localTrip,
@@ -1080,7 +1083,7 @@ export function PlanScreen({
     isActive,
   }: RenderItemParams<ItineraryPlace>) => {
     const done = (trip.completedPlaceIds ?? []).includes(item.id);
-    const travel = formatTravelGlance(item);
+    const travel = formatTravelGlance(item, currencyForCity(trip.cityId));
     const selected = selectedPlaceId === item.id;
     const swipeEnabled = !listDragging && !isActive;
     return (

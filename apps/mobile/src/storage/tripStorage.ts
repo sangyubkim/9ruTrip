@@ -59,6 +59,11 @@ function normalizeTrip(data: Trip): Trip {
     briefing: data.briefing,
     routeOutline: data.routeOutline,
     startTime: normalizeHhmm(data.startTime, DEFAULT_START_TIME),
+    outboundTransportMode: (["car", "train", "bus", "flight"] as const).includes(
+      data.outboundTransportMode as "car",
+    )
+      ? data.outboundTransportMode
+      : "car",
     lodgingReturnTime: normalizeHhmm(
       data.lodgingReturnTime,
       DEFAULT_LODGING_RETURN_TIME,
@@ -167,6 +172,7 @@ export function createEmptyTrip(input: {
   startLat?: number;
   startLng?: number;
   startTime?: string;
+  outboundTransportMode?: import("../types").OutboundTransportMode;
   userRequest?: string;
 }): Trip {
   const now = new Date().toISOString();
@@ -213,6 +219,11 @@ export function createEmptyTrip(input: {
     startLat: input.startLat,
     startLng: input.startLng,
     startTime: normalizeHhmm(input.startTime, DEFAULT_START_TIME),
+    outboundTransportMode: (["car", "train", "bus", "flight"] as const).includes(
+      input.outboundTransportMode as "car",
+    )
+      ? input.outboundTransportMode
+      : "car",
     lodgingReturnTime: DEFAULT_LODGING_RETURN_TIME,
     userRequest: input.userRequest,
     createdAt: now,

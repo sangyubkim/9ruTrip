@@ -35,6 +35,9 @@ export type PlaceCategory =
 
 export type TransportMode = "walking" | "transit" | "taxi";
 
+/** 여행 첫 구간(출발지 → 첫 여행지) 이동수단 */
+export type OutboundTransportMode = "car" | "train" | "bus" | "flight";
+
 export type TransportOption = {
   mode: TransportMode;
   minutes: number;
@@ -86,6 +89,8 @@ export type ItineraryPlace = {
   plannedTime?: string;
   travelFromPrevMinutes?: number;
   travelFromPrevCost?: number;
+  /** 첫 구간 비용 구분: 톨비(자차) / 교통비(기차·버스·비행) */
+  travelFromPrevCostKind?: "toll" | "fare";
   lodgingScore?: number;
   scoreBreakdown?: LodgingScoreBreakdown;
   transportEngine?: string;
@@ -198,6 +203,8 @@ export type Trip = {
   startLng?: number;
   /** 여행/하루 시작 시각 HH:mm (기본 09:00) */
   startTime?: string;
+  /** 출발지 → 첫 여행지 이동수단 (기본 car) */
+  outboundTransportMode?: OutboundTransportMode;
   /** 숙소 복귀 시각 HH:mm (기본 21:00) */
   lodgingReturnTime?: string;
   userRequest?: string;

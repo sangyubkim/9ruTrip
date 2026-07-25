@@ -4,6 +4,7 @@ import type {
   LodgingCandidate,
   MvpCityId,
   PlaceCategory,
+  OutboundTransportMode,
   PlaceRef,
   TransportOption,
   Trip,
@@ -29,6 +30,8 @@ export type ItineraryRequest = {
   startLat?: number;
   startLng?: number;
   startTime?: string;
+  /** 출발지 → 첫 여행지 이동수단 */
+  outboundTransportMode?: OutboundTransportMode;
   userRequest?: string;
 };
 
@@ -186,6 +189,9 @@ export async function enrichTransport(
     startHour?: number;
     startTime?: string;
     lodgingReturnTime?: string;
+    startLat?: number;
+    startLng?: number;
+    outboundTransportMode?: OutboundTransportMode;
   },
 ): Promise<{ places: ItineraryPlace[]; transportEngine?: string }> {
   const res = await apiFetch("/trip/enrich-transport", {
@@ -198,6 +204,9 @@ export async function enrichTransport(
       startHour: opts?.startHour,
       startTime: opts?.startTime,
       lodgingReturnTime: opts?.lodgingReturnTime || "21:00",
+      startLat: opts?.startLat,
+      startLng: opts?.startLng,
+      outboundTransportMode: opts?.outboundTransportMode,
     }),
   });
   const json = await readApiJson<{

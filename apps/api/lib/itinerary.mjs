@@ -8,6 +8,8 @@ import {
   enrichPlacesWithTransport,
   lodgingRecommendTip,
   lodgingScoreBreakdown,
+  normalizeOutboundTransportMode,
+  OUTBOUND_MODE_LABEL,
 } from "./transport.mjs";
 
 function uid(prefix) {
@@ -42,6 +44,20 @@ function parseStartHour(startTime) {
   const m = String(startTime).match(/^(\d{1,2})(?::(\d{2}))?/);
   if (!m) return 9;
   return Math.min(23, Math.max(0, Number(m[1])));
+}
+
+/** 자정 기준 분 (HH:mm) — 첫 관광 plannedTime = start + outbound */
+function parseStartMinutes(startTime) {
+  if (startTime == null || startTime === "") return 9 * 60;
+  if (typeof startTime === "number" && Number.isFinite(startTime)) {
+    const h = Math.min(23, Math.max(0, Math.floor(startTime)));
+    return h * 60;
+  }
+  const m = String(startTime).match(/^(\d{1,2})(?::(\d{2}))?/);
+  if (!m) return 9 * 60;
+  const h = Math.min(23, Math.max(0, Number(m[1])));
+  const min = Math.min(59, Math.max(0, Number(m[2] || 0)));
+  return h * 60 + min;
 }
 
 function resolveCity(cityId) {
@@ -928,6 +944,11 @@ function normalizePlaces(rawPlaces, { days, partySize, center }) {
         Number(p.travelFromPrevCost) >= 0
           ? Number(p.travelFromPrevCost)
           : undefined,
+      travelFromPrevCostKind:
+        p.travelFromPrevCostKind === "toll" ||
+        p.travelFromPrevCostKind === "fare"
+          ? p.travelFromPrevCostKind
+          : undefined,
       lodgingScore:
         Number(p.lodgingScore) > 0 ? Number(p.lodgingScore) : undefined,
       scoreBreakdown: p.scoreBreakdown ?? undefined,
@@ -969,6 +990,10 @@ export async function generateItinerary(body, env) {
   );
   const startTime = body?.startTime;
   const startHour = parseStartHour(startTime);
+  const startMinutes = parseStartMinutes(startTime);
+  const outboundTransportMode = normalizeOutboundTransportMode(
+    body?.outboundTransportMode,
+  );
   const lodgingReturnTime = (() => {
     const raw = String(body?.lodgingReturnTime || "21:00").trim();
     const m = raw.match(/^(\d{1,2}):(\d{2})$/);
@@ -1010,12 +1035,19 @@ export async function generateItinerary(body, env) {
       cities,
       partySize,
     });
+    const originPoint =
+      Number.isFinite(startLat) && Number.isFinite(startLng)
+        ? { lat: startLat, lng: startLng }
+        : null;
     const enriched = await enrichPlacesWithTransport(chained, {
       mapsApiKey,
       forceRecalc: false,
       cityId,
       startHour,
+      startMinutes,
       lodgingReturnTime,
+      origin: originPoint,
+      outboundTransportMode,
     });
     const partyCost = (p) => {
       const c = Math.max(0, Number(p.estimatedCost) || 0);
@@ -1072,6 +1104,7 @@ export async function generateItinerary(body, env) {
     startTime != null && String(startTime).trim()
       ? `- 출발/일정 시작 시각: ${String(startTime)} (하루 시작 기준 약 ${startHour}시)`
       : "",
+    `- 출발→첫 여행지 이동수단: ${OUTBOUND_MODE_LABEL[outboundTransportMode] || outboundTransportMode} (첫 관광 시작 시각은 이동 시간 이후)`,
     userRequest
       ? `- 사용자 요청(반드시 일정·장소 선택에 적극 반영): ${userRequest}`
       : "",

@@ -28,6 +28,9 @@ export type PlaceCategory =
 /** 구간 이동 수단 비교 (도보 / 대중교통 / 택시) */
 export type TransportMode = "walking" | "transit" | "taxi";
 
+/** 여행 첫 구간(출발지 → 첫 여행지) 이동수단 */
+export type OutboundTransportMode = "car" | "train" | "bus" | "flight";
+
 export type TransportOption = {
   mode: TransportMode;
   /** 예상 이동 분 */
@@ -96,6 +99,8 @@ export type ItineraryPlace = {
   travelFromPrevMinutes?: number;
   /** 직전 장소 → 현재 이동 비용(엔) */
   travelFromPrevCost?: number;
+  /** 첫 구간 비용 구분: 톨비(자차) / 교통비(기차·버스·비행) */
+  travelFromPrevCostKind?: "toll" | "fare";
   /** 숙소 추천 점수 1–100 */
   lodgingScore?: number;
   scoreBreakdown?: LodgingScoreBreakdown;
@@ -167,6 +172,8 @@ export type Trip = {
   startLng?: number;
   /** 여행 시작 시각 HH:mm (기본 09:00) */
   startTime?: string;
+  /** 출발지 → 첫 여행지 이동수단 */
+  outboundTransportMode?: OutboundTransportMode;
   /** 숙소 복귀 시각 HH:mm (기본 21:00) */
   lodgingReturnTime?: string;
   /** AI 경로에 반영할 주요 요청 */

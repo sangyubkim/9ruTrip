@@ -59,6 +59,10 @@ export const itineraryRequestSchema = z.object({
     .string()
     .regex(/^\d{1,2}:\d{2}$/)
     .optional(),
+  /** 출발지 → 첫 여행지 이동수단 */
+  outboundTransportMode: z
+    .enum(["car", "train", "bus", "flight"])
+    .optional(),
   userRequest: z.string().max(1000).optional(),
 });
 
@@ -100,6 +104,7 @@ export const itineraryPlaceSchema = z.object({
   plannedTime: z.string().optional(),
   travelFromPrevMinutes: z.number().optional(),
   travelFromPrevCost: z.number().optional(),
+  travelFromPrevCostKind: z.enum(["toll", "fare"]).optional(),
   lodgingScore: z.number().optional(),
   scoreBreakdown: lodgingScoreBreakdownSchema.optional(),
   transportEngine: z.string().optional(),

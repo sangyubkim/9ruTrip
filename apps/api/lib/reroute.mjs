@@ -286,12 +286,27 @@ export async function rerouteItinerary(body, env) {
     const h = m ? Number(m[1]) : 9;
     return Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : 9;
   })();
+  const startMinutes = (() => {
+    const m = String(trip.startTime || "09:00").match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return startHour * 60;
+    const h = Math.min(23, Math.max(0, Number(m[1])));
+    const min = Math.min(59, Math.max(0, Number(m[2])));
+    return h * 60 + min;
+  })();
+  const originLat = Number(trip.startLat);
+  const originLng = Number(trip.startLng);
   const enriched = await enrichPlacesWithTransport(merged, {
     mapsApiKey: env.googleMapsApiKey || "",
     forceRecalc: true,
     cityId,
     startHour,
+    startMinutes,
     lodgingReturnTime,
+    origin:
+      Number.isFinite(originLat) && Number.isFinite(originLng)
+        ? { lat: originLat, lng: originLng }
+        : null,
+    outboundTransportMode: trip.outboundTransportMode || "car",
   });
   const plannedBudget = enriched.reduce((s, p) => {
     const c = Math.max(0, Number(p.estimatedCost) || 0);

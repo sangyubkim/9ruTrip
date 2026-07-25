@@ -21,9 +21,19 @@ import {
   DEPARTURE_CITY_IDS,
   MAX_SELECTED_CITIES,
 } from "../data/destinations";
-import type { MvpCityId } from "../types";
+import type { MvpCityId, OutboundTransportMode } from "../types";
 import { useTheme } from "../theme/ThemeContext";
 import { radius, space } from "../theme/tokens";
+
+const OUTBOUND_TRANSPORT_OPTIONS: {
+  id: OutboundTransportMode;
+  label: string;
+}[] = [
+  { id: "car", label: "자차" },
+  { id: "train", label: "기차" },
+  { id: "bus", label: "버스" },
+  { id: "flight", label: "비행기" },
+];
 
 let Location: typeof import("expo-location") | null = null;
 try {
@@ -46,6 +56,8 @@ export type CreateTripInput = {
   startLat?: number;
   startLng?: number;
   startTime: string;
+  /** 출발지 → 첫 여행지 이동수단 */
+  outboundTransportMode: OutboundTransportMode;
   userRequest?: string;
 };
 
@@ -156,13 +168,16 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const [departureCityId, setDepartureCityId] =
     useState<DepartureCityId>("seoul");
-  const [selected, setSelected] = useState<MvpCityId[]>(["busan"]);
+  // 여행지는 기본 미선택 — 사용자가 직접 고름
+  const [selected, setSelected] = useState<MvpCityId[]>([]);
   const [nights, setNights] = useState(2);
   const [days, setDays] = useState(3);
   const [party, setParty] = useState(2);
   const [startAddress, setStartAddress] = useState("");
   const [startLat, setStartLat] = useState<number | undefined>();
   const [startLng, setStartLng] = useState<number | undefined>();
+  const [outboundTransportMode, setOutboundTransportMode] =
+    useState<OutboundTransportMode>("car");
   const [startTime, setStartTime] = useState("09:00");
   const [userRequest, setUserRequest] = useState("");
   const [locating, setLocating] = useState(false);
@@ -306,6 +321,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       startLat: startLat ?? dep?.center.lat,
       startLng: startLng ?? dep?.center.lng,
       startTime: normalizeStartTime(startTime),
+      outboundTransportMode,
       userRequest: userRequest.trim() || undefined,
     });
   };
@@ -473,6 +489,43 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
         </View>
         <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
           − / + 로 조절 · 0박 1일은 당일치기
+        </Text>
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>
+          이동수단
+        </Text>
+        <View style={styles.cityRow}>
+          {OUTBOUND_TRANSPORT_OPTIONS.map((opt) => {
+            const on = outboundTransportMode === opt.id;
+            return (
+              <Pressable
+                key={opt.id}
+                style={[
+                  styles.cityChip,
+                  {
+                    backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                    borderColor: on ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={() => setOutboundTransportMode(opt.id)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={`이동수단 ${opt.label}`}
+              >
+                <Text
+                  style={[
+                    styles.cityChipText,
+                    { color: on ? colors.chipOnFg : colors.chipFg },
+                  ]}
+                >
+                  {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+          출발지 → 첫 여행지 구간의 시간·비용(톨비/교통비) 추정에 사용
         </Text>
 
         <Text style={[styles.label, { color: colors.textSecondary }]}>

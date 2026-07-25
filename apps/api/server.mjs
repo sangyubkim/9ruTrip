@@ -224,12 +224,27 @@ async function handle(req, res) {
         const h = Number(m[1]);
         return Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : null;
       })();
+      const startMinutes = (() => {
+        const m = String(body?.startTime || "").match(/^(\d{1,2}):(\d{2})$/);
+        if (!m) return null;
+        const h = Math.min(23, Math.max(0, Number(m[1])));
+        const min = Math.min(59, Math.max(0, Number(m[2])));
+        return h * 60 + min;
+      })();
+      const originLat = Number(body?.startLat ?? body?.origin?.lat);
+      const originLng = Number(body?.startLng ?? body?.origin?.lng);
       const places = await enrichPlacesWithTransport(body?.places ?? [], {
         forceRecalc: Boolean(body?.forceRecalc),
         mapsApiKey: env.googleMapsApiKey,
         startHour: Number(body?.startHour) || startHourFromTime || 9,
+        startMinutes: startMinutes ?? undefined,
         cityId: isKnownCityId(body?.cityId) ? body.cityId : undefined,
         lodgingReturnTime: body?.lodgingReturnTime || "21:00",
+        origin:
+          Number.isFinite(originLat) && Number.isFinite(originLng)
+            ? { lat: originLat, lng: originLng }
+            : null,
+        outboundTransportMode: body?.outboundTransportMode || "car",
       });
       send(
         res,

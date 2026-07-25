@@ -1,4 +1,5 @@
 import type { ItineraryPlace, Trip } from "../types";
+import { formatMoney } from "./cost";
 
 export type NextAction = {
   place: ItineraryPlace;
@@ -52,19 +53,51 @@ const MODE_SHORT: Record<string, string> = {
   taxi: "택시",
 };
 
+const OUTBOUND_NOTE_MODE: { re: RegExp; label: string }[] = [
+  { re: /자차/, label: "자차" },
+  { re: /기차/, label: "기차" },
+  { re: /버스/, label: "버스" },
+  { re: /비행기/, label: "비행기" },
+];
+
+function outboundModeFromNotes(notes?: string): string | null {
+  if (!notes) return null;
+  for (const row of OUTBOUND_NOTE_MODE) {
+    if (row.re.test(notes)) return row.label;
+  }
+  return null;
+}
+
+function costKindLabel(place: ItineraryPlace): string | null {
+  if (place.travelFromPrevCostKind === "toll") return "톨비";
+  if (place.travelFromPrevCostKind === "fare") return "교통비";
+  const notes = String(place.notes || "");
+  if (/톨비/.test(notes)) return "톨비";
+  if (/교통비/.test(notes)) return "교통비";
+  return null;
+}
+
 /** Plan 리스트 CTA: "이동 · 비교 ›" 중심 (분·비용은 보조). */
-export function formatTravelGlance(place: ItineraryPlace): string | null {
+export function formatTravelGlance(
+  place: ItineraryPlace,
+  currency: "JPY" | "KRW" = "KRW",
+): string | null {
   const mins = place.travelFromPrevMinutes;
   const cost = place.travelFromPrevCost;
   if (mins == null && cost == null) return null;
   if ((mins ?? 0) <= 0 && (cost ?? 0) <= 0) return null;
   const detail: string[] = [];
-  const modeLabel = place.preferredTransportMode
-    ? MODE_SHORT[place.preferredTransportMode]
-    : null;
+  const modeLabel =
+    place.preferredTransportMode
+      ? MODE_SHORT[place.preferredTransportMode]
+      : outboundModeFromNotes(place.notes);
   if (modeLabel) detail.push(modeLabel);
   if (mins != null && mins > 0) detail.push(`~${mins}분`);
-  if (cost != null && cost > 0) detail.push(`~¥${cost.toLocaleString("ja-JP")}`);
+  if (cost != null && cost > 0) {
+    const kind = costKindLabel(place);
+    const money = formatMoney(cost, currency);
+    detail.push(kind ? `${kind} ~${money}` : `~${money}`);
+  }
   if (detail.length === 0) return "이동 · 비교 ›";
   return `이동 · ${detail.join(" · ")} · 비교 ›`;
 }
