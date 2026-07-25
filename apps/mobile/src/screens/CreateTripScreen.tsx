@@ -96,6 +96,14 @@ function dateSpan(startDate: string, endDate: string) {
   return { nights, days: nights + 1 };
 }
 
+function formatFestivalPeriod(startDate: string, endDate: string) {
+  const formatDate = (date: string) => {
+    const [, month, day] = date.match(/^\d{4}-(\d{2})-(\d{2})$/) ?? [];
+    return month && day ? `${Number(month)}/${Number(day)}` : date;
+  };
+  return `${formatDate(startDate)}–${formatDate(endDate)}`;
+}
+
 type StepperProps = {
   label: string;
   value: number;
@@ -733,7 +741,15 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
         onRequestClose={() => setFestivalVisible(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalSheet, { backgroundColor: colors.bgElevated }]}>
+          <View
+            style={[
+              styles.modalSheet,
+              {
+                backgroundColor: colors.bgElevated,
+                paddingBottom: Math.max(insets.bottom, 12),
+              },
+            ]}
+          >
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>여행 기간 국내 축제</Text>
               <Pressable
@@ -767,6 +783,8 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
                       {festival.name}
                     </Text>
                     <Text style={[styles.festivalMeta, { color: on ? colors.chipOnFg : colors.textMuted }]}>
+                      {formatFestivalPeriod(festival.startDate, festival.endDate)}
+                      {" · "}
                       {festival.cityName}
                       {festival.distanceKm != null ? ` · ${formatDistanceKm(festival.distanceKm)}` : ""}
                     </Text>

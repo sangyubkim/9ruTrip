@@ -35,6 +35,11 @@ function monthLabel(year: number, month: number): string {
   return `${year}년 ${month + 1}월`;
 }
 
+function todayIsoDate(): string {
+  const today = new Date();
+  return toIsoDate(today.getFullYear(), today.getMonth(), today.getDate());
+}
+
 export function DateRangeCalendar({
   startDate,
   endDate,
@@ -50,6 +55,7 @@ export function DateRangeCalendar({
   const month = visibleMonth.getMonth();
   const firstWeekday = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = todayIsoDate();
   const cells = Array.from({ length: firstWeekday + daysInMonth }, (_, index) =>
     index < firstWeekday ? undefined : index - firstWeekday + 1,
   );
@@ -71,8 +77,10 @@ export function DateRangeCalendar({
       style={[
         styles.container,
         { borderColor: colors.border, backgroundColor: colors.bgElevated },
-            disabled && { opacity: 0.45 },
+        disabled && styles.containerDisabled,
       ]}
+      pointerEvents={disabled ? "none" : "auto"}
+      accessibilityState={{ disabled }}
     >
       <View style={styles.monthHeader}>
         <Pressable
@@ -112,6 +120,7 @@ export function DateRangeCalendar({
           const isBoundary = date === startDate || date === endDate;
           const isInRange =
             Boolean(startDate && endDate) && date > startDate! && date < endDate!;
+          const isToday = date === today;
           return (
             <Pressable
               key={date}
@@ -119,21 +128,50 @@ export function DateRangeCalendar({
                 styles.day,
                 isInRange && { backgroundColor: colors.chipBg },
                 isBoundary && { backgroundColor: colors.primary },
+                isToday && !isBoundary && {
+                  borderColor: colors.primary,
+                  borderWidth: 2,
+                },
+                disabled && styles.dayDisabled,
               ]}
               onPress={() => selectDate(date)}
               disabled={disabled}
               accessibilityRole="button"
-              accessibilityLabel={`${month + 1}월 ${day}일${isBoundary ? " 선택됨" : ""}`}
+              accessibilityLabel={`${month + 1}월 ${day}일${isToday ? " 오늘" : ""}${isBoundary ? " 선택됨" : ""}`}
               accessibilityState={{ selected: isBoundary, disabled }}
             >
               <Text
                 style={[
                   styles.dayText,
-                  { color: isBoundary ? colors.primaryFg : colors.text },
+                  {
+                    color: isBoundary
+                      ? colors.primaryFg
+                      : disabled
+                        ? colors.textMuted
+                        : colors.text,
+                  },
                 ]}
               >
                 {day}
               </Text>
+              {isToday ? (
+                <View
+                  style={[
+                    styles.todayMarker,
+                    { backgroundColor: isBoundary ? colors.primaryFg : colors.primary },
+                  ]}
+                />
+              ) : null}
+              {isToday ? (
+                <Text
+                  style={[
+                    styles.todayLabel,
+                    { color: isBoundary ? colors.primaryFg : colors.primary },
+                  ]}
+                >
+                  오늘
+                </Text>
+              ) : null}
             </Pressable>
           );
         })}
@@ -149,6 +187,7 @@ const styles = StyleSheet.create({
     marginTop: space.sm,
     padding: space.sm,
   },
+  containerDisabled: { opacity: 0.32 },
   monthHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -172,6 +211,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: "transparent",
   },
-  dayText: { fontSize: 14, fontWeight: "700" },
+  dayDisabled: { backgroundColor: "transparent" },
+  dayText: { fontSize: 14, fontWeight: "700", lineHeight: 17 },
+  todayMarker: {
+    width: 4,
+    height: 4,
+    marginTop: 1,
+    borderRadius: 2,
+  },
+  todayLabel: { marginTop: 1, fontSize: 8, fontWeight: "800", lineHeight: 9 },
 });

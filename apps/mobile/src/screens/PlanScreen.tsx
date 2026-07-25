@@ -544,31 +544,19 @@ export function PlanScreen({
 
   const promptAssignDayCity = (targetCity: MvpCityId) => {
     if (cityIdForDay(trip, day) === targetCity) return;
-    const dayPlaceCount = trip.places.filter((p) => p.dayIndex === day).length;
-    const apply = (updatePlaces: boolean) => {
-      const next = assignDayToCity(trip, day, targetCity, updatePlaces);
+    const apply = () => {
+      const next = assignDayToCity(trip, day, targetCity, true);
       onChangeTrip(next);
-      flashInline(
-        `Day ${day + 1} → ${CITIES[targetCity].nameKo}` +
-          (updatePlaces ? " · 장소 cityId 갱신" : ""),
-      );
+      flashInline(`Day ${day + 1} → ${CITIES[targetCity].nameKo}`);
     };
-    if (dayPlaceCount === 0) {
-      apply(false);
-      return;
-    }
     Alert.alert(
       "Day 도시 배정",
-      `Day ${day + 1}을(를) ${CITIES[targetCity].nameKo}로 배정할까요?\n장소 ${dayPlaceCount}곳의 cityId도 맞출까요?`,
+      `Day ${day + 1}을 ${CITIES[targetCity].nameKo}로 배정할까요?\n이 Day 장소도 같이 맞춰집니다.`,
       [
         { text: "취소", style: "cancel" },
         {
-          text: "도시만 (장소 유지)",
-          onPress: () => apply(false),
-        },
-        {
-          text: "장소 cityId도 갱신",
-          onPress: () => apply(true),
+          text: "확인",
+          onPress: apply,
         },
       ],
     );
