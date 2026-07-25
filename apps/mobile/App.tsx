@@ -248,6 +248,7 @@ function AppInner() {
           outboundTransportMode: input.outboundTransportMode,
           userRequest: input.userRequest,
           mainRequest: input.userRequest,
+          preferredFestivals: input.preferredFestivals,
         });
         const inputCityIds =
           input.cityIds?.length > 0 ? input.cityIds : [input.cityId];

@@ -1030,6 +1030,23 @@ export async function generateItinerary(body, env) {
   const userRequest = String(
     body?.userRequest || body?.mainRequest || body?.extraRequest || "",
   ).trim();
+  const preferredFestivals = Array.isArray(body?.preferredFestivals)
+    ? body.preferredFestivals
+        .filter(
+          (festival) =>
+            festival &&
+            typeof festival.name === "string" &&
+            isValidCityId(festival.cityId) &&
+            isDomesticCity(festival.cityId),
+        )
+        .slice(0, 6)
+        .map((festival) => ({
+          name: String(festival.name).slice(0, 80),
+          cityId: festival.cityId,
+          startDate: String(festival.startDate || ""),
+          endDate: String(festival.endDate || ""),
+        }))
+    : [];
   const routeOutline =
     [startAddress || null, ...cityIds.map((id) => resolveCity(id).nameKo)]
       .filter(Boolean)
@@ -1136,6 +1153,9 @@ export async function generateItinerary(body, env) {
     `- 출발→첫 여행지 이동수단: ${OUTBOUND_MODE_LABEL[outboundTransportMode] || outboundTransportMode} (첫 관광 시작 시각은 이동 시간 이후)`,
     userRequest
       ? `- 사용자 요청(반드시 일정·장소 선택에 적극 반영): ${userRequest}`
+      : "",
+    preferredFestivals.length
+      ? `- 선택 축제(반드시 해당 개최 도시 일정에 실제 축제 방문 장소로 포함): ${JSON.stringify(preferredFestivals)}`
       : "",
   ]
     .filter(Boolean)

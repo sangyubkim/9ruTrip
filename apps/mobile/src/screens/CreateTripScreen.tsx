@@ -4,6 +4,7 @@ import {
   Alert,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -24,6 +25,12 @@ import {
 import type { MvpCityId, OutboundTransportMode } from "../types";
 import { useTheme } from "../theme/ThemeContext";
 import { radius, space } from "../theme/tokens";
+import {
+  fetchFestivals,
+  type Festival,
+  type PreferredFestival,
+} from "../api/trip";
+import { formatDistanceKm, haversineKm } from "../utils/geo";
 
 const OUTBOUND_TRANSPORT_OPTIONS: {
   id: OutboundTransportMode;
@@ -61,6 +68,7 @@ export type CreateTripInput = {
   /** 출발지 → 첫 여행지 이동수단 */
   outboundTransportMode: OutboundTransportMode;
   userRequest?: string;
+  preferredFestivals?: PreferredFestival[];
 };
 
 type Props = {
@@ -176,7 +184,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const [departureCityId, setDepartureCityId] =
-    useState<DepartureCityId>("seoul");
+    useState<DepartureCityId | undefined>();
   // 여행지는 기본 미선택 — 사용자가 직접 고름
   const [selected, setSelected] = useState<MvpCityId[]>([]);
   const [nights, setNights] = useState(2);
@@ -193,6 +201,10 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const [userRequest, setUserRequest] = useState("");
   const [locating, setLocating] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [festivals, setFestivals] = useState<Festival[]>([]);
+  const [selectedFestivals, setSelectedFestivals] = useState<Festival[]>([]);
+  const [festivalVisible, setFestivalVisible] = useState(false);
+  const [festivalLoading, setFestivalLoading] = useState(false);
 
   useEffect(() => {
     const showEvt =
@@ -249,6 +261,81 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       const span = dateSpan(nextStartDate, nextEndDate);
       setNights(span.nights);
       setDays(span.days);
+    }
+  };
+
+  const locationReady = Boolean(
+    departureCityId || startAddress.trim() || (startLat != null && startLng != null),
+  );
+  const datesReady = Boolean(startDate && endDate);
+
+  const applyCitySelection = (nextIds: MvpCityId[], onCancel?: () => void) => {
+    const added = nextIds.find((id) => !selected.includes(id));
+    if (!added) {
+      setSelected(nextIds);
+      return;
+    }
+    if (selected.length >= MAX_SELECTED_CITIES) {
+      Alert.alert("여행지 제한", `여행지는 최대 ${MAX_SELECTED_CITIES}곳까지 선택할 수 있습니다.`);
+      onCancel?.();
+      return;
+    }
+    const candidate = CITIES[added]?.center;
+    const farCity = candidate
+      ? selected.find((id) => {
+          const existing = CITIES[id]?.center;
+          return existing && haversineKm(candidate, existing) > 100;
+        })
+      : undefined;
+    if (!farCity) {
+      setSelected(nextIds);
+      return;
+    }
+    Alert.alert(
+      "먼 거리 여행지",
+      "선택한 도시가 기존 여행지와 100km 이상 떨어져 있습니다. 그래도 추가할까요?",
+      [
+        { text: "취소", style: "cancel", onPress: onCancel },
+        { text: "추가", onPress: () => setSelected(nextIds) },
+      ],
+    );
+  };
+
+  const loadFestivals = async () => {
+    if (!startDate || !endDate) return;
+    setFestivalLoading(true);
+    try {
+      setFestivals(
+        await fetchFestivals({
+          startDate,
+          endDate,
+          lat: startLat,
+          lng: startLng,
+          cityId: departureCityId,
+        }),
+      );
+      setFestivalVisible(true);
+    } catch (error) {
+      Alert.alert(
+        "축제 조회 실패",
+        error instanceof Error ? error.message : "축제 목록을 불러오지 못했습니다.",
+      );
+    } finally {
+      setFestivalLoading(false);
+    }
+  };
+
+  const toggleFestival = (festival: Festival) => {
+    const exists = selectedFestivals.some((item) => item.id === festival.id);
+    if (exists) {
+      setSelectedFestivals((items) => items.filter((item) => item.id !== festival.id));
+      return;
+    }
+    setSelectedFestivals((items) => [...items, festival]);
+    if (!selected.includes(festival.cityId)) {
+      applyCitySelection([...selected, festival.cityId], () => {
+        setSelectedFestivals((items) => items.filter((item) => item.id !== festival.id));
+      });
     }
   };
 
@@ -315,15 +402,19 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       Alert.alert("여행 날짜 필요", "출발일과 복귀일을 모두 선택해 주세요.");
       return;
     }
+    if (!locationReady) {
+      Alert.alert("출발지 필요", "출발 도시, 상세 주소 또는 현재 위치를 입력해 주세요.");
+      return;
+    }
     const { nights: n, days: d } = dateSpan(startDate, endDate);
     const p = clamp(party, 1, 12);
     const cityIds = selected;
-    const dep = CITIES[departureCityId];
+    const dep = CITIES[departureCityId ?? "seoul"];
     const addr = startAddress.trim();
     onSubmit({
       cityId: cityIds[0],
       cityIds,
-      departureCityId,
+      departureCityId: departureCityId ?? "seoul",
       nights: n,
       days: d,
       startDate,
@@ -335,6 +426,15 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       startTime: normalizeStartTime(startTime),
       outboundTransportMode,
       userRequest: userRequest.trim() || undefined,
+      preferredFestivals: selectedFestivals.map(
+        ({ id, name, cityId, startDate: festivalStartDate, endDate: festivalEndDate }) => ({
+          id,
+          name,
+          cityId,
+          startDate: festivalStartDate || startDate,
+          endDate: festivalEndDate || endDate,
+        }),
+      ),
     });
   };
 
@@ -437,7 +537,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
             setStartLng(undefined);
           }}
           onFocus={scrollFocusedIntoView}
-          placeholder={`예: ${CITIES[departureCityId].nameKo}시 …`}
+          placeholder={`예: ${CITIES[departureCityId ?? "seoul"].nameKo}시 …`}
           placeholderTextColor={colors.textMuted}
           accessibilityLabel="출발지 주소"
         />
@@ -462,15 +562,6 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
         </Pressable>
 
         <Text style={[styles.label, { color: colors.textSecondary }]}>
-          여행지 (도 → 도시)
-        </Text>
-        <ProvinceCityPicker
-          selectedCityIds={selected}
-          onChangeCityIds={(ids) => setSelected(ids as MvpCityId[])}
-          maxCities={MAX_SELECTED_CITIES}
-        />
-
-        <Text style={[styles.label, { color: colors.textSecondary }]}>
           여행 날짜
         </Text>
         <DateRangeCalendar
@@ -478,12 +569,58 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
           endDate={endDate}
           onChange={changeDateRange}
           colors={stepperColors}
+          disabled={!locationReady}
         />
         <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
-          {startDate && endDate
+          {!locationReady
+            ? "출발 도시·상세 주소 또는 현재 위치를 먼저 입력해 주세요."
+            : startDate && endDate
             ? `${startDate.replaceAll("-", "/")}–${endDate.replaceAll("-", "/")} · ${nights}박 ${days}일`
             : "출발일을 선택한 뒤 복귀일을 선택해 주세요."}
         </Text>
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>
+          여행 기간 축제
+        </Text>
+        <Pressable
+          style={[
+            styles.gpsBtn,
+            { borderColor: colors.accent, backgroundColor: colors.accentMuted },
+            (!datesReady || festivalLoading) && { opacity: 0.45 },
+          ]}
+          onPress={() => void loadFestivals()}
+          disabled={!datesReady || festivalLoading}
+          accessibilityRole="button"
+          accessibilityLabel="여행 기간 축제 목록 보기"
+        >
+          {festivalLoading ? (
+            <ActivityIndicator color={colors.accent} />
+          ) : (
+            <Text style={[styles.gpsBtnText, { color: colors.accent }]}>
+              {datesReady ? "여행 기간 축제 보기" : "여행 날짜를 먼저 선택해 주세요"}
+            </Text>
+          )}
+        </Pressable>
+        {selectedFestivals.length ? (
+          <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+            선택 축제: {selectedFestivals.map((festival) => festival.name).join(" · ")}
+          </Text>
+        ) : null}
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>
+          여행지 (도 → 도시)
+        </Text>
+        <ProvinceCityPicker
+          selectedCityIds={selected}
+          onChangeCityIds={(ids) => applyCitySelection(ids as MvpCityId[])}
+          maxCities={MAX_SELECTED_CITIES}
+          disabled={!datesReady}
+        />
+        {!datesReady ? (
+          <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+            여행 날짜를 선택하면 여행지 도시를 고를 수 있습니다.
+          </Text>
+        ) : null}
 
         <View style={styles.fieldGrid}>
           <NumberStepper
@@ -589,6 +726,61 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
           </Text>
         </Pressable>
       </ScrollView>
+      <Modal
+        visible={festivalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setFestivalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.bgElevated }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>여행 기간 국내 축제</Text>
+              <Pressable
+                onPress={() => setFestivalVisible(false)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="축제 목록 닫기"
+              >
+                <Text style={[styles.closeText, { color: colors.accent }]}>닫기</Text>
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.festivalList}>
+              {festivals.length ? festivals.map((festival) => {
+                const on = selectedFestivals.some((item) => item.id === festival.id);
+                return (
+                  <Pressable
+                    key={festival.id}
+                    style={[
+                      styles.festivalItem,
+                      {
+                        borderColor: on ? colors.primary : colors.border,
+                        backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                      },
+                    ]}
+                    onPress={() => toggleFestival(festival)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: on }}
+                    accessibilityLabel={`${festival.name} 선택`}
+                  >
+                    <Text style={[styles.festivalName, { color: on ? colors.chipOnFg : colors.text }]}>
+                      {festival.name}
+                    </Text>
+                    <Text style={[styles.festivalMeta, { color: on ? colors.chipOnFg : colors.textMuted }]}>
+                      {festival.cityName}
+                      {festival.distanceKm != null ? ` · ${formatDistanceKm(festival.distanceKm)}` : ""}
+                    </Text>
+                  </Pressable>
+                );
+              }) : (
+                <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+                  선택한 기간과 겹치는 주요 국내 축제가 없습니다.
+                </Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -696,4 +888,31 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   primaryText: { fontWeight: "800", fontSize: 16 },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  modalSheet: {
+    maxHeight: "72%",
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: space.lg,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: space.md,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "800" },
+  closeText: { fontSize: 14, fontWeight: "800" },
+  festivalList: { gap: space.sm, paddingBottom: space.md },
+  festivalItem: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: space.md,
+  },
+  festivalName: { fontSize: 15, fontWeight: "800" },
+  festivalMeta: { marginTop: 4, fontSize: 13, fontWeight: "600" },
 });

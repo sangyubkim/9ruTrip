@@ -17,6 +17,7 @@ type Props = {
   endDate?: string;
   onChange: (startDate: string, endDate?: string) => void;
   colors: Colors;
+  disabled?: boolean;
 };
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -39,6 +40,7 @@ export function DateRangeCalendar({
   endDate,
   onChange,
   colors,
+  disabled = false,
 }: Props) {
   const initial = startDate ? parseIsoDate(startDate) : new Date();
   const [visibleMonth, setVisibleMonth] = useState(
@@ -69,12 +71,14 @@ export function DateRangeCalendar({
       style={[
         styles.container,
         { borderColor: colors.border, backgroundColor: colors.bgElevated },
+            disabled && { opacity: 0.45 },
       ]}
     >
       <View style={styles.monthHeader}>
         <Pressable
           style={[styles.monthButton, { backgroundColor: colors.chipBg }]}
           onPress={() => setVisibleMonth(new Date(year, month - 1, 1))}
+          disabled={disabled}
           accessibilityRole="button"
           accessibilityLabel="이전 달"
         >
@@ -86,6 +90,7 @@ export function DateRangeCalendar({
         <Pressable
           style={[styles.monthButton, { backgroundColor: colors.chipBg }]}
           onPress={() => setVisibleMonth(new Date(year, month + 1, 1))}
+          disabled={disabled}
           accessibilityRole="button"
           accessibilityLabel="다음 달"
         >
@@ -116,9 +121,10 @@ export function DateRangeCalendar({
                 isBoundary && { backgroundColor: colors.primary },
               ]}
               onPress={() => selectDate(date)}
+              disabled={disabled}
               accessibilityRole="button"
               accessibilityLabel={`${month + 1}월 ${day}일${isBoundary ? " 선택됨" : ""}`}
-              accessibilityState={{ selected: isBoundary }}
+              accessibilityState={{ selected: isBoundary, disabled }}
             >
               <Text
                 style={[

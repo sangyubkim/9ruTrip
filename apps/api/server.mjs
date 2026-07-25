@@ -20,6 +20,7 @@ import { isKnownCityId, listCityIds } from "./lib/cities.mjs";
 import { searchPlaces } from "./lib/places-search.mjs";
 import { enrichPlace } from "./lib/place-enrich.mjs";
 import { createDiaryStore } from "./lib/diary-store.mjs";
+import { listFestivals } from "./lib/festivals.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const diaryStore = createDiaryStore(join(__dirname, "data", "diary.json"));
@@ -171,6 +172,7 @@ async function handle(req, res) {
             "POST /trip/compare-transport",
             "POST /trip/suggest-places",
             "POST /trip/optimize-day",
+            "POST /festivals",
             "GET /diary?year=2026",
             "POST /diary/from-trip",
             "PUT /diary/:id",
@@ -222,6 +224,17 @@ async function handle(req, res) {
     if (method === "POST" && matchRoute(url, "/trip/itinerary")) {
       const body = await readBody(req);
       const result = await generateItinerary(body, env);
+      send(res, 200, result, origin);
+      return;
+    }
+
+    if (method === "POST" && matchRoute(url, "/festivals")) {
+      const body = await readBody(req);
+      if (!body?.startDate || !body?.endDate) {
+        send(res, 400, { error: "startDate와 endDate가 필요합니다." }, origin);
+        return;
+      }
+      const result = await listFestivals(body, env);
       send(res, 200, result, origin);
       return;
     }

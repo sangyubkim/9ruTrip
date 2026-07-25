@@ -38,6 +38,23 @@ export type ItineraryRequest = {
   /** 출발지 → 첫 여행지 이동수단 */
   outboundTransportMode?: OutboundTransportMode;
   userRequest?: string;
+  preferredFestivals?: PreferredFestival[];
+};
+
+export type PreferredFestival = {
+  id?: string;
+  name: string;
+  cityId: MvpCityId;
+  startDate: string;
+  endDate: string;
+};
+
+export type Festival = PreferredFestival & {
+  id: string;
+  cityName: string;
+  lat: number;
+  lng: number;
+  distanceKm?: number;
 };
 
 export type ItineraryResponse = {
@@ -68,6 +85,23 @@ export async function generateItinerary(
     throw new Error(json.error ?? `Itinerary failed: ${res.status}`);
   }
   return json;
+}
+
+export async function fetchFestivals(payload: {
+  startDate: string;
+  endDate: string;
+  lat?: number;
+  lng?: number;
+  cityId?: string;
+}): Promise<Festival[]> {
+  const res = await apiFetch("/festivals", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = await readApiJson<{ festivals?: Festival[]; error?: string }>(res);
+  if (!res.ok) throw new Error(json.error ?? `Festival fetch failed: ${res.status}`);
+  return json.festivals ?? [];
 }
 
 export type RerouteRequest = {

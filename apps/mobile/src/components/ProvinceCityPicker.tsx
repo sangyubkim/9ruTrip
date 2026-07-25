@@ -13,6 +13,7 @@ type Props = {
   selectedCityIds: string[];
   onChangeCityIds: (ids: string[]) => void;
   maxCities?: number;
+  disabled?: boolean;
 };
 
 const COLS = 4;
@@ -35,6 +36,7 @@ export function ProvinceCityPicker({
   selectedCityIds,
   onChangeCityIds,
   maxCities = 6,
+  disabled = false,
 }: Props) {
   const { colors } = useTheme();
   const initialProvinces = provincesForCities(selectedCityIds);
@@ -125,8 +127,9 @@ export function ProvinceCityPicker({
                         prov.colSpan === 2 ? styles.mapCellWide : null,
                       ]}
                       onPress={() => onProvincePress(prov.id)}
+                      disabled={disabled}
                       accessibilityRole="checkbox"
-                      accessibilityState={{ checked: on }}
+                      accessibilityState={{ checked: on, disabled }}
                       accessibilityLabel={`${prov.nameKo} 선택`}
                     >
                       <Text
@@ -164,7 +167,8 @@ export function ProvinceCityPicker({
               const meta = CITIES[cityId];
               if (!meta) return null;
               const on = selectedCityIds.includes(cityId);
-              const disabled = !on && selectedCityIds.length >= maxCities;
+              const cityDisabled =
+                disabled || (!on && selectedCityIds.length >= maxCities);
               return (
                 <Pressable
                   key={cityId}
@@ -173,13 +177,13 @@ export function ProvinceCityPicker({
                     {
                       backgroundColor: on ? colors.chipOnBg : colors.chipBg,
                       borderColor: on ? colors.primary : colors.border,
-                      opacity: disabled ? 0.45 : 1,
+                      opacity: cityDisabled ? 0.45 : 1,
                     },
                   ]}
                   onPress={() => toggleCity(cityId)}
-                  disabled={disabled}
+                  disabled={cityDisabled}
                   accessibilityRole="checkbox"
-                  accessibilityState={{ checked: on, disabled }}
+                  accessibilityState={{ checked: on, disabled: cityDisabled }}
                   accessibilityLabel={`${meta.nameKo} 선택`}
                 >
                   <Text
