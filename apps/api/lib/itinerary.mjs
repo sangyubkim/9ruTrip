@@ -6,6 +6,7 @@ import {
 import {
   buildLodgingCandidates,
   enrichPlacesWithTransport,
+  findLodgingCatalogEntry,
   lodgingRecommendTip,
   lodgingScoreBreakdown,
   normalizeOutboundTransportMode,
@@ -565,19 +566,33 @@ export function ensureOvernightHotels(
       .map((p) => Number(p.order) || 0);
     const nextOrder = dayOrders.length ? Math.max(...dayOrders) + 1 : 0;
 
+    const perNight = perNightCost(preferred);
+    const party = Math.max(1, Number(partySize) || 1);
     list.push({
       id: uid("hotel"),
       name: preferred.name,
       category: "hotel",
       lat: preferred.lat,
       lng: preferred.lng,
-      estimatedCost: perNightCost(preferred),
+      estimatedCost: perNight,
       notes: preferred.notes || "숙소 복귀",
       dayIndex: d,
       order: nextOrder,
       cityId: cid,
       lodgingScore: preferred.lodgingScore,
       scoreBreakdown: preferred.scoreBreakdown,
+      breakfastIncluded:
+        typeof preferred.breakfastIncluded === "boolean"
+          ? preferred.breakfastIncluded
+          : undefined,
+      breakfastPricePerPerson:
+        Number(preferred.breakfastPricePerPerson) > 0
+          ? Number(preferred.breakfastPricePerPerson)
+          : undefined,
+      pricePerPerson:
+        Number(preferred.pricePerPerson) > 0
+          ? Math.round(Number(preferred.pricePerPerson))
+          : Math.round(perNight / party),
     });
   }
 
@@ -953,6 +968,16 @@ function normalizePlaces(rawPlaces, { days, partySize, center }) {
         Number(p.lodgingScore) > 0 ? Number(p.lodgingScore) : undefined,
       scoreBreakdown: p.scoreBreakdown ?? undefined,
       cityId: isValidCityId(p.cityId) ? p.cityId : undefined,
+      breakfastIncluded:
+        typeof p.breakfastIncluded === "boolean"
+          ? p.breakfastIncluded
+          : undefined,
+      breakfastPricePerPerson:
+        Number(p.breakfastPricePerPerson) > 0
+          ? Number(p.breakfastPricePerPerson)
+          : undefined,
+      pricePerPerson:
+        Number(p.pricePerPerson) > 0 ? Number(p.pricePerPerson) : undefined,
     };
   });
 }
@@ -1035,11 +1060,15 @@ export async function generateItinerary(body, env) {
       cities,
       partySize,
     });
+    const withBreakfast = applyHotelBreakfastMeta(chained, {
+      cityId: base.cityId || city.id,
+      partySize,
+    });
     const originPoint =
       Number.isFinite(startLat) && Number.isFinite(startLng)
         ? { lat: startLat, lng: startLng }
         : null;
-    const enriched = await enrichPlacesWithTransport(chained, {
+    const enriched = await enrichPlacesWithTransport(withBreakfast, {
       mapsApiKey,
       forceRecalc: false,
       cityId,
@@ -1153,7 +1182,10 @@ export async function generateItinerary(body, env) {
       "estimatedCost": number,
       "notes": "팁",
       "lodgingScore": number,
-      "scoreBreakdown": { "centrality": number, "priceEstimate": number, "ratingProxy": number }
+      "scoreBreakdown": { "centrality": number, "priceEstimate": number, "ratingProxy": number },
+      "breakfastIncluded": true,
+      "breakfastPricePerPerson": number,
+      "pricePerPerson": number
     }
   ],
   "places": [
@@ -1171,7 +1203,10 @@ export async function generateItinerary(body, env) {
       "plannedTime": "HH:mm",
       "travelFromPrevMinutes": number,
       "travelFromPrevCost": number,
-      "lodgingScore": number
+      "lodgingScore": number,
+      "breakfastIncluded": true,
+      "breakfastPricePerPerson": number,
+      "pricePerPerson": number
     }
   ]
 }
@@ -1179,6 +1214,7 @@ export async function generateItinerary(body, env) {
 dayIndex는 0부터 ${days - 1}까지.
 food·attraction의 estimatedCost는 1인 가격. hotel estimatedCost는 1박 기준.
 lodgingCandidates의 estimatedCost는 ${nights}박 총액. lodgingCandidates는 Top 3~5, scoreBreakdown 포함.
+hotel·lodgingCandidates: breakfastIncluded는 조식 포함 여부(불확실하면 필드 생략). 조식 별도면 breakfastPricePerPerson(${costUnit}). pricePerPerson은 1박 숙박 인당(${partySize}명 기준).
 plannedBudget는 인원(${partySize}명) 기준 총액(맛집·관광은 1인×인원).
 plannedTime은 하루 일정 순서에 맞는 도착/시작 시각. hotel은 가능하면 저녁(숙소 복귀) 시각.
 travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0).`;
@@ -1226,26 +1262,52 @@ travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0
       if (!p.cityId || !cityIds.includes(p.cityId)) p.cityId = cityId;
     });
 
+    const party = Math.max(1, Number(partySize) || 1);
     let lodgingCandidates = Array.isArray(parsed.lodgingCandidates)
       ? parsed.lodgingCandidates
           .filter((c) => c && c.name)
-          .map((c, i) => ({
-            id: String(c.id || `lodging-cand-${i + 1}`),
-            name: String(c.name),
-            category: "hotel",
-            lat: Number(c.lat) || city.center.lat,
-            lng: Number(c.lng) || city.center.lng,
-            estimatedCost: Math.max(0, Number(c.estimatedCost) || 0),
-            notes: c.notes ? String(c.notes) : undefined,
-            dayIndex: 0,
-            order: 0,
-            lodgingScore: Number(c.lodgingScore) || 70,
-            scoreBreakdown: c.scoreBreakdown || {
-              centrality: Number(c.lodgingScore) || 70,
-              priceEstimate: 70,
-              ratingProxy: 70,
-            },
-          }))
+          .map((c, i) => {
+            const estimatedCost = Math.max(0, Number(c.estimatedCost) || 0);
+            const catalogHit = findLodgingCatalogEntry(cityId, c.name);
+            const breakfastIncluded =
+              typeof c.breakfastIncluded === "boolean"
+                ? c.breakfastIncluded
+                : typeof catalogHit?.breakfastIncluded === "boolean"
+                  ? catalogHit.breakfastIncluded
+                  : undefined;
+            const breakfastPricePerPerson =
+              Number(c.breakfastPricePerPerson) > 0
+                ? Number(c.breakfastPricePerPerson)
+                : Number(catalogHit?.breakfastPricePerPerson) > 0
+                  ? Number(catalogHit.breakfastPricePerPerson)
+                  : undefined;
+            const perNight =
+              nights > 0 ? Math.round(estimatedCost / nights) : estimatedCost;
+            const pricePerPerson =
+              Number(c.pricePerPerson) > 0
+                ? Math.round(Number(c.pricePerPerson))
+                : Math.round(perNight / party);
+            return {
+              id: String(c.id || `lodging-cand-${i + 1}`),
+              name: String(c.name),
+              category: "hotel",
+              lat: Number(c.lat) || city.center.lat,
+              lng: Number(c.lng) || city.center.lng,
+              estimatedCost,
+              notes: c.notes ? String(c.notes) : undefined,
+              dayIndex: 0,
+              order: 0,
+              lodgingScore: Number(c.lodgingScore) || 70,
+              scoreBreakdown: c.scoreBreakdown || {
+                centrality: Number(c.lodgingScore) || 70,
+                priceEstimate: 70,
+                ratingProxy: 70,
+              },
+              breakfastIncluded,
+              breakfastPricePerPerson,
+              pricePerPerson,
+            };
+          })
       : [];
 
     if (lodgingCandidates.length === 0) {
@@ -1442,22 +1504,203 @@ async function suggestViaGooglePlaces({
   });
 }
 
-/** 숙소 후보에 lodgingScore / scoreBreakdown / 추천 tip 부여 */
-function enrichHotelSuggests(places, { cityId, cityNameKo, nights = 2 }) {
+/** 이름·노트에서 조식 힌트 (확실할 때만) */
+function inferBreakfastFromText(name, notes) {
+  const t = `${name || ""} ${notes || ""}`;
+  if (/조식\s*포함|조식제공|조식\s*무료|breakfast\s*included|free\s*breakfast/i.test(t)) {
+    return { breakfastIncluded: true };
+  }
+  if (
+    /조식\s*불포함|조식\s*별도|조식\s*미제공|breakfast\s*not|no\s*breakfast|without\s*breakfast/i.test(
+      t,
+    )
+  ) {
+    return { breakfastIncluded: false };
+  }
+  return {};
+}
+
+/** 일정 hotel 장소에 조식·인당가 메타 보강 (카탈로그·힌트, 거짓 발명 금지) */
+function applyHotelBreakfastMeta(places, { cityId, partySize = 2 } = {}) {
+  const party = Math.max(1, Number(partySize) || 1);
   return (places || []).map((p) => {
+    if (!p || p.category !== "hotel") return p;
+    const cid = isValidCityId(p.cityId) ? p.cityId : cityId;
+    const catalogHit = findLodgingCatalogEntry(cid, p.name);
+    const fromText = inferBreakfastFromText(p.name, p.notes);
+    const breakfastIncluded =
+      typeof p.breakfastIncluded === "boolean"
+        ? p.breakfastIncluded
+        : typeof fromText.breakfastIncluded === "boolean"
+          ? fromText.breakfastIncluded
+          : typeof catalogHit?.breakfastIncluded === "boolean"
+            ? catalogHit.breakfastIncluded
+            : undefined;
+    const breakfastPricePerPerson =
+      Number(p.breakfastPricePerPerson) > 0
+        ? Number(p.breakfastPricePerPerson)
+        : Number(catalogHit?.breakfastPricePerPerson) > 0
+          ? Number(catalogHit.breakfastPricePerPerson)
+          : undefined;
+    const estimatedCost = Math.max(0, Number(p.estimatedCost) || 0);
+    const pricePerPerson =
+      Number(p.pricePerPerson) > 0
+        ? Math.round(Number(p.pricePerPerson))
+        : Math.round(estimatedCost / party);
+    return {
+      ...p,
+      breakfastIncluded,
+      breakfastPricePerPerson,
+      pricePerPerson,
+    };
+  });
+}
+
+/**
+ * 숙소 후보에 lodgingScore / tip + 조식·인당가 보강.
+ * Gemini 키가 있으면 breakfastIncluded / breakfastPricePerPerson / roomPricePerPerson 추정.
+ */
+async function enrichHotelSuggests(
+  places,
+  {
+    cityId,
+    cityNameKo,
+    nights = 2,
+    partySize = 2,
+    city,
+    geminiApiKey = "",
+    geminiModel,
+    llmTimeoutMs,
+  } = {},
+) {
+  const party = Math.max(1, Number(partySize) || 1);
+  const domestic = city
+    ? isDomesticCity(city.id)
+    : isDomesticCity(cityId);
+  const currency = domestic ? "KRW" : "JPY";
+  const year = new Date().getFullYear();
+
+  const scored = (places || []).map((p) => {
     if (p.category !== "hotel") return p;
     const { lodgingScore, scoreBreakdown } = lodgingScoreBreakdown(p, {
       cityId,
       nights,
     });
-    const scored = { ...p, lodgingScore, scoreBreakdown };
-    const tip = lodgingRecommendTip(scored, cityNameKo);
+    const tip = lodgingRecommendTip(
+      { ...p, lodgingScore, scoreBreakdown },
+      cityNameKo,
+    );
+    const catalogHit = findLodgingCatalogEntry(cityId, p.name);
+    const fromText = inferBreakfastFromText(p.name, p.notes);
+    const breakfastIncluded =
+      typeof p.breakfastIncluded === "boolean"
+        ? p.breakfastIncluded
+        : typeof fromText.breakfastIncluded === "boolean"
+          ? fromText.breakfastIncluded
+          : typeof catalogHit?.breakfastIncluded === "boolean"
+            ? catalogHit.breakfastIncluded
+            : undefined;
+    const breakfastPricePerPerson =
+      Number(p.breakfastPricePerPerson) > 0
+        ? Number(p.breakfastPricePerPerson)
+        : Number(catalogHit?.breakfastPricePerPerson) > 0
+          ? Number(catalogHit.breakfastPricePerPerson)
+          : undefined;
+    const estimatedCost = Math.max(0, Number(p.estimatedCost) || 0);
+    const pricePerPerson =
+      Number(p.pricePerPerson) > 0
+        ? Math.round(Number(p.pricePerPerson))
+        : Math.round(estimatedCost / party);
     return {
-      ...scored,
+      ...p,
+      lodgingScore,
+      scoreBreakdown,
       notes: tip,
       aiReason: tip,
+      breakfastIncluded,
+      breakfastPricePerPerson,
+      pricePerPerson,
     };
   });
+
+  const hotels = scored.filter((p) => p.category === "hotel");
+  if (!geminiApiKey || hotels.length === 0) return scored;
+
+  try {
+    const prompt = `당신은 ${cityNameKo || city?.nameKo || ""} 호텔 가이드입니다. ${year}년 현재 기준입니다.
+아래 숙소 각각에 대해 조식 제공 여부와 가격을 알려주세요. 확실하지 않으면 breakfastIncluded를 null로 두세요. 추측으로 true/false를 만들지 마세요.
+
+통화: ${currency} (${currency === "KRW" ? "원" : "엔"})
+인원: ${party}명
+숙소: ${JSON.stringify(
+      hotels.map((p) => ({ id: p.id, name: p.name })),
+    )}
+
+반드시 JSON만:
+{
+  "items": [
+    {
+      "id": "문자열",
+      "breakfastIncluded": true,
+      "breakfastPricePerPerson": number,
+      "roomPricePerPerson": number
+    }
+  ]
+}
+- breakfastIncluded: 요금에 조식 포함이면 true, 불포함이면 false, 모르면 null
+- breakfastPricePerPerson: 조식 별도일 때 인당 ${currency} 숫자. 포함이거나 모르면 생략
+- roomPricePerPerson: 1박 숙박 인당(${party}명 기준) ${currency} 숫자`;
+
+    const { text } = await geminiComplete({
+      apiKey: geminiApiKey,
+      model: geminiModel,
+      prompt,
+      systemHint:
+        "Hotel breakfast and per-person price estimator. Return valid JSON only. Do not invent breakfastIncluded when unsure.",
+      timeoutMs: llmTimeoutMs || 25000,
+    });
+    const parsed = parseJsonLoose(text);
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    const byId = new Map(
+      items
+        .filter((it) => it && it.id)
+        .map((it) => [String(it.id), it]),
+    );
+
+    return scored.map((p) => {
+      if (p.category !== "hotel") return p;
+      const hit = byId.get(String(p.id));
+      if (!hit) return p;
+      const breakfastIncluded =
+        hit.breakfastIncluded === true || hit.breakfastIncluded === false
+          ? hit.breakfastIncluded
+          : p.breakfastIncluded;
+      const breakfastPricePerPerson =
+        Number(hit.breakfastPricePerPerson) > 0
+          ? Number(hit.breakfastPricePerPerson)
+          : p.breakfastPricePerPerson;
+      const roomPrice =
+        Number(hit.roomPricePerPerson) > 0
+          ? Math.round(Number(hit.roomPricePerPerson))
+          : null;
+      return {
+        ...p,
+        breakfastIncluded,
+        breakfastPricePerPerson,
+        pricePerPerson: roomPrice ?? p.pricePerPerson,
+        estimatedCost:
+          roomPrice != null && !(Number(p.estimatedCost) > 0)
+            ? Math.round(roomPrice * party)
+            : p.estimatedCost,
+      };
+    });
+  } catch (err) {
+    console.warn(
+      "[suggest] enrichHotelSuggests breakfast failed:",
+      err?.message || err,
+    );
+    return scored;
+  }
 }
 
 /**
@@ -2092,10 +2335,15 @@ export async function suggestPlacesByCategory({
           });
         }
         if (category === "hotel") {
-          fromPlaces = enrichHotelSuggests(fromPlaces, {
+          fromPlaces = await enrichHotelSuggests(fromPlaces, {
             cityId: city.id,
             cityNameKo: city.nameKo,
             nights: 2,
+            partySize,
+            city,
+            geminiApiKey,
+            geminiModel,
+            llmTimeoutMs,
           });
         }
         return { places: fromPlaces, source: "places" };
@@ -2125,10 +2373,15 @@ export async function suggestPlacesByCategory({
     });
   }
   if (category === "hotel") {
-    places = enrichHotelSuggests(places, {
+    places = await enrichHotelSuggests(places, {
       cityId: city.id,
       cityNameKo: city.nameKo,
       nights: 2,
+      partySize,
+      city,
+      geminiApiKey,
+      geminiModel,
+      llmTimeoutMs,
     });
   }
   return { places, source: "static" };

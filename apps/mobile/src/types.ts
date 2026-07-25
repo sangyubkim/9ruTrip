@@ -67,6 +67,12 @@ export type LodgingCandidate = {
   notes?: string;
   lodgingScore: number;
   scoreBreakdown: LodgingScoreBreakdown;
+  /** 조식 제공 여부 (없으면 정보없음) */
+  breakfastIncluded?: boolean;
+  /** 조식 별도 시 인당 가격 */
+  breakfastPricePerPerson?: number;
+  /** 숙박 인당 가격 (없으면 estimatedCost / partySize) */
+  pricePerPerson?: number;
 };
 
 /** 등록된 도시 id (destinations 카탈로그). 하위 호환을 위해 별칭 유지 */
@@ -101,6 +107,12 @@ export type ItineraryPlace = {
   signatureFood?: string;
   reviewSummary?: string;
   aiReason?: string;
+  /** 숙소 조식 제공 여부 (없으면 정보없음) */
+  breakfastIncluded?: boolean;
+  /** 조식 별도 시 인당 가격 */
+  breakfastPricePerPerson?: number;
+  /** 숙박 인당 가격 (없으면 estimatedCost / partySize) */
+  pricePerPerson?: number;
 };
 
 export type TripCityLeg = {

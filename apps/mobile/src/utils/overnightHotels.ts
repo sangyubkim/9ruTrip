@@ -98,6 +98,18 @@ export function ensureOvernightHotelsInPlaces(
       lodgingScore: preferred.lodgingScore,
       scoreBreakdown: preferred.scoreBreakdown,
       plannedTime: returnHhmm,
+      breakfastIncluded:
+        typeof preferred.breakfastIncluded === "boolean"
+          ? preferred.breakfastIncluded
+          : undefined,
+      breakfastPricePerPerson:
+        Number(preferred.breakfastPricePerPerson) > 0
+          ? Number(preferred.breakfastPricePerPerson)
+          : undefined,
+      pricePerPerson:
+        Number(preferred.pricePerPerson) > 0
+          ? Math.round(Number(preferred.pricePerPerson))
+          : undefined,
     });
   }
 

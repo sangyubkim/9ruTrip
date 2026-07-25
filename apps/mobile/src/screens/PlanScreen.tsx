@@ -82,6 +82,9 @@ import { space } from "../theme/tokens";
 import {
   CATEGORY_LABEL,
   currencyForCity,
+  formatHotelBreakfastLabel,
+  formatHotelBreakfastPrice,
+  formatHotelPerPersonMoney,
   formatMoney,
   formatPlaceMoney,
   placeBudgetAmount,
@@ -1083,9 +1086,14 @@ export function PlanScreen({
     isActive,
   }: RenderItemParams<ItineraryPlace>) => {
     const done = (trip.completedPlaceIds ?? []).includes(item.id);
-    const travel = formatTravelGlance(item, currencyForCity(trip.cityId));
+    const currency = currencyForCity(trip.cityId);
+    const travel = formatTravelGlance(item, currency);
     const selected = selectedPlaceId === item.id;
     const swipeEnabled = !listDragging && !isActive;
+    const hotelBreakfastPrice =
+      item.category === "hotel"
+        ? formatHotelBreakfastPrice(item.breakfastPricePerPerson, currency)
+        : null;
     return (
       <ScaleDecorator>
         <Swipeable
@@ -1186,18 +1194,39 @@ export function PlanScreen({
                   {item.name}
                 </Text>
               </View>
-              <Text style={[styles.meta, { color: colors.textMutedOnCard }]}>
-                {CATEGORY_LABEL[item.category] || item.category} ·{" "}
-                {formatPlaceMoney(
-                  item.estimatedCost,
-                  item.category,
-                  currencyForCity(trip.cityId),
-                )}
-                {item.category === "hotel" && item.lodgingScore
-                  ? ` · 숙소점수 ${item.lodgingScore}`
-                  : ""}
-                {item.notes ? ` · ${item.notes}` : ""}
-              </Text>
+              {item.category === "hotel" ? (
+                <>
+                  <Text
+                    style={[styles.meta, { color: colors.textMutedOnCard }]}
+                  >
+                    숙소 · {formatHotelBreakfastLabel(item.breakfastIncluded)}
+                    {" · "}
+                    {formatHotelPerPersonMoney(item, trip.partySize, currency)}
+                    {hotelBreakfastPrice ? ` · ${hotelBreakfastPrice}` : ""}
+                    {item.lodgingScore
+                      ? ` · 숙소점수 ${item.lodgingScore}`
+                      : ""}
+                  </Text>
+                  {item.notes ? (
+                    <Text
+                      style={[styles.meta, { color: colors.textMutedOnCard }]}
+                      numberOfLines={2}
+                    >
+                      {item.notes}
+                    </Text>
+                  ) : null}
+                </>
+              ) : (
+                <Text style={[styles.meta, { color: colors.textMutedOnCard }]}>
+                  {CATEGORY_LABEL[item.category] || item.category} ·{" "}
+                  {formatPlaceMoney(
+                    item.estimatedCost,
+                    item.category,
+                    currency,
+                  )}
+                  {item.notes ? ` · ${item.notes}` : ""}
+                </Text>
+              )}
               <View style={styles.actionRow}>
                 <Pressable
                   onPress={() => openNavToPlace(item)}
@@ -2056,6 +2085,7 @@ export function PlanScreen({
           .filter((p) => p.dayIndex === day)
           .map((p) => p.name)}
         cityId={dayCityId}
+        partySize={trip.partySize}
         source={suggestSource}
         loading={suggesting}
         onConfirm={(picks) => void confirmSuggested(picks)}

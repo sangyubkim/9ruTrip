@@ -14,6 +14,9 @@ import type { ItineraryPlace, PlaceCategory } from "../types";
 import {
   CATEGORY_LABEL,
   currencyForCity,
+  formatHotelBreakfastLabel,
+  formatHotelBreakfastPrice,
+  formatHotelPerPersonMoney,
   formatMoney,
   formatPlaceMoney,
 } from "../utils/cost";
@@ -41,6 +44,8 @@ type Props = {
   /** 이미 AI 추천 경로에 들어간 장소명 (체크+AI 표시) */
   aiRouteNames?: string[];
   cityId?: string;
+  /** 숙소 인당가 계산용 */
+  partySize?: number;
   source?: string;
   loading?: boolean;
   onConfirm: (places: ItineraryPlace[]) => void;
@@ -58,6 +63,7 @@ export function PlaceSuggestModal({
   places,
   aiRouteNames = [],
   cityId = "seoul",
+  partySize = 2,
   source,
   loading,
   onConfirm,
@@ -67,6 +73,7 @@ export function PlaceSuggestModal({
   const currency = currencyForCity(cityId);
   const isHotel = category === "hotel";
   const isFood = category === "food";
+  const party = Math.max(1, Number(partySize) || 1);
   const aiSet = useMemo(
     () => new Set(aiRouteNames.map(normName)),
     [aiRouteNames],
@@ -235,6 +242,12 @@ export function PlaceSuggestModal({
                   const distKm = distanceById.get(p.id);
                   const distLabel =
                     distKm != null ? formatDistanceKm(distKm) : null;
+                  const hotelBreakfastPrice = isHotel
+                    ? formatHotelBreakfastPrice(
+                        p.breakfastPricePerPerson,
+                        currency,
+                      )
+                    : null;
                   return (
                     <Pressable
                       key={p.id}
@@ -343,8 +356,19 @@ export function PlaceSuggestModal({
                                     : "")}
                               </Text>
                             ) : null}
+                            <Text style={styles.metaStrong}>
+                              {formatHotelBreakfastLabel(p.breakfastIncluded)}
+                            </Text>
+                            <Text style={styles.metaStrong}>
+                              {formatHotelPerPersonMoney(p, party, currency)}
+                            </Text>
+                            {hotelBreakfastPrice ? (
+                              <Text style={styles.meta}>
+                                {hotelBreakfastPrice}
+                              </Text>
+                            ) : null}
                             <Text style={styles.meta}>
-                              예상 · {formatMoney(p.estimatedCost, currency)}
+                              1박 · {formatMoney(p.estimatedCost, currency)}
                             </Text>
                             <View style={styles.reasonBox}>
                               <Text style={styles.reasonTitle}>

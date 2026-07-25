@@ -116,6 +116,9 @@ export const itineraryPlaceSchema = z.object({
   signatureFood: z.string().optional(),
   reviewSummary: z.string().optional(),
   aiReason: z.string().optional(),
+  breakfastIncluded: z.boolean().optional(),
+  breakfastPricePerPerson: z.number().optional(),
+  pricePerPerson: z.number().optional(),
 });
 
 export const tripCityLegSchema = z.object({
@@ -140,6 +143,9 @@ export const lodgingCandidateSchema = z.object({
   notes: z.string().optional(),
   lodgingScore: z.number(),
   scoreBreakdown: lodgingScoreBreakdownSchema,
+  breakfastIncluded: z.boolean().optional(),
+  breakfastPricePerPerson: z.number().optional(),
+  pricePerPerson: z.number().optional(),
 });
 
 export const itineraryResponseSchema = z.object({

@@ -840,6 +840,8 @@ const TOKYO_LODGING_CATALOG = [
     lng: 139.7006,
     basePerNight: 18000,
     notes: "신주쿠역 도보권 · 추천",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 1800,
   },
   {
     name: "시부야 엑셀 호텔 도큐",
@@ -847,6 +849,8 @@ const TOKYO_LODGING_CATALOG = [
     lng: 139.7013,
     basePerNight: 26000,
     notes: "시부야역 직결 · 쇼핑·야경",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 2500,
   },
   {
     name: "호텔 메츠 도쿄역 야에스",
@@ -854,6 +858,8 @@ const TOKYO_LODGING_CATALOG = [
     lng: 139.7695,
     basePerNight: 24000,
     notes: "도쿄역·신칸센 접근",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 2000,
   },
   {
     name: "미츠이 가든 호텔 우에노",
@@ -861,6 +867,8 @@ const TOKYO_LODGING_CATALOG = [
     lng: 139.7778,
     basePerNight: 16000,
     notes: "우에노 공원·박물관 인근",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 1800,
   },
   {
     name: "리치몬드 호텔 아사쿠사",
@@ -868,6 +876,8 @@ const TOKYO_LODGING_CATALOG = [
     lng: 139.7938,
     basePerNight: 15000,
     notes: "센소지·스카이트리 접근",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 1600,
   },
   {
     name: "호텔 메츠 이케부쿠로",
@@ -875,6 +885,8 @@ const TOKYO_LODGING_CATALOG = [
     lng: 139.7115,
     basePerNight: 13000,
     notes: "JR 이케부쿠로 · 가성비",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 1500,
   },
   {
     name: "세라톤 미야코 호텔 도쿄",
@@ -882,6 +894,7 @@ const TOKYO_LODGING_CATALOG = [
     lng: 139.7372,
     basePerNight: 32000,
     notes: "시로카네다이 · 조용",
+    breakfastIncluded: true,
   },
 ];
 
@@ -892,6 +905,8 @@ const OSAKA_LODGING_CATALOG = [
     lng: 135.4988,
     basePerNight: 22000,
     notes: "오사카/우메다역 · JR 허브",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 2200,
   },
   {
     name: "스위소텔 난카이 오사카",
@@ -899,6 +914,7 @@ const OSAKA_LODGING_CATALOG = [
     lng: 135.5019,
     basePerNight: 28000,
     notes: "난바역 직결 · 도톤보리",
+    breakfastIncluded: true,
   },
   {
     name: "호텔 닛코 오사카",
@@ -906,6 +922,8 @@ const OSAKA_LODGING_CATALOG = [
     lng: 135.5012,
     basePerNight: 24000,
     notes: "신사이바시 · 쇼핑 중심",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 2800,
   },
   {
     name: "크로스 호텔 오사카",
@@ -913,6 +931,8 @@ const OSAKA_LODGING_CATALOG = [
     lng: 135.5018,
     basePerNight: 20000,
     notes: "도톤보리 도보 · 야경",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 2000,
   },
   {
     name: "신오사카 워싱턴 호텔 플라자",
@@ -920,6 +940,8 @@ const OSAKA_LODGING_CATALOG = [
     lng: 135.5002,
     basePerNight: 14000,
     notes: "신오사카 · 신칸센",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 1200,
   },
   {
     name: "호텔 아가라 신세카이",
@@ -927,6 +949,8 @@ const OSAKA_LODGING_CATALOG = [
     lng: 135.5055,
     basePerNight: 12000,
     notes: "츠텐카쿠·신세카이 · 가성비",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 1000,
   },
 ];
 
@@ -937,6 +961,7 @@ const SEOUL_LODGING_CATALOG = [
     lng: 126.9808,
     basePerNight: 180000,
     notes: "명동·을지로 · 추천",
+    breakfastIncluded: true,
   },
   {
     name: "호텔 신라 서울",
@@ -944,6 +969,7 @@ const SEOUL_LODGING_CATALOG = [
     lng: 127.0052,
     basePerNight: 170000,
     notes: "장충동 · 도심 접근",
+    breakfastIncluded: true,
   },
   {
     name: "그랜드 하얏트 서울",
@@ -951,6 +977,7 @@ const SEOUL_LODGING_CATALOG = [
     lng: 126.997,
     basePerNight: 160000,
     notes: "남산 · 전망",
+    breakfastIncluded: true,
   },
   {
     name: "글래드 여의도",
@@ -958,6 +985,8 @@ const SEOUL_LODGING_CATALOG = [
     lng: 126.9177,
     basePerNight: 110000,
     notes: "여의도 · 한강 접근",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 25000,
   },
   {
     name: "호텔 더블유 홍대",
@@ -965,6 +994,8 @@ const SEOUL_LODGING_CATALOG = [
     lng: 126.9235,
     basePerNight: 90000,
     notes: "홍대입구 · 가성비",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 15000,
   },
 ];
 
@@ -975,6 +1006,7 @@ const BUSAN_LODGING_CATALOG = [
     lng: 129.1655,
     basePerNight: 170000,
     notes: "해운대 해변 · 추천",
+    breakfastIncluded: true,
   },
   {
     name: "웨스틴 조선 부산",
@@ -982,6 +1014,7 @@ const BUSAN_LODGING_CATALOG = [
     lng: 129.1618,
     basePerNight: 160000,
     notes: "해운대 · 바다 전망",
+    breakfastIncluded: true,
   },
   {
     name: "호텔 농심",
@@ -989,6 +1022,8 @@ const BUSAN_LODGING_CATALOG = [
     lng: 129.1682,
     basePerNight: 120000,
     notes: "해운대 · 스파",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 28000,
   },
   {
     name: "아바니 센트럴 부산",
@@ -996,6 +1031,8 @@ const BUSAN_LODGING_CATALOG = [
     lng: 129.0585,
     basePerNight: 100000,
     notes: "서면 허브",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 22000,
   },
   {
     name: "토요코인 부산역",
@@ -1003,6 +1040,7 @@ const BUSAN_LODGING_CATALOG = [
     lng: 129.0414,
     basePerNight: 80000,
     notes: "부산역 · 가성비",
+    breakfastIncluded: true,
   },
 ];
 
@@ -1013,6 +1051,8 @@ const JEJU_LODGING_CATALOG = [
     lng: 126.4895,
     basePerNight: 150000,
     notes: "제주공항 · 도심 접근",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 30000,
   },
   {
     name: "롯데호텔 제주",
@@ -1020,6 +1060,7 @@ const JEJU_LODGING_CATALOG = [
     lng: 126.4108,
     basePerNight: 180000,
     notes: "중문 · 리조트",
+    breakfastIncluded: true,
   },
   {
     name: "신라호텔 제주",
@@ -1027,6 +1068,7 @@ const JEJU_LODGING_CATALOG = [
     lng: 126.4125,
     basePerNight: 170000,
     notes: "중문 관광단지",
+    breakfastIncluded: true,
   },
   {
     name: "호텔 리젠트 마린 블루",
@@ -1034,6 +1076,8 @@ const JEJU_LODGING_CATALOG = [
     lng: 126.5255,
     basePerNight: 110000,
     notes: "제주 시내 · 바다",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 20000,
   },
   {
     name: "벤티모 호텔 앤 레지던스 제주",
@@ -1041,6 +1085,8 @@ const JEJU_LODGING_CATALOG = [
     lng: 126.4928,
     basePerNight: 90000,
     notes: "연동 · 가성비",
+    breakfastIncluded: false,
+    breakfastPricePerPerson: 15000,
   },
 ];
 
@@ -1072,6 +1118,8 @@ function lodgingCatalogForCity(cityId) {
           lng,
           basePerNight: 110000,
           notes: `${nameKo} 중심 · 추천`,
+          breakfastIncluded: false,
+          breakfastPricePerPerson: 20000,
         },
         {
           name: `${nameKo} 비즈니스 호텔`,
@@ -1079,6 +1127,8 @@ function lodgingCatalogForCity(cityId) {
           lng: lng - 0.005,
           basePerNight: 90000,
           notes: `${nameKo} · 가성비`,
+          breakfastIncluded: false,
+          breakfastPricePerPerson: 15000,
         },
         {
           name: `${nameKo} 리조트·스테이`,
@@ -1086,10 +1136,33 @@ function lodgingCatalogForCity(cityId) {
           lng: lng + 0.006,
           basePerNight: 140000,
           notes: `${nameKo} · 휴식`,
+          breakfastIncluded: true,
         },
       ];
     }
   }
+}
+
+function normLodgingName(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
+/** 정적 숙소 카탈로그에서 이름 매칭 (조식 메타 보강용) */
+export function findLodgingCatalogEntry(cityId, name) {
+  const target = normLodgingName(name);
+  if (!target) return null;
+  const catalog = lodgingCatalogForCity(cityId);
+  return (
+    catalog.find((c) => normLodgingName(c.name) === target) ||
+    catalog.find((c) => {
+      const n = normLodgingName(c.name);
+      return n.includes(target) || target.includes(n);
+    }) ||
+    null
+  );
 }
 
 /** 도시별 숙소 후보 Top N (실존 호텔 좌표 기반 정적 카탈로그) */
@@ -1100,10 +1173,14 @@ export function buildLodgingCandidates({
   cityId = "seoul",
 } = {}) {
   const catalog = lodgingCatalogForCity(cityId);
+  const party = Math.max(1, Number(partySize) || 1);
 
-  const partyFactor = 1 + Math.max(0, partySize - 2) * 0.15;
+  const partyFactor = 1 + Math.max(0, party - 2) * 0.15;
   const scored = catalog.map((c, i) => {
     const estimatedCost = Math.round(c.basePerNight * nights * partyFactor);
+    const pricePerPerson = Math.round(
+      (c.basePerNight * partyFactor) / party,
+    );
     const place = {
       id: `lodging-cand-${i + 1}`,
       name: c.name,
@@ -1114,6 +1191,15 @@ export function buildLodgingCandidates({
       notes: `${nights}박 · ${c.notes}`,
       dayIndex: 0,
       order: 0,
+      breakfastIncluded:
+        typeof c.breakfastIncluded === "boolean"
+          ? c.breakfastIncluded
+          : undefined,
+      breakfastPricePerPerson:
+        Number(c.breakfastPricePerPerson) > 0
+          ? Number(c.breakfastPricePerPerson)
+          : undefined,
+      pricePerPerson,
     };
     const { lodgingScore, scoreBreakdown } = lodgingScoreBreakdown(place, {
       nights,

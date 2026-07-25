@@ -56,6 +56,47 @@ export function formatPlaceMoney(
   return formatMoney(amount, currency);
 }
 
+/** 숙소 조식 라벨 */
+export function formatHotelBreakfastLabel(
+  breakfastIncluded: boolean | undefined,
+): string {
+  if (breakfastIncluded === true) return "조식 · 포함";
+  if (breakfastIncluded === false) return "조식 · 불포함";
+  return "조식 · 정보없음";
+}
+
+/** 숙소 인당 숙박가 (pricePerPerson 우선, 없으면 estimatedCost / partySize) */
+export function hotelPricePerPerson(
+  place: Pick<ItineraryPlace, "estimatedCost" | "pricePerPerson">,
+  partySize: number,
+): number {
+  const stored = Number(place.pricePerPerson);
+  if (Number.isFinite(stored) && stored > 0) return Math.round(stored);
+  const party = Math.max(1, Number(partySize) || 1);
+  return Math.round(Math.max(0, Number(place.estimatedCost) || 0) / party);
+}
+
+/** 숙소 카드용: 인당 · N원 */
+export function formatHotelPerPersonMoney(
+  place: Pick<ItineraryPlace, "estimatedCost" | "pricePerPerson">,
+  partySize: number,
+  currency: "JPY" | "KRW" = "KRW",
+): string {
+  const amount = hotelPricePerPerson(place, partySize);
+  if (amount <= 0) return "인당 · 정보없음";
+  return `인당 · ${formatMoney(amount, currency)}`;
+}
+
+/** 조식 별도 인당가 (있을 때만) */
+export function formatHotelBreakfastPrice(
+  breakfastPricePerPerson: number | undefined,
+  currency: "JPY" | "KRW" = "KRW",
+): string | null {
+  const n = Number(breakfastPricePerPerson);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return `조식 인당 · ${formatMoney(n, currency)}`;
+}
+
 /** 총예산 합산: 맛집·관광은 1인×인원 */
 export function placeBudgetAmount(
   place: Pick<ItineraryPlace, "estimatedCost" | "category">,
