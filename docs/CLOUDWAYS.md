@@ -406,8 +406,9 @@ pm2 save
 1. 모노레포 루트 탐색 (`TRIP_API_DIR` 또는 `git_repo` 등 — start 스크립트와 동일)
 2. working tree가 dirty면 **중단** (충돌/로컬 수정 방지)
 3. `git pull --ff-only` (실패 시 명확히 exit)
-4. (선택) `--with-npm` → 루트에서 `npm install --omit=dev`
-5. `pm2 restart 9rutrip-api` (없으면 start) + `curl` 헬스체크 (`:3011/health`)
+4. 저장소의 최신 샘플로 `~/bin/pull-restart-9rutrip-api.sh` 갱신 (다음 실행부터 적용)
+5. (선택) `--with-npm` → 루트에서 `npm install --omit=dev`
+6. `pm2 restart 9rutrip-api` (없으면 start) + `curl` 헬스체크 (`:3011/health`)
 
 ### Windows에서 업로드 후 서버 실행
 

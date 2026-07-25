@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cloudways (master, no sudo): git pull + PM2 restart for 9ruTrip API.
+# Cloudways (master, no sudo): git pull + self-update + PM2 restart for 9ruTrip API.
 # Install once:
 #   mkdir -p "$HOME/bin" "$HOME/logs"
 #   cp pull-restart-9rutrip-api.sh.sample "$HOME/bin/pull-restart-9rutrip-api.sh"
@@ -128,6 +128,20 @@ if ! git pull --ff-only; then
 fi
 after_sha="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
 log "pulled OK HEAD=${before_sha} -> ${after_sha}"
+
+REPO_SAMPLE="${DIR}/docs/deploy/cloudways/pull-restart-9rutrip-api.sh.sample"
+BIN_SCRIPT="${HOME}/bin/pull-restart-9rutrip-api.sh"
+if [ -f "${REPO_SAMPLE}" ]; then
+  if cp "${REPO_SAMPLE}" "${BIN_SCRIPT}" \
+    && sed -i 's/\r$//' "${BIN_SCRIPT}" \
+    && chmod +x "${BIN_SCRIPT}"; then
+    log "updated ${BIN_SCRIPT} from repository sample (used on next run)"
+  else
+    log "WARN: could not update ${BIN_SCRIPT} from ${REPO_SAMPLE}"
+  fi
+else
+  log "WARN: repository sample not found: ${REPO_SAMPLE}"
+fi
 
 if [ "${WITH_NPM}" -eq 1 ]; then
   log "npm install --omit=dev (monorepo root)"
