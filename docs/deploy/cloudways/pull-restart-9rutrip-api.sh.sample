@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# Cloudways (master, no sudo): git pull + PM2 restart for 9ruTrip API.
+# Install once:
+#   mkdir -p "$HOME/bin" "$HOME/logs"
+#   cp pull-restart-9rutrip-api.sh.sample "$HOME/bin/pull-restart-9rutrip-api.sh"
+#   chmod +x "$HOME/bin/pull-restart-9rutrip-api.sh"
+#   # optional: export TRIP_API_DIR=/path/to/9ruTrip  (monorepo root)
+#
+# Usage:
+#   "$HOME/bin/pull-restart-9rutrip-api.sh"
+#   "$HOME/bin/pull-restart-9rutrip-api.sh" --with-npm
+#
+# Env:
+#   TRIP_API_DIR   monorepo root (default: probe common paths)
+#   TRIP_API_PORT  health check port (default: 3011)
+#   TRIP_PM2_NAME  PM2 process name (default: 9rutrip-api)
+#   TRIP_GIT_BRANCH  optional; if set, checkout/pull this branch
+
+set -u
+
+export PATH="${HOME}/node_modules/.bin:${HOME}/.npm-global/bin:${HOME}/.local/bin:${PATH}:/usr/local/bin:/usr/bin"
+
+TRIP_PM2_NAME="${TRIP_PM2_NAME:-9rutrip-api}"
+TRIP_API_PORT="${TRIP_API_PORT:-3011}"
+LOG_TAG="[pull-restart-9rutrip-api]"
+WITH_NPM=0
+
+for arg in "$@"; do
+  case "${arg}" in
+    --with-npm) WITH_NPM=1 ;;
+    -h|--help)
+      echo "Usage: $0 [--with-npm]"
+      echo "  Default: git pull --ff-only + pm2 restart + health check"
+      echo "  --with-npm: also run npm install --omit=dev at monorepo root"
+      exit 0
+      ;;
+    *)
+      echo "$(date -Iseconds 2>/dev/null || date) ${LOG_TAG} ERROR: unknown arg: ${arg}"
+      exit 2
+      ;;
+  esac
+done
+
+log() { echo "$(date -Iseconds 2>/dev/null || date) ${LOG_TAG} $*"; }
+
+resolve_trip_dir() {
+  if [ -n "${TRIP_API_DIR:-}" ] && [ -f "${TRIP_API_DIR}/apps/api/server.mjs" ]; then
+    echo "${TRIP_API_DIR}"
+    return 0
+  fi
+  local candidates=(
+    "${HOME}/9ruTrip"
+    "${HOME}/applications/sppfcbbvnq/git_repo"
+    "${HOME}/applications/sppfcbbvnq/9ruTrip"
+    "${HOME}/applications/sppfcbbvnq/public_html/9ruTrip"
+  )
+  local d
+  for d in "${candidates[@]}"; do
+    if [ -f "${d}/apps/api/server.mjs" ]; then
+      echo "${d}"
+      return 0
+    fi
+  done
+  local found
+  found="$(find "${HOME}/applications" -maxdepth 3 -type f -path '*/git_repo/apps/api/server.mjs' 2>/dev/null | head -n 1 || true)"
+  if [ -n "${found}" ]; then
+    echo "$(dirname "$(dirname "$(dirname "${found}")")")"
+    return 0
+  fi
+  return 1
+}
+
+if ! command -v git >/dev/null 2>&1; then
+  log "ERROR: git not in PATH"
+  exit 1
+fi
+if ! command -v node >/dev/null 2>&1; then
+  log "ERROR: node not in PATH (${PATH})"
+  exit 1
+fi
+if ! command -v pm2 >/dev/null 2>&1; then
+  log "ERROR: pm2 not in PATH. Install: npm install -g pm2  (user-level)"
+  exit 1
+fi
+
+DIR="$(resolve_trip_dir)" || {
+  log "ERROR: could not find apps/api/server.mjs. Set TRIP_API_DIR to monorepo root."
+  exit 1
+}
+log "using TRIP_API_DIR=${DIR}"
+cd "${DIR}" || {
+  log "ERROR: cd failed: ${DIR}"
+  exit 1
+}
+
+if [ ! -d .git ]; then
+  log "ERROR: not a git repo: ${DIR}"
+  exit 1
+fi
+
+dirty="$(git status --porcelain 2>/dev/null || true)"
+if [ -n "${dirty}" ]; then
+  log "ERROR: working tree is dirty. Commit/stash/discard on the server, then retry."
+  git status --short || true
+  exit 1
+fi
+
+if [ -n "${TRIP_GIT_BRANCH:-}" ]; then
+  log "checkout ${TRIP_GIT_BRANCH}"
+  git checkout "${TRIP_GIT_BRANCH}" || {
+    log "ERROR: git checkout ${TRIP_GIT_BRANCH} failed"
+    exit 1
+  }
+fi
+
+before_sha="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
+log "git pull --ff-only (HEAD=${before_sha})"
+if ! git pull --ff-only; then
+  log "ERROR: git pull --ff-only failed (diverged history or conflict)."
+  log "HINT: resolve on server, or reset to remote if intentional."
+  exit 1
+fi
+after_sha="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
+log "pulled OK HEAD=${before_sha} -> ${after_sha}"
+
+if [ "${WITH_NPM}" -eq 1 ]; then
+  log "npm install --omit=dev (monorepo root)"
+  if ! npm install --omit=dev; then
+    log "ERROR: npm install failed"
+    exit 1
+  fi
+fi
+
+if [ -f "${HOME}/.pm2/dump.pm2" ]; then
+  log "pm2 resurrect"
+  pm2 resurrect >/dev/null 2>&1 || true
+fi
+
+if pm2 describe "${TRIP_PM2_NAME}" >/dev/null 2>&1; then
+  log "pm2 restart ${TRIP_PM2_NAME}"
+  pm2 restart "${TRIP_PM2_NAME}" --update-env
+else
+  log "pm2 start ${TRIP_PM2_NAME} (cwd=${DIR})"
+  PORT="${TRIP_API_PORT}" NODE_ENV=production \
+    pm2 start "apps/api/server.mjs" \
+      --name "${TRIP_PM2_NAME}" \
+      --interpreter node \
+      --update-env
+fi
+
+pm2 save >/dev/null 2>&1 || true
+
+ok=0
+for i in 1 2 3 4 5 6; do
+  if curl -fsS --max-time 5 "http://127.0.0.1:${TRIP_API_PORT}/health" >/dev/null 2>&1 \
+    || curl -fsS --max-time 5 "http://127.0.0.1:${TRIP_API_PORT}/apps/api/health" >/dev/null 2>&1; then
+    ok=1
+    break
+  fi
+  sleep 2
+done
+
+if [ "${ok}" -eq 1 ]; then
+  log "health OK on :${TRIP_API_PORT}"
+  curl -sS --max-time 5 "http://127.0.0.1:${TRIP_API_PORT}/health" 2>/dev/null \
+    || curl -sS --max-time 5 "http://127.0.0.1:${TRIP_API_PORT}/apps/api/health" 2>/dev/null \
+    || true
+  echo
+  exit 0
+fi
+
+log "WARN: health check failed on :${TRIP_API_PORT} (pm2 may still be starting)"
+pm2 status "${TRIP_PM2_NAME}" || true
+exit 1

@@ -196,11 +196,20 @@ export type Trip = {
   startAddress?: string;
   startLat?: number;
   startLng?: number;
+  /** 여행/하루 시작 시각 HH:mm (기본 09:00) */
   startTime?: string;
+  /** 숙소 복귀 시각 HH:mm (기본 21:00) */
+  lodgingReturnTime?: string;
   userRequest?: string;
   createdAt: string;
   updatedAt: string;
 };
+
+/** 여행 시작 기본 시각 */
+export const DEFAULT_START_TIME = "09:00";
+
+/** 숙소 복귀 기본 시각 */
+export const DEFAULT_LODGING_RETURN_TIME = "21:00";
 
 export type CostSummary = {
   plannedTotal: number;
@@ -240,21 +249,6 @@ export function isDomesticCityId(id: unknown): boolean {
     (DESTINATION_CITIES[id]?.region === "domestic" ||
       DESTINATION_CITIES[id]?.countryId === "kr")
   );
-}
-
-export const DEFAULT_CHECKLIST_LABELS = [
-  "예약번호",
-  "여권",
-  "WiFi",
-  "미팅포인트",
-] as const;
-
-export function createDefaultChecklist(): ChecklistItem[] {
-  return DEFAULT_CHECKLIST_LABELS.map((label, i) => ({
-    id: `check-${i}-${label}`,
-    label,
-    checked: false,
-  }));
 }
 
 export function getCityMeta(cityId: MvpCityId) {

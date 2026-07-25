@@ -7,6 +7,7 @@ import {
   pathLengthKm,
 } from "../lib/optimize-day.mjs";
 import {
+  buildLodgingCandidates,
   clearDirectionsCache,
   compareLegTransport,
   directionsCacheKey,
@@ -16,6 +17,11 @@ import {
 import {
   buildFallbackItinerary,
   buildMultiCityFallbackItinerary,
+  chainDayStarts,
+  ensureOvernightHotels,
+  finalizePlaceChain,
+  isChainDeparturePlace,
+  overnightDayIndexes,
 } from "../lib/itinerary.mjs";
 
 describe("parseKoreanCardSms", () => {
@@ -202,6 +208,226 @@ describe("multi-city itinerary", () => {
     });
     assert.equal(res.cityId, "osaka");
     assert.ok(res.places.every((p) => p.cityId === "osaka"));
+  });
+
+  it("overnight days exclude last day; day-trip has none", () => {
+    assert.deepEqual(overnightDayIndexes(1, 0), []);
+    assert.deepEqual(overnightDayIndexes(2, 1), [0]);
+    assert.deepEqual(overnightDayIndexes(3, 2), [0, 1]);
+    assert.deepEqual(overnightDayIndexes(4, 2), [0, 1]);
+  });
+
+  it("fallback includes hotel on every overnight day except last", () => {
+    const res = buildFallbackItinerary({
+      nights: 2,
+      days: 3,
+      partySize: 2,
+      cityId: "seoul",
+    });
+    for (const d of [0, 1]) {
+      const dayPlaces = res.places
+        .filter((p) => p.dayIndex === d)
+        .sort((a, b) => a.order - b.order);
+      assert.ok(
+        dayPlaces.some((p) => p.category === "hotel"),
+        `expected hotel on day ${d}`,
+      );
+      assert.equal(
+        dayPlaces[dayPlaces.length - 1].category,
+        "hotel",
+        `overnight day ${d} should end with hotel`,
+      );
+    }
+    const lastDay = res.places
+      .filter((p) => p.dayIndex === 2)
+      .sort((a, b) => a.order - b.order);
+    // 마지막 날은 전날 숙소에서 출발(체인)할 수 있으나, 저녁 숙박 hotel은 없음
+    assert.ok(lastDay.length > 0);
+    assert.notEqual(
+      lastDay[lastDay.length - 1].category,
+      "hotel",
+      "last day should not end with overnight hotel",
+    );
+  });
+
+  it("adds stay hotel when day only has chain-departure hotel", () => {
+    const lod = buildLodgingCandidates({
+      nights: 2,
+      partySize: 2,
+      topN: 3,
+      cityId: "seoul",
+    });
+    const places = [
+      {
+        id: "h0",
+        name: lod[0].name,
+        category: "hotel",
+        lat: lod[0].lat,
+        lng: lod[0].lng,
+        estimatedCost: 90000,
+        notes: lod[0].notes,
+        dayIndex: 0,
+        order: 0,
+      },
+      {
+        id: "a0",
+        name: "명소A",
+        category: "attraction",
+        lat: 37.57,
+        lng: 126.98,
+        estimatedCost: 0,
+        dayIndex: 0,
+        order: 1,
+      },
+      {
+        id: "chain1",
+        name: lod[0].name,
+        category: "hotel",
+        lat: lod[0].lat,
+        lng: lod[0].lng,
+        estimatedCost: 0,
+        notes: "전날 마지막 장소 · 출발",
+        dayIndex: 1,
+        order: 0,
+      },
+      {
+        id: "a1",
+        name: "명소B",
+        category: "attraction",
+        lat: 37.56,
+        lng: 126.99,
+        estimatedCost: 0,
+        dayIndex: 1,
+        order: 1,
+      },
+      {
+        id: "a2",
+        name: "명소C",
+        category: "attraction",
+        lat: 37.55,
+        lng: 127.0,
+        estimatedCost: 0,
+        dayIndex: 2,
+        order: 0,
+      },
+    ];
+    assert.equal(isChainDeparturePlace(places[2]), true);
+    const out = finalizePlaceChain(places, {
+      days: 3,
+      nights: 2,
+      lodgingCandidates: lod,
+      preferredLodgingId: lod[0].id,
+      cityId: "seoul",
+      partySize: 2,
+    });
+    const day1 = out
+      .filter((p) => p.dayIndex === 1)
+      .sort((a, b) => a.order - b.order);
+    const stay = day1.filter(
+      (p) => p.category === "hotel" && !isChainDeparturePlace(p),
+    );
+    assert.ok(stay.length >= 1, "day1 needs a real overnight hotel");
+    assert.equal(day1[day1.length - 1].category, "hotel");
+    assert.equal(isChainDeparturePlace(day1[day1.length - 1]), false);
+  });
+
+  it("ensureOvernightHotels is idempotent and skips day-trips", () => {
+    const dayTrip = ensureOvernightHotels(
+      [
+        {
+          id: "a",
+          name: "명소",
+          category: "attraction",
+          lat: 37.5,
+          lng: 127,
+          estimatedCost: 0,
+          dayIndex: 0,
+          order: 0,
+        },
+      ],
+      { days: 1, nights: 0, cityId: "seoul" },
+    );
+    assert.equal(
+      dayTrip.filter((p) => p.category === "hotel").length,
+      0,
+    );
+
+    const once = buildFallbackItinerary({
+      nights: 2,
+      days: 3,
+      partySize: 2,
+      cityId: "busan",
+    });
+    const twice = ensureOvernightHotels(once.places, {
+      days: 3,
+      nights: 2,
+      lodgingCandidates: once.lodgingCandidates,
+      preferredLodgingId: once.preferredLodgingId,
+      cityId: "busan",
+    });
+    assert.equal(
+      twice.filter((p) => p.category === "hotel").length,
+      once.places.filter((p) => p.category === "hotel").length,
+    );
+  });
+
+  it("chains previous day last place as next day start", () => {
+    const res = buildFallbackItinerary({
+      nights: 2,
+      days: 3,
+      partySize: 2,
+      cityId: "seoul",
+    });
+    for (let d = 1; d < 3; d++) {
+      const prev = res.places
+        .filter((p) => p.dayIndex === d - 1)
+        .sort((a, b) => a.order - b.order);
+      const cur = res.places
+        .filter((p) => p.dayIndex === d)
+        .sort((a, b) => a.order - b.order);
+      assert.ok(prev.length && cur.length);
+      assert.equal(cur[0].name, prev[prev.length - 1].name);
+    }
+  });
+
+  it("chainDayStarts inserts missing link place", () => {
+    const linked = chainDayStarts([
+      {
+        id: "d0a",
+        name: "명소A",
+        category: "attraction",
+        lat: 37.5,
+        lng: 127,
+        estimatedCost: 0,
+        dayIndex: 0,
+        order: 0,
+      },
+      {
+        id: "d0h",
+        name: "호텔X",
+        category: "hotel",
+        lat: 37.51,
+        lng: 127.01,
+        estimatedCost: 100000,
+        dayIndex: 0,
+        order: 1,
+      },
+      {
+        id: "d1a",
+        name: "명소B",
+        category: "attraction",
+        lat: 37.52,
+        lng: 127.02,
+        estimatedCost: 0,
+        dayIndex: 1,
+        order: 0,
+      },
+    ]);
+    const day1 = linked
+      .filter((p) => p.dayIndex === 1)
+      .sort((a, b) => a.order - b.order);
+    assert.equal(day1[0].name, "호텔X");
+    assert.ok(/전날/.test(String(day1[0].notes || "")));
   });
 });
 

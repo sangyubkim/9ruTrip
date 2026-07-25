@@ -1,4 +1,5 @@
 import { geminiComplete, parseJsonLoose } from "./gemini.mjs";
+import { finalizePlaceChain } from "./itinerary.mjs";
 import { enrichPlacesWithTransport } from "./transport.mjs";
 import { isKnownCityId, resolveCity } from "./cities.mjs";
 
@@ -55,14 +56,30 @@ export async function rerouteItinerary(body, env) {
     Math.max(0, Number(body?.dayIndex ?? 0)),
     days - 1,
   );
-  const reason = String(body?.reason || "사용자가 동선을 벗어남").slice(0, 200);
+  const mode = String(body?.mode || "reroute") === "reflect" ? "reflect" : "reroute";
+  const reason = String(
+    body?.reason ||
+      (mode === "reflect"
+        ? "사용자 일정 반영 요청"
+        : "사용자가 동선을 벗어남"),
+  ).slice(0, 800);
   const completedIds = new Set(
     Array.isArray(body?.completedPlaceIds)
       ? body.completedPlaceIds.map(String)
       : [],
   );
 
-  const cityId = isKnownCityId(trip.cityId) ? trip.cityId : "seoul";
+  const dayLeg = Array.isArray(trip.cities)
+    ? trip.cities.find(
+        (c) =>
+          Array.isArray(c.dayIndexes) && c.dayIndexes.includes(dayIndex),
+      )
+    : null;
+  const cityId = isKnownCityId(dayLeg?.cityId)
+    ? dayLeg.cityId
+    : isKnownCityId(trip.cityId)
+      ? trip.cityId
+      : "seoul";
   const city = resolveCity(cityId);
   const domestic = city.region === "domestic" || city.countryId === "kr";
   const currency = domestic ? "KRW" : "JPY";
@@ -70,6 +87,9 @@ export async function rerouteItinerary(body, env) {
     ? `한국 ${city.nameKo}`
     : `${city.countryNameKo || city.countryId} ${city.nameKo}`;
   const hubName = domestic ? `${city.nameKo} 중심` : `${city.nameKo} 중심역`;
+  const lodgingReturnTime = String(
+    trip.lodgingReturnTime || body?.lodgingReturnTime || "21:00",
+  ).slice(0, 8);
 
   const keepPlaces = trip.places.filter(
     (p) => p.dayIndex !== dayIndex || completedIds.has(String(p.id)),
@@ -77,11 +97,16 @@ export async function rerouteItinerary(body, env) {
   const completedToday = trip.places
     .filter((p) => p.dayIndex === dayIndex && completedIds.has(String(p.id)))
     .sort((a, b) => a.order - b.order);
+  const currentDayOpen = trip.places
+    .filter((p) => p.dayIndex === dayIndex && !completedIds.has(String(p.id)))
+    .sort((a, b) => a.order - b.order);
 
   const last = completedToday[completedToday.length - 1];
   const remainingSlots = Math.max(
     2,
-    4 - completedToday.filter((p) => p.category !== "hotel").length,
+    mode === "reflect"
+      ? Math.max(currentDayOpen.length, 3)
+      : 4 - completedToday.filter((p) => p.category !== "hotel").length,
   );
 
   const fallbackNew = buildFallbackRemaining({
@@ -96,32 +121,107 @@ export async function rerouteItinerary(body, env) {
 
   let newPlaces = fallbackNew;
   let engine = "fallback";
-  let summary = `Day ${dayIndex + 1} 재루트 (폴백) · ${reason}`;
+  let summary =
+    mode === "reflect"
+      ? `Day ${dayIndex + 1} 일정 반영 (폴백) · ${reason.slice(0, 40)}`
+      : `Day ${dayIndex + 1} 재루트 (폴백) · ${reason.slice(0, 40)}`;
 
   if (env.geminiApiKey) {
     try {
-      const prompt = `당신은 ${regionLabel} 여행 재루트 플래너입니다.
+      const prompt =
+        mode === "reflect"
+          ? `당신은 ${regionLabel} 여행 일정 반영 플래너입니다.
+사용자가 입력한 요청을 최우선으로 Day ${dayIndex + 1} 일정을 다시 구성하세요.
+이미 방문 완료된 장소는 유지하고, 남은 일정만 교체합니다.
+
+조건:
+- 도시: ${city.nameKo} (${cityId})
+- 통화: ${currency}
+- partySize: ${partySize}, nights: ${nights}, days: ${days}
+- 숙소 복귀 시각: ${lodgingReturnTime} (이 시각까지 일정을 맞출 것)
+- 사용자 일정 반영 요청(최우선): ${reason}
+- 이미 완료된 장소(유지): ${JSON.stringify(
+              completedToday.map((p) => ({
+                name: p.name,
+                category: p.category,
+                lat: p.lat,
+                lng: p.lng,
+                plannedTime: p.plannedTime,
+              })),
+            )}
+- 현재 Day 남은 일정(참고·요청에 맞게 수정/교체/추가/삭제): ${JSON.stringify(
+              currentDayOpen.map((p) => ({
+                name: p.name,
+                category: p.category,
+                lat: p.lat,
+                lng: p.lng,
+                plannedTime: p.plannedTime,
+                notes: p.notes,
+              })),
+            )}
+- 시작 좌표: ${JSON.stringify(
+              last
+                ? { lat: last.lat, lng: last.lng, name: last.name }
+                : { lat: city.center.lat, lng: city.center.lng, name: hubName },
+            )}
+- 제안 장소 수 약 ${remainingSlots}곳 (±2 가능)
+- 숙소 규칙: ${
+              days > 1 && nights > 0 && dayIndex < days - 1
+                ? `이 Day는 마지막 날이 아니므로 places에 hotel 1곳을 저녁(${lodgingReturnTime}) 복귀로 포함`
+                : "마지막 날 또는 당일치기이므로 hotel을 넣지 마세요"
+            }
+- 동선이 자연스럽고 이동 시간/비용도 현실적으로 (${currency})
+- 반드시 ${city.nameKo} 및 인근 명소만 제안
+- plannedTime은 ${lodgingReturnTime} 이전으로 배치
+
+반드시 JSON만:
+{
+  "summary": "한국어 한 줄 (요청을 어떻게 반영했는지)",
+  "places": [
+    {
+      "id": "string",
+      "name": "한국어",
+      "category": "attraction|food|hotel|transport|other",
+      "lat": number,
+      "lng": number,
+      "estimatedCost": number,
+      "notes": "짧은 팁",
+      "dayIndex": ${dayIndex},
+      "order": number,
+      "plannedTime": "HH:mm",
+      "travelFromPrevMinutes": number,
+      "travelFromPrevCost": number
+    }
+  ]
+}`
+          : `당신은 ${regionLabel} 여행 재루트 플래너입니다.
 이미 방문한 장소는 유지하고, Day ${dayIndex + 1}의 남은 일정만 새로 제안하세요.
 
 조건:
 - 도시: ${city.nameKo} (${cityId})
 - 통화: ${currency}
 - partySize: ${partySize}, nights: ${nights}, days: ${days}
+- 숙소 복귀 시각: ${lodgingReturnTime}
 - 재루트 이유: ${reason}
 - 이미 완료된 장소: ${JSON.stringify(
-        completedToday.map((p) => ({
-          name: p.name,
-          lat: p.lat,
-          lng: p.lng,
-          plannedTime: p.plannedTime,
-        })),
-      )}
+              completedToday.map((p) => ({
+                name: p.name,
+                lat: p.lat,
+                lng: p.lng,
+                plannedTime: p.plannedTime,
+              })),
+            )}
 - 시작 좌표(마지막 완료지 또는 ${hubName}): ${JSON.stringify(
-        last
-          ? { lat: last.lat, lng: last.lng, name: last.name }
-          : { lat: city.center.lat, lng: city.center.lng, name: hubName },
-      )}
-- 남은 슬롯 약 ${remainingSlots}개 (hotel 제외 위주)
+              last
+                ? { lat: last.lat, lng: last.lng, name: last.name }
+                : { lat: city.center.lat, lng: city.center.lng, name: hubName },
+            )}
+- 남은 슬롯 약 ${remainingSlots}개
+- 숙소 규칙: ${
+              days > 1 && nights > 0 && dayIndex < days - 1
+                ? `이 Day는 마지막 날이 아니므로 hotel 1곳 포함(저녁 복귀)`
+                : "마지막 날 또는 당일치기이므로 hotel 제외"
+            }
 - 동선이 자연스럽고 이동 시간/비용도 현실적으로 (${currency})
 - 반드시 ${city.nameKo} 및 인근 국내 명소만 제안
 
@@ -150,7 +250,10 @@ export async function rerouteItinerary(body, env) {
         apiKey: env.geminiApiKey,
         model: env.geminiModel,
         prompt,
-        systemHint: `${city.nameKo} reroute planner. Return valid JSON only. Prefer ${currency}.`,
+        systemHint:
+          mode === "reflect"
+            ? `${city.nameKo} itinerary reflect planner. Honor user request first. Return valid JSON only. Prefer ${currency}.`
+            : `${city.nameKo} reroute planner. Return valid JSON only. Prefer ${currency}.`,
         timeoutMs: env.llmTimeoutMs,
       });
       const parsed = parseJsonLoose(text);
@@ -167,13 +270,35 @@ export async function rerouteItinerary(body, env) {
     }
   }
 
-  const merged = [...keepPlaces, ...newPlaces];
+  const merged = finalizePlaceChain([...keepPlaces, ...newPlaces], {
+    days,
+    nights,
+    lodgingCandidates: Array.isArray(trip.lodgingCandidates)
+      ? trip.lodgingCandidates
+      : [],
+    preferredLodgingId: trip.preferredLodgingId || null,
+    cityId,
+    cities: trip.cities,
+    partySize,
+  });
+  const startHour = (() => {
+    const m = String(trip.startTime || "09:00").match(/^(\d{1,2})/);
+    const h = m ? Number(m[1]) : 9;
+    return Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : 9;
+  })();
   const enriched = await enrichPlacesWithTransport(merged, {
     mapsApiKey: env.googleMapsApiKey || "",
     forceRecalc: true,
     cityId,
+    startHour,
   });
-  const plannedBudget = enriched.reduce((s, p) => s + (p.estimatedCost || 0), 0);
+  const plannedBudget = enriched.reduce((s, p) => {
+    const c = Math.max(0, Number(p.estimatedCost) || 0);
+    if (p.category === "food" || p.category === "attraction") {
+      return s + c * Math.max(1, partySize);
+    }
+    return s + c;
+  }, 0);
 
   return {
     places: enriched,
@@ -195,8 +320,8 @@ function buildFallbackRemaining({
   domestic,
 }) {
   const { lat, lng } = city.center;
-  const meal = domestic ? 15000 * partySize : 3500 * partySize;
-  const snack = domestic ? 8000 * partySize : 2000 * partySize;
+  const meal = domestic ? 15000 : 3500;
+  const snack = domestic ? 8000 : 2000;
   const pool = [
     {
       name: `${city.nameKo} 중심 산책`,

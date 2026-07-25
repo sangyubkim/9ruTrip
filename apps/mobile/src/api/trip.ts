@@ -67,6 +67,9 @@ export type RerouteRequest = {
   dayIndex: number;
   reason?: string;
   completedPlaceIds?: string[];
+  /** reflect: 사용자 일정 반영 요청으로 Day 재구성 */
+  mode?: "reroute" | "reflect";
+  lodgingReturnTime?: string;
 };
 
 export type RerouteResponse = {

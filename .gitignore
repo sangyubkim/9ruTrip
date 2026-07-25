@@ -25,6 +25,7 @@ apps/mobile/dist/
 !**/.env.example
 apps/api/.env
 apps/mobile/.env
+scripts/cloudways.deploy.env
 
 # OS & editors
 .DS_Store

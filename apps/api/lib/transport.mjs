@@ -485,14 +485,6 @@ const JEJU_HUBS = [
   { name: "airport", lat: 33.5071, lng: 126.4927, w: 0.88 },
 ];
 
-const VALID_CITY_IDS = new Set([
-  "seoul",
-  "busan",
-  "jeju",
-  "tokyo",
-  "osaka",
-]);
-
 function hubsForCity(cityId) {
   switch (cityId) {
     case "seoul":
@@ -506,14 +498,29 @@ function hubsForCity(cityId) {
       return OSAKA_HUBS;
     case "tokyo":
       return TOKYO_HUBS;
-    default:
+    default: {
+      if (isKnownCityId(cityId)) {
+        const c = resolveCity(cityId);
+        return [
+          {
+            name: "center",
+            lat: Number(c.center?.lat),
+            lng: Number(c.center?.lng),
+            w: 1,
+          },
+        ];
+      }
       return SEOUL_HUBS;
+    }
   }
 }
 
 function isDomesticCityId(cityId) {
-  if (cityId === "tokyo" || cityId === "osaka") return false;
-  return true;
+  if (!isKnownCityId(cityId)) {
+    return cityId !== "tokyo" && cityId !== "osaka";
+  }
+  const c = resolveCity(cityId);
+  return c.region === "domestic" || c.countryId === "kr";
 }
 
 /**
@@ -538,7 +545,7 @@ export function lodgingScoreBreakdown(
   place,
   { nights = 2, cityId } = {},
 ) {
-  const resolved = VALID_CITY_IDS.has(cityId)
+  const resolved = isKnownCityId(cityId)
     ? cityId
     : inferCityIdFromLat(place?.lat, place?.lng);
   const hubs = hubsForCity(resolved);
@@ -546,6 +553,7 @@ export function lodgingScoreBreakdown(
 
   let centrality = 40;
   for (const h of hubs) {
+    if (!Number.isFinite(h.lat) || !Number.isFinite(h.lng)) continue;
     const km = haversineKm(
       { lat: Number(place.lat), lng: Number(place.lng) },
       h,
@@ -578,11 +586,19 @@ export function lodgingScoreBreakdown(
     ),
   );
 
-  // 허브 근접 + 노트 키워드로 간이 평점 프록시
+  // Google 평점 우선, 없으면 허브 근접 + 노트 키워드 프록시
   const notes = String(place.notes || place.name || "").toLowerCase();
-  let ratingProxy = 70 + Math.round((centrality - 50) * 0.25);
-  if (/추천|허브|역앞|편리/.test(notes)) ratingProxy += 8;
-  if (/조용|저렴/.test(notes)) ratingProxy += 3;
+  const realRating = Number(place.rating);
+  let ratingProxy;
+  if (Number.isFinite(realRating) && realRating > 0) {
+    ratingProxy = Math.round(
+      40 + (Math.min(5, Math.max(1, realRating)) - 1) * 14.5,
+    );
+  } else {
+    ratingProxy = 70 + Math.round((centrality - 50) * 0.25);
+    if (/추천|허브|역앞|편리/.test(notes)) ratingProxy += 8;
+    if (/조용|저렴/.test(notes)) ratingProxy += 3;
+  }
   ratingProxy = Math.max(40, Math.min(98, ratingProxy));
 
   const lodgingScore = Math.round(
@@ -597,6 +613,36 @@ export function lodgingScoreBreakdown(
       ratingProxy,
     },
   };
+}
+
+/** scoreBreakdown → 짧은 추천 한 줄 (주소 대신 표시) */
+export function lodgingRecommendTip(place, cityNameKo = "") {
+  const bd = place?.scoreBreakdown;
+  const parts = [];
+  const c = Number(bd?.centrality);
+  if (c >= 75) parts.push("시내·교통 접근 좋음");
+  else if (c >= 55) parts.push("동선 이동 무난");
+  else if (Number.isFinite(c)) parts.push("한적한 위치");
+
+  const pe = Number(bd?.priceEstimate);
+  if (pe >= 75) parts.push("가격 부담 적음");
+  else if (pe < 55 && Number.isFinite(pe)) parts.push("프리미엄 가격대");
+
+  const rating = Number(place?.rating);
+  if (Number.isFinite(rating) && rating >= 4.3) parts.push("평점 우수");
+  else if (Number.isFinite(rating) && rating >= 3.8) parts.push("평점 무난");
+
+  if (parts.length) return parts.join(" · ");
+  const raw = String(place?.notes || "").trim();
+  if (raw && !looksLikeAddressNote(raw)) return raw.slice(0, 60);
+  return cityNameKo ? `${cityNameKo} 숙소 추천` : "동선·가격·평점 종합 추천";
+}
+
+function looksLikeAddressNote(text) {
+  const s = String(text || "");
+  if (s.length >= 24 && /(시|군|구|로|길|동)\s*\d*/.test(s)) return true;
+  if (/특별자치|광역시|도\s/.test(s) && s.length >= 16) return true;
+  return false;
 }
 
 /** 숙소 추천 점수 (도시 교통 허브 근접도 중심, 1–100) */

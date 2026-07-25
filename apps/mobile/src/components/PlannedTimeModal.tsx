@@ -12,6 +12,7 @@ type Props = {
   visible: boolean;
   placeName: string;
   initialTime: string;
+  title?: string;
   onSave: (hhmm: string) => void;
   onClose: () => void;
 };
@@ -31,6 +32,7 @@ export function PlannedTimeModal({
   visible,
   placeName,
   initialTime,
+  title = "예정 시각",
   onSave,
   onClose,
 }: Props) {
@@ -62,10 +64,14 @@ export function PlannedTimeModal({
     >
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.card} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.title}>예정 시각</Text>
-          <Text style={styles.sub} numberOfLines={1}>
-            {placeName}
-          </Text>
+          <Text style={styles.title}>{title}</Text>
+          {placeName ? (
+            <Text style={styles.sub} numberOfLines={1}>
+              {placeName}
+            </Text>
+          ) : (
+            <View style={{ height: 8 }} />
+          )}
           <TextInput
             style={styles.input}
             value={value}

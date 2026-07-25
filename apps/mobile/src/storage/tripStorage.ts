@@ -2,13 +2,27 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Trip } from "../types";
 import {
   buildCityLegs,
-  createDefaultChecklist,
+  DEFAULT_LODGING_RETURN_TIME,
+  DEFAULT_START_TIME,
   getCityMeta,
   MVP_CITY,
 } from "../types";
 import { isKnownCityId } from "../data/destinations";
 
 const KEY = "@9rutrip/trips";
+
+function normalizeHhmm(
+  raw: string | undefined,
+  fallback: string,
+): string {
+  const m = String(raw ?? "")
+    .trim()
+    .match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return fallback;
+  const h = Math.min(23, Math.max(0, parseInt(m[1], 10)));
+  const min = Math.min(59, Math.max(0, parseInt(m[2], 10)));
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
 
 function normalizeTrip(data: Trip): Trip {
   const cityId = isKnownCityId(data.cityId) ? data.cityId : "seoul";
@@ -44,6 +58,11 @@ function normalizeTrip(data: Trip): Trip {
     extraRequest: data.extraRequest,
     briefing: data.briefing,
     routeOutline: data.routeOutline,
+    startTime: normalizeHhmm(data.startTime, DEFAULT_START_TIME),
+    lodgingReturnTime: normalizeHhmm(
+      data.lodgingReturnTime,
+      DEFAULT_LODGING_RETURN_TIME,
+    ),
     aiRerouteEnabled: data.aiRerouteEnabled ?? true,
     guideAlarmsEnabled: data.guideAlarmsEnabled ?? true,
     completedPlaceIds: Array.isArray(data.completedPlaceIds)
@@ -62,14 +81,6 @@ function normalizeTrip(data: Trip): Trip {
       : [],
     preferredLodgingId: data.preferredLodgingId ?? null,
     mapProvider: data.mapProvider ?? getCityMeta(cityId).mapProvider,
-    checklist:
-      Array.isArray(data.checklist) && data.checklist.length > 0
-        ? data.checklist.map((c) => ({
-            id: String(c.id),
-            label: String(c.label || ""),
-            checked: Boolean(c.checked),
-          }))
-        : createDefaultChecklist(),
   };
 }
 
@@ -131,7 +142,6 @@ export async function duplicateTrip(source: Trip): Promise<Trip[]> {
     completedPlaceIds: [],
     expenses: [],
     reviews: [],
-    checklist: createDefaultChecklist(),
     createdAt: now,
     updatedAt: now,
   };
@@ -199,11 +209,11 @@ export function createEmptyTrip(input: {
     aiRerouteEnabled: true,
     guideAlarmsEnabled: true,
     completedPlaceIds: [],
-    checklist: createDefaultChecklist(),
     startAddress: input.startAddress,
     startLat: input.startLat,
     startLng: input.startLng,
-    startTime: input.startTime,
+    startTime: normalizeHhmm(input.startTime, DEFAULT_START_TIME),
+    lodgingReturnTime: DEFAULT_LODGING_RETURN_TIME,
     userRequest: input.userRequest,
     createdAt: now,
     updatedAt: now,

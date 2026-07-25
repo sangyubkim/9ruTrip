@@ -167,6 +167,8 @@ export type Trip = {
   startLng?: number;
   /** 여행 시작 시각 HH:mm (기본 09:00) */
   startTime?: string;
+  /** 숙소 복귀 시각 HH:mm (기본 21:00) */
+  lodgingReturnTime?: string;
   /** AI 경로에 반영할 주요 요청 */
   userRequest?: string;
   places: ItineraryPlace[];

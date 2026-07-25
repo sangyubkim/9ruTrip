@@ -37,6 +37,37 @@ export function formatMoney(
   return `¥${Math.round(n).toLocaleString("ja-JP")}`;
 }
 
+/** 맛집·관광은 1인 단가로 표시/책정 */
+export function isPerPersonCategory(category: string | undefined): boolean {
+  return category === "food" || category === "attraction";
+}
+
+/** 장소 카드용: 맛집·관광은 "1인 N원" */
+export function formatPlaceMoney(
+  estimatedCost: number,
+  category: string | undefined,
+  currency: "JPY" | "KRW" = "KRW",
+): string {
+  const amount = Math.max(0, Number(estimatedCost) || 0);
+  if (isPerPersonCategory(category)) {
+    if (amount <= 0) return "무료";
+    return `1인 ${formatMoney(amount, currency)}`;
+  }
+  return formatMoney(amount, currency);
+}
+
+/** 총예산 합산: 맛집·관광은 1인×인원 */
+export function placeBudgetAmount(
+  place: Pick<ItineraryPlace, "estimatedCost" | "category">,
+  partySize: number,
+): number {
+  const unit = Math.max(0, Number(place.estimatedCost) || 0);
+  if (isPerPersonCategory(place.category)) {
+    return unit * Math.max(1, Number(partySize) || 1);
+  }
+  return unit;
+}
+
 export function formatYen(n: number): string {
   return formatMoney(n, "JPY");
 }
@@ -45,14 +76,18 @@ export function buildCostSummary(trip: Trip): CostSummary {
   const byCategory: CostSummary["byCategory"] = {};
   for (const p of trip.places) {
     if (!byCategory[p.category]) byCategory[p.category] = { planned: 0, actual: 0 };
-    byCategory[p.category].planned += Number(p.estimatedCost) || 0;
+    byCategory[p.category].planned += placeBudgetAmount(p, trip.partySize);
   }
   for (const e of trip.expenses) {
     if (!byCategory[e.category]) byCategory[e.category] = { planned: 0, actual: 0 };
     byCategory[e.category].actual += Number(e.amount) || 0;
   }
+  const plannedFromPlaces = trip.places.reduce(
+    (s, p) => s + placeBudgetAmount(p, trip.partySize),
+    0,
+  );
   const plannedTotal =
-    trip.plannedBudget > 0 ? trip.plannedBudget : sumPlanned(trip.places);
+    trip.plannedBudget > 0 ? trip.plannedBudget : plannedFromPlaces;
   const actualTotal = sumActual(trip.expenses);
   return {
     plannedTotal,
@@ -65,7 +100,7 @@ export function buildCostSummary(trip: Trip): CostSummary {
 
 export const CATEGORY_LABEL: Record<string, string> = {
   attraction: "관광",
-  food: "음식",
+  food: "맛집",
   hotel: "숙소",
   transport: "교통",
   other: "기타",

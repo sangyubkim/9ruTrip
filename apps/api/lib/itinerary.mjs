@@ -6,6 +6,8 @@ import {
 import {
   buildLodgingCandidates,
   enrichPlacesWithTransport,
+  lodgingRecommendTip,
+  lodgingScoreBreakdown,
 } from "./transport.mjs";
 
 function uid(prefix) {
@@ -81,7 +83,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 35.0966,
         lng: 129.0306,
-        estimatedCost: 25000 * partySize,
+        estimatedCost: 25000,
         notes: "해산물",
         signatureFood: "회·씨앗호떡",
       },
@@ -107,7 +109,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 35.101,
         lng: 129.0305,
-        estimatedCost: 15000 * partySize,
+        estimatedCost: 15000,
         notes: "부산 먹거리",
         signatureFood: "씨앗호떡·비빔당면",
       },
@@ -120,7 +122,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 33.4581,
         lng: 126.9425,
-        estimatedCost: 5000 * partySize,
+        estimatedCost: 5000,
         notes: "일출·분화구",
         mustVisit: true,
       },
@@ -129,7 +131,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 33.512,
         lng: 126.527,
-        estimatedCost: 35000 * partySize,
+        estimatedCost: 35000,
         notes: "제주 흑돼지",
         signatureFood: "흑돼지 오겹살",
       },
@@ -155,7 +157,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 33.5126,
         lng: 126.528,
-        estimatedCost: 20000 * partySize,
+        estimatedCost: 20000,
         notes: "올레국수·감귤",
         signatureFood: "고기국수",
       },
@@ -164,7 +166,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 33.2895,
         lng: 126.3685,
-        estimatedCost: 8000 * partySize,
+        estimatedCost: 8000,
         notes: "정원·동백",
       },
     ];
@@ -176,7 +178,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 34.6873,
         lng: 135.5262,
-        estimatedCost: 600 * partySize,
+        estimatedCost: 600,
         notes: "성 공원",
       },
       {
@@ -184,7 +186,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 34.6686,
         lng: 135.5013,
-        estimatedCost: 2500 * partySize,
+        estimatedCost: 2500,
         notes: "타코야키·라멘",
       },
       {
@@ -192,7 +194,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 34.6525,
         lng: 135.5063,
-        estimatedCost: 800 * partySize,
+        estimatedCost: 800,
         notes: "레트로 거리",
       },
       {
@@ -200,7 +202,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 34.7055,
         lng: 135.4904,
-        estimatedCost: 1500 * partySize,
+        estimatedCost: 1500,
         notes: "전망대",
       },
       {
@@ -208,7 +210,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 34.6668,
         lng: 135.5061,
-        estimatedCost: 3000 * partySize,
+        estimatedCost: 3000,
         notes: "해산물",
       },
       {
@@ -236,7 +238,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 35.7115,
         lng: 139.7962,
-        estimatedCost: 1500 * partySize,
+        estimatedCost: 1500,
         notes: "길거리 음식",
       },
       {
@@ -244,7 +246,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 35.710063,
         lng: 139.8107,
-        estimatedCost: 2300 * partySize,
+        estimatedCost: 2300,
         notes: "전망대",
       },
       {
@@ -260,7 +262,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 35.6598,
         lng: 139.7004,
-        estimatedCost: 1200 * partySize,
+        estimatedCost: 1200,
         notes: "저녁 식사",
       },
       {
@@ -276,7 +278,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 35.6702,
         lng: 139.7027,
-        estimatedCost: 2000 * partySize,
+        estimatedCost: 2000,
         notes: "쇼핑·간식",
       },
       {
@@ -284,7 +286,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 35.6938,
         lng: 139.7015,
-        estimatedCost: 4000 * partySize,
+        estimatedCost: 4000,
         notes: "이자카야",
       },
       {
@@ -292,7 +294,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 35.7156,
         lng: 139.7745,
-        estimatedCost: 1000 * partySize,
+        estimatedCost: 1000,
         notes: "문화 일정",
       },
       {
@@ -300,7 +302,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 35.7023,
         lng: 139.7745,
-        estimatedCost: 3000 * partySize,
+        estimatedCost: 3000,
         notes: "서브컬처·쇼핑",
       },
       {
@@ -308,7 +310,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 35.6654,
         lng: 139.7707,
-        estimatedCost: 3500 * partySize,
+        estimatedCost: 3500,
         notes: "해산물 아침",
       },
       {
@@ -316,7 +318,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 35.6265,
         lng: 139.7825,
-        estimatedCost: 3800 * partySize,
+        estimatedCost: 3800,
         notes: "미디어아트",
       },
     ];
@@ -328,7 +330,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 37.5796,
         lng: 126.977,
-        estimatedCost: 3000 * partySize,
+        estimatedCost: 3000,
         notes: "조선 왕궁",
         mustVisit: true,
       },
@@ -337,7 +339,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 37.5701,
         lng: 126.9997,
-        estimatedCost: 15000 * partySize,
+        estimatedCost: 15000,
         notes: "빈대떡·육회",
         signatureFood: "마약김밥·육회",
       },
@@ -346,7 +348,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 37.5512,
         lng: 126.9882,
-        estimatedCost: 16000 * partySize,
+        estimatedCost: 16000,
         notes: "전망·야경",
         mustVisit: true,
       },
@@ -372,7 +374,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "attraction",
         lat: 37.5636,
         lng: 126.9869,
-        estimatedCost: 20000 * partySize,
+        estimatedCost: 20000,
         notes: "쇼핑·길거리음식",
       },
       {
@@ -388,7 +390,7 @@ function fallbackTemplates(cityId, partySize) {
         category: "food",
         lat: 37.572,
         lng: 126.9769,
-        estimatedCost: 18000 * partySize,
+        estimatedCost: 18000,
         notes: "한정식·비빔밥",
         signatureFood: "비빔밥",
       },
@@ -399,7 +401,7 @@ function fallbackTemplates(cityId, partySize) {
   const city = resolveCity(cityId);
   const { lat, lng } = city.center;
   const domestic = isDomesticCity(city.id);
-  const meal = domestic ? 15000 * partySize : 3000 * partySize;
+  const meal = domestic ? 15000 : 3000;
   return [
     {
       name: `${city.nameKo} 대표 명소`,
@@ -445,6 +447,264 @@ function fallbackTemplates(cityId, partySize) {
   ];
 }
 
+function clampInt(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(n)));
+}
+
+/**
+ * 숙박일(숙소 포함 Day) 인덱스.
+ * 당일치기(days<=1 또는 nights<=0)는 빈 배열.
+ * 그 외에는 마지막 날을 제외한 0..min(nights, days-1)-1.
+ */
+export function overnightDayIndexes(days, nights) {
+  const d = Math.max(1, Math.floor(Number(days) || 1));
+  const n = Math.max(0, Math.floor(Number(nights) || 0));
+  if (d <= 1 || n <= 0) return [];
+  const count = Math.min(n, d - 1);
+  return Array.from({ length: count }, (_, i) => i);
+}
+
+/** Day 체인으로 복사된 아침 출발 슬롯 — 저녁 숙박으로 치지 않음 */
+export function isChainDeparturePlace(p) {
+  if (!p || p.category !== "hotel") return false;
+  const notes = String(p.notes || "");
+  return /전날|연결\s*출발|출발$/.test(notes) && !(Number(p.estimatedCost) > 0);
+}
+
+function cityIdForDayFromLegs(cities, dayIndex, fallbackCityId) {
+  if (Array.isArray(cities)) {
+    const leg = cities.find(
+      (c) =>
+        Array.isArray(c?.dayIndexes) && c.dayIndexes.includes(dayIndex),
+    );
+    if (leg && isValidCityId(leg.cityId)) return leg.cityId;
+  }
+  return isValidCityId(fallbackCityId) ? fallbackCityId : "seoul";
+}
+
+/**
+ * 당일치기가 아니면 마지막 날 제외 각 Day에 hotel이 있도록 보강.
+ */
+export function ensureOvernightHotels(
+  places,
+  {
+    days,
+    nights,
+    lodgingCandidates = [],
+    preferredLodgingId = null,
+    cityId = "seoul",
+    cities,
+    partySize = 2,
+  } = {},
+) {
+  const overnight = overnightDayIndexes(days, nights);
+  const list = Array.isArray(places) ? [...places] : [];
+  if (!overnight.length) return list;
+
+  const lodgingCache = new Map();
+  const lodgingFor = (cid) => {
+    if (lodgingCache.has(cid)) return lodgingCache.get(cid);
+    let pool = (lodgingCandidates || []).filter(
+      (c) => c && (!c.cityId || c.cityId === cid),
+    );
+    if (!pool.length && lodgingCandidates?.length && cid === cityId) {
+      pool = lodgingCandidates;
+    }
+    if (!pool.length) {
+      pool = buildLodgingCandidates({
+        nights: Math.max(1, nights),
+        partySize,
+        topN: 3,
+        cityId: cid,
+      });
+    }
+    lodgingCache.set(cid, pool);
+    return pool;
+  };
+
+  const perNightCost = (cand) => {
+    const total = Math.max(0, Number(cand?.estimatedCost) || 0);
+    return nights > 0 ? Math.round(total / nights) : total;
+  };
+
+  for (const d of overnight) {
+    const hasStayHotel = list.some(
+      (p) =>
+        Number(p.dayIndex) === d &&
+        p.category === "hotel" &&
+        !isChainDeparturePlace(p),
+    );
+    if (hasStayHotel) continue;
+
+    const cid = cityIdForDayFromLegs(cities, d, cityId);
+    const pool = lodgingFor(cid);
+    const preferred =
+      pool.find((c) => c.id === preferredLodgingId) || pool[0];
+    if (!preferred) continue;
+
+    const dayOrders = list
+      .filter((p) => Number(p.dayIndex) === d)
+      .map((p) => Number(p.order) || 0);
+    const nextOrder = dayOrders.length ? Math.max(...dayOrders) + 1 : 0;
+
+    list.push({
+      id: uid("hotel"),
+      name: preferred.name,
+      category: "hotel",
+      lat: preferred.lat,
+      lng: preferred.lng,
+      estimatedCost: perNightCost(preferred),
+      notes: preferred.notes || "숙소 복귀",
+      dayIndex: d,
+      order: nextOrder,
+      cityId: cid,
+      lodgingScore: preferred.lodgingScore,
+      scoreBreakdown: preferred.scoreBreakdown,
+    });
+  }
+
+  list.sort((a, b) => a.dayIndex - b.dayIndex || a.order - b.order);
+  list.forEach((p, i) => {
+    p.order = i;
+  });
+  return list;
+}
+
+function samePlaceApprox(a, b) {
+  if (!a || !b) return false;
+  const na = String(a.name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  const nb = String(b.name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  // 이름 우선 — 숙소와 인근 명소가 좌표만으로 같다고 오인되지 않게 함
+  if (na && nb) return na === nb;
+  const dLat = Math.abs(Number(a.lat) - Number(b.lat));
+  const dLng = Math.abs(Number(a.lng) - Number(b.lng));
+  return (
+    Number.isFinite(dLat) &&
+    Number.isFinite(dLng) &&
+    dLat < 0.0008 &&
+    dLng < 0.0008
+  );
+}
+
+/**
+ * 숙박 Day의 hotel을 그날 마지막(저녁 복귀)으로 배치.
+ */
+export function placeOvernightHotelsAtDayEnd(places, { days, nights } = {}) {
+  const overnight = new Set(overnightDayIndexes(days, nights));
+  if (!overnight.size || !Array.isArray(places)) {
+    return Array.isArray(places) ? [...places] : [];
+  }
+  const byDay = new Map();
+  for (const p of places) {
+    const d = Number(p.dayIndex) || 0;
+    if (!byDay.has(d)) byDay.set(d, []);
+    byDay.get(d).push({ ...p });
+  }
+  const out = [];
+  for (const d of [...byDay.keys()].sort((a, b) => a - b)) {
+    const arr = byDay.get(d);
+    arr.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    if (overnight.has(d)) {
+      const hotels = arr.filter((p) => p.category === "hotel");
+      const rest = arr.filter((p) => p.category !== "hotel");
+      // 저녁 숙박 우선 — 체인 출발(아침) hotel은 숙박으로 쓰지 않음
+      const stayHotels = hotels.filter((p) => !isChainDeparturePlace(p));
+      const lastHotel =
+        stayHotels[stayHotels.length - 1] || hotels[hotels.length - 1];
+      const dayList = lastHotel ? [...rest, lastHotel] : rest;
+      dayList.forEach((p, i) => {
+        p.order = i;
+        out.push(p);
+      });
+    } else {
+      arr.forEach((p, i) => {
+        p.order = i;
+        out.push(p);
+      });
+    }
+  }
+  out.forEach((p, i) => {
+    p.order = i;
+  });
+  return out;
+}
+
+/**
+ * Day 체인: 전날 마지막 장소 = 다음날 시작 장소.
+ * 저녁 숙소를 옮기지 않고, 아침에 복사본을 앞에 삽입한다.
+ */
+export function chainDayStarts(places) {
+  if (!Array.isArray(places) || places.length === 0) return [];
+  const byDay = new Map();
+  for (const p of places) {
+    const d = Number(p.dayIndex) || 0;
+    if (!byDay.has(d)) byDay.set(d, []);
+    byDay.get(d).push({ ...p });
+  }
+  for (const arr of byDay.values()) {
+    arr.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }
+  const dayKeys = [...byDay.keys()].sort((a, b) => a - b);
+  for (let i = 1; i < dayKeys.length; i++) {
+    const prevList = byDay.get(dayKeys[i - 1]);
+    if (!prevList?.length) continue;
+    if (!byDay.has(dayKeys[i])) byDay.set(dayKeys[i], []);
+    const list = byDay.get(dayKeys[i]);
+    const prevLast = prevList[prevList.length - 1];
+    const first = list[0];
+    if (first && samePlaceApprox(first, prevLast)) {
+      if (!first.notes || !/전날|연결|출발/.test(String(first.notes))) {
+        first.notes = first.notes
+          ? `${first.notes} · 전날 연결 출발`
+          : "전날 마지막 장소에서 출발";
+      }
+      continue;
+    }
+
+    list.unshift({
+      ...prevLast,
+      id: uid("chain"),
+      dayIndex: dayKeys[i],
+      order: -1,
+      estimatedCost: 0,
+      notes: "전날 마지막 장소 · 출발",
+      travelFromPrevMinutes: 0,
+      travelFromPrevCost: 0,
+      transportOptions: undefined,
+      preferredTransportMode: undefined,
+    });
+  }
+
+  const out = [];
+  for (const d of dayKeys) {
+    const arr = byDay.get(d) || [];
+    arr.forEach((p, i) => {
+      p.dayIndex = d;
+      p.order = i;
+      out.push(p);
+    });
+  }
+  out.forEach((p, i) => {
+    p.order = i;
+  });
+  return out;
+}
+
+/** 숙소 보강 + Day 끝 배치 + Day 체인 */
+export function finalizePlaceChain(places, opts = {}) {
+  const withHotels = ensureOvernightHotels(places, opts);
+  const atEnd = placeOvernightHotelsAtDayEnd(withHotels, opts);
+  return chainDayStarts(atEnd);
+}
+
 /** Gemini 실패 시에도 앱이 동작하도록 폴백 일정 */
 export function buildFallbackItinerary({
   nights,
@@ -456,7 +716,7 @@ export function buildFallbackItinerary({
   const templates = fallbackTemplates(city.id, partySize);
 
   const lodgingCandidates = buildLodgingCandidates({
-    nights,
+    nights: Math.max(1, nights),
     partySize,
     topN: 5,
     cityId: city.id,
@@ -475,34 +735,24 @@ export function buildFallbackItinerary({
         ...t,
         dayIndex: day,
         order: o,
+        cityId: city.id,
       });
     }
   }
 
-  places.unshift({
-    id: preferred.id || uid("place"),
-    name: preferred.name,
-    category: "hotel",
-    lat: preferred.lat,
-    lng: preferred.lng,
-    estimatedCost: preferred.estimatedCost,
-    notes: preferred.notes,
-    dayIndex: 0,
-    order: -1,
-    lodgingScore: preferred.lodgingScore,
-    scoreBreakdown: preferred.scoreBreakdown,
-  });
-
-  places.sort((a, b) => a.dayIndex - b.dayIndex || a.order - b.order);
-  places.forEach((p, i) => {
-    p.order = i;
-    p.cityId = city.id;
+  const chained = finalizePlaceChain(places, {
+    days,
+    nights,
+    lodgingCandidates,
+    preferredLodgingId: preferred?.id,
+    cityId: city.id,
+    partySize,
   });
 
   return {
-    places,
+    places: chained,
     lodgingCandidates,
-    preferredLodgingId: preferred.id,
+    preferredLodgingId: preferred?.id || null,
     plannedBudget: 0,
     summary: `${city.nameKo} ${nights}박 ${days}일 · ${partySize}명 기본 코스 (오프라인 폴백)`,
     engine: "fallback",
@@ -585,10 +835,20 @@ export function buildMultiCityFallbackItinerary({
     p.order = i;
   });
 
+  const chained = finalizePlaceChain(allPlaces, {
+    days,
+    nights,
+    lodgingCandidates,
+    preferredLodgingId,
+    cityId: legs[0].cityId,
+    cities: legs,
+    partySize,
+  });
+
   const names = legs.map((l) => l.cityName).join(" · ");
   const primary = resolveCity(legs[0].cityId);
   return {
-    places: allPlaces,
+    places: chained,
     lodgingCandidates,
     preferredLodgingId,
     plannedBudget: 0,
@@ -605,6 +865,31 @@ export function buildTokyoFallback(opts) {
   return buildFallbackItinerary({ ...opts, cityId: "tokyo" });
 }
 
+function normalizePlaceCategory(raw) {
+  const c = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (["attraction", "food", "hotel", "transport", "other"].includes(c)) {
+    return c;
+  }
+  if (
+    c === "lodging" ||
+    c === "숙소" ||
+    c === "ホテル" ||
+    c.includes("hotel") ||
+    c.includes("숙소")
+  ) {
+    return "hotel";
+  }
+  if (c.includes("food") || c.includes("restaurant") || c.includes("맛집")) {
+    return "food";
+  }
+  if (c.includes("attraction") || c.includes("관광") || c.includes("sight")) {
+    return "attraction";
+  }
+  return "other";
+}
+
 function normalizePlaces(rawPlaces, { days, partySize, center }) {
   if (!Array.isArray(rawPlaces)) return [];
   return rawPlaces.map((p, i) => {
@@ -615,11 +900,7 @@ function normalizePlaces(rawPlaces, { days, partySize, center }) {
     return {
       id: String(p.id || uid("place")),
       name: String(p.name || `장소 ${i + 1}`),
-      category: ["attraction", "food", "hotel", "transport", "other"].includes(
-        p.category,
-      )
-        ? p.category
-        : "other",
+      category: normalizePlaceCategory(p.category),
       lat: Number(p.lat) || center.lat,
       lng: Number(p.lng) || center.lng,
       estimatedCost: Math.max(0, Number(p.estimatedCost) || 0),
@@ -644,9 +925,10 @@ function normalizePlaces(rawPlaces, { days, partySize, center }) {
 }
 
 export async function generateItinerary(body, env) {
-  const nights = Math.min(14, Math.max(1, Number(body?.nights) || 2));
-  const days = Math.min(15, Math.max(1, Number(body?.days) || nights + 1));
-  const partySize = Math.min(12, Math.max(1, Number(body?.partySize) || 2));
+  // Number(undefined)===NaN 이고 NaN??fallback 이 안 되므로 clampInt 사용
+  const nights = clampInt(body?.nights, 0, 14, 2);
+  const days = clampInt(body?.days, 1, 15, Math.max(1, nights + 1));
+  const partySize = clampInt(body?.partySize, 1, 12, 2);
   const rawCityIds = Array.isArray(body?.cityIds) ? body.cityIds : [];
   const cityIds = [
     ...new Set([body?.cityId, ...rawCityIds].filter(isValidCityId)),
@@ -684,22 +966,47 @@ export async function generateItinerary(body, env) {
       .join(" → ") || city.nameKo;
 
   const finish = async (base) => {
-    const enriched = await enrichPlacesWithTransport(base.places, {
-      mapsApiKey,
-      forceRecalc: false,
-      cityId,
-      startHour,
-    });
     const lodgingCandidates =
       Array.isArray(base.lodgingCandidates) && base.lodgingCandidates.length
         ? base.lodgingCandidates
         : buildLodgingCandidates({ nights, partySize, topN: 5, cityId });
     const preferredLodgingId =
       base.preferredLodgingId || lodgingCandidates[0]?.id || null;
+    const cities =
+      base.cities ||
+      [
+        {
+          cityId,
+          cityName: city.nameKo,
+          dayIndexes: Array.from({ length: days }, (_, i) => i),
+        },
+      ];
+    const chained = finalizePlaceChain(base.places, {
+      days,
+      nights,
+      lodgingCandidates,
+      preferredLodgingId,
+      cityId: base.cityId || city.id,
+      cities,
+      partySize,
+    });
+    const enriched = await enrichPlacesWithTransport(chained, {
+      mapsApiKey,
+      forceRecalc: false,
+      cityId,
+      startHour,
+    });
+    const partyCost = (p) => {
+      const c = Math.max(0, Number(p.estimatedCost) || 0);
+      if (p.category === "food" || p.category === "attraction") {
+        return c * Math.max(1, partySize);
+      }
+      return c;
+    };
     const plannedBudget =
       Number(base.plannedBudget) > 0
         ? Number(base.plannedBudget)
-        : enriched.reduce((s, p) => s + p.estimatedCost, 0);
+        : enriched.reduce((s, p) => s + partyCost(p), 0);
     const summary = base.summary;
     const briefing =
       String(base.briefing || summary || "").trim() ||
@@ -714,7 +1021,7 @@ export async function generateItinerary(body, env) {
       routeOutline: base.routeOutline || routeOutline,
       engine: base.engine,
       cityId: base.cityId || city.id,
-      cities: base.cities,
+      cities,
       mapProvider: city.mapProvider,
       transportEngine: mapsApiKey ? "directions+haversine" : "haversine",
     };
@@ -767,6 +1074,13 @@ export async function generateItinerary(body, env) {
 - 통화: ${currency}
 - 하루 3~5개 장소, 이동 동선이 합리적이게
 - 음식/관광/숙소 균형
+- 숙소 규칙: ${
+    days <= 1 || nights <= 0
+      ? "당일치기이므로 hotel을 넣지 마세요"
+      : `당일치기가 아니므로 마지막 날(dayIndex ${days - 1})을 제외한 dayIndex 0~${days - 2} 각 Day places에 hotel을 1곳씩 포함(저녁 숙소 복귀). 총 ${Math.min(nights, days - 1)}박`
+  }
+- Day 체인: 각 Day의 마지막 장소가 다음날 첫 장소와 같아야 합니다(보통 숙소). dayIndex N 마지막 → dayIndex N+1 첫 슬롯.
+- 하루 시작 시각 기준 약 ${startHour}시, 숙소 복귀는 저녁에 배치
 - lat/lng는 해당 도시 실제 좌표${multiHint}${startHints ? `\n${startHints}` : ""}
 
 반드시 이 JSON 스키마만 반환:
@@ -808,9 +1122,11 @@ export async function generateItinerary(body, env) {
   ]
 }
 
-dayIndex는 0부터 ${days - 1}까지. hotel은 보통 dayIndex 0에 1개, estimatedCost는 ${nights}박 총액.
-lodgingCandidates는 Top 3~5, scoreBreakdown 포함.
-plannedTime은 하루 일정 순서에 맞는 도착/시작 시각.
+dayIndex는 0부터 ${days - 1}까지.
+food·attraction의 estimatedCost는 1인 가격. hotel estimatedCost는 1박 기준.
+lodgingCandidates의 estimatedCost는 ${nights}박 총액. lodgingCandidates는 Top 3~5, scoreBreakdown 포함.
+plannedBudget는 인원(${partySize}명) 기준 총액(맛집·관광은 1인×인원).
+plannedTime은 하루 일정 순서에 맞는 도착/시작 시각. hotel은 가능하면 저녁(숙소 복귀) 시각.
 travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0).`;
 
   try {
@@ -1016,8 +1332,12 @@ async function suggestViaGooglePlaces({
           ? 120000
           : 18000
         : category === "food"
-          ? (domestic ? 15000 : 2000) * partySize
-          : (domestic ? 5000 : 1000) * partySize;
+          ? domestic
+            ? 15000
+            : 2000
+          : domestic
+            ? 5000
+            : 1000;
     if (r.price_level != null && Number.isFinite(Number(r.price_level))) {
       const lvl = Number(r.price_level);
       estimatedCost =
@@ -1027,10 +1347,10 @@ async function suggestViaGooglePlaces({
             : 10000 + lvl * 8000
           : category === "food"
             ? Math.round(
-                (domestic ? 8000 + lvl * 7000 : 800 + lvl * 1200) * partySize,
+                (domestic ? 8000 + lvl * 7000 : 800 + lvl * 1200),
               )
             : Math.round(
-                (domestic ? 2000 + lvl * 3000 : 500 + lvl * 700) * partySize,
+                (domestic ? 2000 + lvl * 3000 : 500 + lvl * 700),
               );
     }
     const rating = Number(r.rating);
@@ -1039,17 +1359,13 @@ async function suggestViaGooglePlaces({
     const reviewSummary = hasRating
       ? `평점 ${rating}${Number.isFinite(ratingsTotal) ? ` (${ratingsTotal}명)` : ""}`
       : undefined;
-    const addressNote = r.formatted_address
-      ? String(r.formatted_address).slice(0, 80)
-      : undefined;
-    const notes = [addressNote, reviewSummary].filter(Boolean).join(" · ") ||
-      "Places";
-    const types = Array.isArray(r.types) ? r.types : [];
-    const signatureFood =
-      category === "food"
-        ? String(types[0] || "").replace(/_/g, " ") ||
-          (addressNote ? undefined : notes)
-        : undefined;
+    // 숙소 notes는 주소가 아니라 추천 tip으로 채움 (모달 중복 방지)
+    const notes =
+      category === "hotel"
+        ? `${city.nameKo} 숙소`
+        : r.formatted_address
+          ? String(r.formatted_address).slice(0, 80)
+          : "Places";
     return {
       id: uid(`places-${i}`),
       name: String(r.name || "장소"),
@@ -1061,11 +1377,164 @@ async function suggestViaGooglePlaces({
       rating: hasRating ? rating : undefined,
       reviewSummary,
       mustVisit: hasRating && rating >= 4.5,
-      signatureFood: signatureFood || undefined,
+      // signatureFood는 enrichFoodMenus에서 대표 메뉴로 채움
       dayIndex: 0,
       order: 0,
+      priceLevel:
+        r.price_level != null && Number.isFinite(Number(r.price_level))
+          ? Number(r.price_level)
+          : undefined,
     };
   });
+}
+
+/** 숙소 후보에 lodgingScore / scoreBreakdown / 추천 tip 부여 */
+function enrichHotelSuggests(places, { cityId, cityNameKo, nights = 2 }) {
+  return (places || []).map((p) => {
+    if (p.category !== "hotel") return p;
+    const { lodgingScore, scoreBreakdown } = lodgingScoreBreakdown(p, {
+      cityId,
+      nights,
+    });
+    const scored = { ...p, lodgingScore, scoreBreakdown };
+    const tip = lodgingRecommendTip(scored, cityNameKo);
+    return {
+      ...scored,
+      notes: tip,
+      aiReason: tip,
+    };
+  });
+}
+
+/**
+ * 맛집 후보에 대표 메뉴 + 현재 기준 1인·총 예상 가격을 채움 (Gemini).
+ * 실패 시 price_level 기반 추정가 유지.
+ */
+async function enrichFoodMenus(
+  places,
+  {
+    city,
+    partySize = 2,
+    geminiApiKey,
+    geminiModel,
+    llmTimeoutMs,
+  } = {},
+) {
+  if (!Array.isArray(places) || places.length === 0) return places;
+  const domestic = isDomesticCity(city.id);
+  const currency = domestic ? "KRW" : "JPY";
+  const year = new Date().getFullYear();
+
+  const fallbackSignature = (name) => {
+    const n = String(name || "");
+    if (/비빔|한정식|한식/.test(n)) return "비빔밥·한정식";
+    if (/회|횟집|수산|해물|게장/.test(n)) return "모둠회·해산물";
+    if (/갈비|고기|삼겹|흑돼지|불고기/.test(n)) return "고기 구이";
+    if (/국수|면|밀면|냉면|칼국수/.test(n)) return "면 요리";
+    if (/카페|커피|디저트/.test(n)) return "시그니처 음료·디저트";
+    if (/치킨|닭/.test(n)) return "치킨";
+    if (/피자|파스타|이탈리/.test(n)) return "파스타·피자";
+    return `${city.nameKo} 대표 메뉴`;
+  };
+
+  const applyFallback = (list) =>
+    list.map((p) => {
+      if (p.category !== "food") return p;
+      const per =
+        p.priceLevel != null
+          ? domestic
+            ? 9000 + Number(p.priceLevel) * 8000
+            : 900 + Number(p.priceLevel) * 1300
+          : domestic
+            ? 15000
+            : 2000;
+      const estimatedCost =
+        Number(p.estimatedCost) > 0
+          ? Number(p.estimatedCost)
+          : Math.round(per);
+      return {
+        ...p,
+        signatureFood: p.signatureFood || fallbackSignature(p.name),
+        estimatedCost,
+      };
+    });
+
+  if (!geminiApiKey) return applyFallback(places);
+
+  try {
+    const prompt = `당신은 ${city.nameKo} 현지 맛집 가이드입니다. ${year}년 현재 가격 감각으로 답하세요.
+아래 식당 각각에 대해 대표 메뉴 1개와 1인 예상 가격을 알려주세요.
+
+통화: ${currency} (${currency === "KRW" ? "원" : "엔"})
+식당: ${JSON.stringify(
+      places
+        .filter((p) => p.category === "food")
+        .map((p) => ({ id: p.id, name: p.name })),
+    )}
+
+반드시 JSON만:
+{
+  "items": [
+    { "id": "문자열", "signatureFood": "대표 메뉴명", "pricePerPerson": number }
+  ]
+}
+pricePerPerson은 ${currency} 숫자만. 관광객 기준 현실적인 ${year}년 현지 가격.`;
+
+    const { text } = await geminiComplete({
+      apiKey: geminiApiKey,
+      model: geminiModel,
+      prompt,
+      systemHint:
+        "Korean restaurant menu and price estimator. Return valid JSON only.",
+      timeoutMs: llmTimeoutMs || 25000,
+    });
+    const parsed = parseJsonLoose(text);
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    const byId = new Map(
+      items
+        .filter((it) => it && it.id)
+        .map((it) => [
+          String(it.id),
+          {
+            signatureFood: String(it.signatureFood || "").trim(),
+            pricePerPerson: Number(it.pricePerPerson),
+          },
+        ]),
+    );
+
+    return places.map((p) => {
+      if (p.category !== "food") return p;
+      const hit = byId.get(String(p.id));
+      const pricePer =
+        hit && Number.isFinite(hit.pricePerPerson) && hit.pricePerPerson > 0
+          ? hit.pricePerPerson
+          : null;
+      const estimatedCost = pricePer
+        ? Math.round(pricePer)
+        : Number(p.estimatedCost) > 0
+          ? Number(p.estimatedCost)
+          : Math.round(domestic ? 15000 : 2000);
+      return {
+        ...p,
+        signatureFood:
+          (hit?.signatureFood &&
+          !/^(establishment|point of interest|food|restaurant)/i.test(
+            hit.signatureFood,
+          )
+            ? hit.signatureFood
+            : null) ||
+          p.signatureFood ||
+          fallbackSignature(p.name),
+        estimatedCost,
+      };
+    });
+  } catch (err) {
+    console.warn(
+      "[suggest] enrichFoodMenus failed:",
+      err?.message || err,
+    );
+    return applyFallback(places);
+  }
 }
 
 function staticSuggestPool(cityId, partySize) {
@@ -1076,7 +1545,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "food",
         lat: 35.0966,
         lng: 129.0306,
-        estimatedCost: 25000 * partySize,
+        estimatedCost: 25000,
         notes: "해산물 시장",
         signatureFood: "회·씨앗호떡",
         rating: 4.4,
@@ -1087,7 +1556,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "food",
         lat: 35.1512,
         lng: 129.0605,
-        estimatedCost: 12000 * partySize,
+        estimatedCost: 12000,
         notes: "부산 밀면",
         signatureFood: "밀면",
         rating: 4.5,
@@ -1156,7 +1625,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "food",
         lat: 33.512,
         lng: 126.527,
-        estimatedCost: 35000 * partySize,
+        estimatedCost: 35000,
         notes: "제주 흑돼지",
         signatureFood: "흑돼지 오겹살",
         rating: 4.5,
@@ -1168,7 +1637,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "food",
         lat: 33.5126,
         lng: 126.528,
-        estimatedCost: 20000 * partySize,
+        estimatedCost: 20000,
         notes: "올레국수·감귤",
         signatureFood: "고기국수",
         rating: 4.3,
@@ -1179,7 +1648,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "attraction",
         lat: 33.4581,
         lng: 126.9425,
-        estimatedCost: 5000 * partySize,
+        estimatedCost: 5000,
         notes: "UNESCO 일출",
         rating: 4.7,
         mustVisit: true,
@@ -1237,7 +1706,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "food",
         lat: 34.6555,
         lng: 135.542,
-        estimatedCost: 2000 * partySize,
+        estimatedCost: 2000,
         notes: "한식·거리음식",
       },
       {
@@ -1245,7 +1714,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "food",
         lat: 34.6668,
         lng: 135.5061,
-        estimatedCost: 3000 * partySize,
+        estimatedCost: 3000,
         notes: "해산물·아침",
       },
       {
@@ -1253,7 +1722,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "food",
         lat: 34.6687,
         lng: 135.5013,
-        estimatedCost: 800 * partySize,
+        estimatedCost: 800,
         notes: "간식",
         signatureFood: "타코야키",
       },
@@ -1262,7 +1731,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "attraction",
         lat: 34.6456,
         lng: 135.5135,
-        estimatedCost: 1800 * partySize,
+        estimatedCost: 1800,
         notes: "초고층 전망",
       },
       {
@@ -1278,7 +1747,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "attraction",
         lat: 34.6873,
         lng: 135.5262,
-        estimatedCost: 600 * partySize,
+        estimatedCost: 600,
         notes: "성·산책",
         mustVisit: true,
         rating: 4.5,
@@ -1288,7 +1757,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "attraction",
         lat: 34.7055,
         lng: 135.4904,
-        estimatedCost: 1500 * partySize,
+        estimatedCost: 1500,
         notes: "공중정원",
       },
       {
@@ -1324,7 +1793,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "food",
         lat: 35.7118,
         lng: 139.7948,
-        estimatedCost: 1800 * partySize,
+        estimatedCost: 1800,
         notes: "모노자야키",
         signatureFood: "모노자야키",
       },
@@ -1333,7 +1802,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "food",
         lat: 35.6598,
         lng: 139.7004,
-        estimatedCost: 1200 * partySize,
+        estimatedCost: 1200,
         notes: "돈코츠 라멘",
         signatureFood: "돈코츠 라멘",
       },
@@ -1342,7 +1811,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "food",
         lat: 35.645,
         lng: 139.7845,
-        estimatedCost: 4500 * partySize,
+        estimatedCost: 4500,
         notes: "회전·단품 스시",
         signatureFood: "스시",
       },
@@ -1351,7 +1820,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "food",
         lat: 35.6712,
         lng: 139.7645,
-        estimatedCost: 2200 * partySize,
+        estimatedCost: 2200,
         notes: "교자",
         signatureFood: "교자",
       },
@@ -1360,7 +1829,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "attraction",
         lat: 35.6586,
         lng: 139.7454,
-        estimatedCost: 1200 * partySize,
+        estimatedCost: 1200,
         notes: "전망",
         mustVisit: true,
         rating: 4.5,
@@ -1380,7 +1849,7 @@ function staticSuggestPool(cityId, partySize) {
         category: "attraction",
         lat: 35.710063,
         lng: 139.8107,
-        estimatedCost: 2300 * partySize,
+        estimatedCost: 2300,
         notes: "전망대",
       },
       {
@@ -1432,7 +1901,7 @@ function staticSuggestPool(cityId, partySize) {
       category: "food",
       lat: 37.5701,
       lng: 126.9997,
-      estimatedCost: 15000 * partySize,
+      estimatedCost: 15000,
       notes: "빈대떡·육회",
       signatureFood: "마약김밥·육회",
       rating: 4.5,
@@ -1444,7 +1913,7 @@ function staticSuggestPool(cityId, partySize) {
       category: "food",
       lat: 37.5345,
       lng: 126.9945,
-      estimatedCost: 25000 * partySize,
+      estimatedCost: 25000,
       notes: "다양한 세계요리",
       signatureFood: "퓨전 다이닝",
       rating: 4.4,
@@ -1455,7 +1924,7 @@ function staticSuggestPool(cityId, partySize) {
       category: "food",
       lat: 37.5563,
       lng: 126.922,
-      estimatedCost: 12000 * partySize,
+      estimatedCost: 12000,
       notes: "핫도그·분식",
       signatureFood: "길거리 간식",
       rating: 4.3,
@@ -1466,7 +1935,7 @@ function staticSuggestPool(cityId, partySize) {
       category: "attraction",
       lat: 37.5796,
       lng: 126.977,
-      estimatedCost: 3000 * partySize,
+      estimatedCost: 3000,
       notes: "조선 왕궁",
       rating: 4.7,
       mustVisit: true,
@@ -1477,7 +1946,7 @@ function staticSuggestPool(cityId, partySize) {
       category: "attraction",
       lat: 37.5512,
       lng: 126.9882,
-      estimatedCost: 16000 * partySize,
+      estimatedCost: 16000,
       notes: "전망·야경",
       rating: 4.5,
       mustVisit: true,
@@ -1544,18 +2013,37 @@ export async function suggestPlacesByCategory({
   category,
   partySize = 2,
   mapsApiKey = "",
+  geminiApiKey = "",
+  geminiModel,
+  llmTimeoutMs,
 } = {}) {
   const city = resolveCity(cityId);
 
   if (mapsApiKey) {
     try {
-      const fromPlaces = await suggestViaGooglePlaces({
+      let fromPlaces = await suggestViaGooglePlaces({
         city,
         category,
         partySize,
         apiKey: mapsApiKey,
       });
       if (fromPlaces?.length) {
+        if (category === "food") {
+          fromPlaces = await enrichFoodMenus(fromPlaces, {
+            city,
+            partySize,
+            geminiApiKey,
+            geminiModel,
+            llmTimeoutMs,
+          });
+        }
+        if (category === "hotel") {
+          fromPlaces = enrichHotelSuggests(fromPlaces, {
+            cityId: city.id,
+            cityNameKo: city.nameKo,
+            nights: 2,
+          });
+        }
         return { places: fromPlaces, source: "places" };
       }
     } catch {
@@ -1567,11 +2055,27 @@ export async function suggestPlacesByCategory({
   const filtered = category
     ? pool.filter((p) => p.category === category)
     : pool;
-  const places = filtered.map((p) => ({
+  let places = filtered.map((p) => ({
     id: uid("suggest"),
     ...p,
     dayIndex: 0,
     order: 0,
   }));
+  if (category === "food") {
+    places = await enrichFoodMenus(places, {
+      city,
+      partySize,
+      geminiApiKey,
+      geminiModel,
+      llmTimeoutMs,
+    });
+  }
+  if (category === "hotel") {
+    places = enrichHotelSuggests(places, {
+      cityId: city.id,
+      cityNameKo: city.nameKo,
+      nights: 2,
+    });
+  }
   return { places, source: "static" };
 }

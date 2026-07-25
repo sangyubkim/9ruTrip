@@ -288,6 +288,7 @@ SSH 세션에서 `node`/`pm2`로 띄운 프로세스는 **서버 재부팅 후 �
 | [`docs/deploy/cloudways/start-9rutrip-api.sh.sample`](deploy/cloudways/start-9rutrip-api.sh.sample) | `~/bin/start-9rutrip-api.sh` |
 | [`docs/deploy/cloudways/start-9rudocs-api.sh.sample`](deploy/cloudways/start-9rudocs-api.sh.sample) | `~/bin/start-9rudocs-api.sh` (원본은 9ruDocs와 동일) |
 | [`docs/deploy/cloudways/start-9ru-apis.sh.sample`](deploy/cloudways/start-9ru-apis.sh.sample) | `~/bin/start-9ru-apis.sh` |
+| [`docs/deploy/cloudways/pull-restart-9rutrip-api.sh.sample`](deploy/cloudways/pull-restart-9rutrip-api.sh.sample) | `~/bin/pull-restart-9rutrip-api.sh` (코드 업데이트용 · 아래 절) |
 
 스크립트는 `PATH`에 `~/node_modules/.bin`을 넣고, `pm2 resurrect` 후 프로세스별로 `restart`/`start`, 로컬 포트 헬스체크(`curl`)를 합니다.
 
@@ -310,7 +311,9 @@ mkdir -p "$HOME/bin" "$HOME/logs"
 cp docs/deploy/cloudways/start-9rutrip-api.sh.sample  "$HOME/bin/start-9rutrip-api.sh"
 cp docs/deploy/cloudways/start-9rudocs-api.sh.sample  "$HOME/bin/start-9rudocs-api.sh"
 cp docs/deploy/cloudways/start-9ru-apis.sh.sample     "$HOME/bin/start-9ru-apis.sh"
-chmod +x "$HOME/bin"/start-9ru*.sh
+cp docs/deploy/cloudways/pull-restart-9rutrip-api.sh.sample \
+   "$HOME/bin/pull-restart-9rutrip-api.sh"
+chmod +x "$HOME/bin"/start-9ru*.sh "$HOME/bin"/pull-restart-9rutrip-api.sh
 
 # 경로가 기본값과 다르면 각 스크립트 상단에 고정 (권장):
 #   TRIP_API_DIR=$HOME/9ruTrip
@@ -326,11 +329,19 @@ pm2 save
 
 ### Windows에서 파일 업로드 (권장)
 
-채팅에 비밀번호를 넣지 말고, PC에서 SCP로 올립니다.
+채팅에 비밀번호를 넣지 말고, PC에서 SCP로 올립니다.  
+BAT는 **ASCII 전용**이라 CMD 인코딩 깨짐을 피합니다 (안내는 이 문서 / `.ps1`).
 
-1. `D:\01_Project\upload-cloudways-api-boot.bat` 더블클릭 (또는 `scripts\upload-cloudways-api-boot.ps1`).
-2. 호스트·사용자(`master` / `master_9ru`)만 입력 → **비밀번호는 OpenSSH/PuTTY가 직접 묻음**.
-3. 선택: `-KeyPath` 로 OpenSSH 개인키(`.pem` 등). `.ppk` 는 PuTTY `pscp`/`plink` 경로.
+1. (최초) `scripts\cloudways.deploy.env.example` → `scripts\cloudways.deploy.env` 복사 후 `CLOUDWAYS_HOST` 등 기입.
+2. 저장소 루트에서 `upload-cloudways-deploy.bat` 더블클릭  
+   (또는 `powershell -File scripts\upload-cloudways-deploy.ps1`).
+3. 부팅 스크립트까지 같이 올리려면:  
+   `upload-cloudways-deploy.bat -IncludeBootScripts`
+4. 호스트·사용자(`master`) → **비밀번호는 OpenSSH가 직접 묻음**.  
+   선택: `-KeyPath` 로 OpenSSH 개인키(`.pem`). `.ppk` 는 PuTTY `pscp`/`plink`.
+
+업로드 대상(기본): `~/bin/pull-restart-9rutrip-api.sh`  
+`-IncludeBootScripts` 시: `start-9rutrip-api.sh`, `start-9rudocs-api.sh`, `start-9ru-apis.sh` 포함.
 
 업로드 후 서버에서 `~/bin/start-9ru-apis.sh` → `pm2 save` → 아래 crontab.
 
@@ -382,6 +393,68 @@ pm2 save
 
 ---
 
+## 코드 업데이트 배포 (git pull + PM2 restart)
+
+패널 **Deploy** 대신 SSH에서 pull 후 API만 재기동할 때 사용합니다.
+
+| 파일 | 서버에 설치할 이름 |
+|------|-------------------|
+| [`docs/deploy/cloudways/pull-restart-9rutrip-api.sh.sample`](deploy/cloudways/pull-restart-9rutrip-api.sh.sample) | `~/bin/pull-restart-9rutrip-api.sh` |
+
+동작 요약:
+
+1. 모노레포 루트 탐색 (`TRIP_API_DIR` 또는 `git_repo` 등 — start 스크립트와 동일)
+2. working tree가 dirty면 **중단** (충돌/로컬 수정 방지)
+3. `git pull --ff-only` (실패 시 명확히 exit)
+4. (선택) `--with-npm` → 루트에서 `npm install --omit=dev`
+5. `pm2 restart 9rutrip-api` (없으면 start) + `curl` 헬스체크 (`:3011/health`)
+
+### Windows에서 업로드 후 서버 실행
+
+```text
+1) (최초) scripts\cloudways.deploy.env.example 을 cloudways.deploy.env 로 복사하고 HOST 기입
+2) upload-cloudways-deploy.bat 더블클릭
+3) SSH 후 실행 (둘 중 하나):
+     ~/bin/pull-restart-9rutrip-api.sh
+     # 또는: cd ~/bin && ./pull-restart-9rutrip-api.sh
+     # 의존성 변경 시:
+     ~/bin/pull-restart-9rutrip-api.sh --with-npm
+```
+
+업로드 스크립트는 `.sh`를 SCP 전에 **CRLF→LF**로 바꾸고, 서버에서 `sed`로 `\r`를 한 번 더 제거합니다.
+
+`/usr/bin/env: 'bash\r': No such file or directory` 가 나면 Windows 줄바꿈(CRLF)이 남은 것입니다. 이 수정 후 다시 업로드하거나, 서버에서 즉시:
+
+```bash
+sed -i 's/\r$//' ~/bin/pull-restart-9rutrip-api.sh
+chmod +x ~/bin/pull-restart-9rutrip-api.sh
+~/bin/pull-restart-9rutrip-api.sh
+```
+
+PowerShell 직접:
+
+```powershell
+.\scripts\upload-cloudways-deploy.ps1 -DeployHost <PUBLIC_IP> -User master
+# optional key:
+.\scripts\upload-cloudways-deploy.ps1 -DeployHost <PUBLIC_IP> -KeyPath $env:USERPROFILE\.ssh\id_ed25519
+```
+
+서버 수동 설치 (업로드 도구 없이):
+
+```bash
+mkdir -p "$HOME/bin" "$HOME/logs"
+cp docs/deploy/cloudways/pull-restart-9rutrip-api.sh.sample \
+   "$HOME/bin/pull-restart-9rutrip-api.sh"
+# 샘플이 CRLF일 수 있으면:
+sed -i 's/\r$//' "$HOME/bin/pull-restart-9rutrip-api.sh"
+chmod +x "$HOME/bin/pull-restart-9rutrip-api.sh"
+"$HOME/bin/pull-restart-9rutrip-api.sh"
+```
+
+> GitHub에 새 커밋을 push한 뒤, Cloudways 서버에서 위 스크립트를 실행하면 공개 URL의 반영됩니다.
+
+---
+
 ## 이 저장소에서 자동화되지 않는 것
 
 - Cloudways 로그인·앱 생성·도메인·SSL·방화벽·SSH
@@ -390,4 +463,5 @@ pm2 save
 - Expo/EAS 스토어 빌드에 URL 주입 (선택 시 `eas.json` / EAS secrets는 사용자가 설정)
 
 코드·문서 측 준비: `apps/api/server.mjs`의 `requestPathname`, 모바일 힌트,  
-`docs/deploy/cloudways/*.sample`, 본 문서 **앱 생성 직후** · **재부팅 후 API 자동 기동**.
+`docs/deploy/cloudways/*.sample`, `upload-cloudways-deploy.bat`,  
+본 문서 **앱 생성 직후** · **재부팅 후 API 자동 기동** · **코드 업데이트 배포**.

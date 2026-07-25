@@ -7,6 +7,7 @@ import { space } from "./src/theme/tokens";
 import Constants from "expo-constants";
 import { generateItinerary } from "./src/api/trip";
 import { setApiClientBaseUrl } from "./src/api/client";
+import { ensureOvernightHotelsInPlaces } from "./src/utils/overnightHotels";
 import { ErrorBoundary } from "./src/components/ErrorBoundary";
 import { OnboardingModal } from "./src/components/OnboardingModal";
 import { ApiProvider, useApi } from "./src/context/ApiContext";
@@ -222,9 +223,20 @@ function AppInner() {
           briefing,
           routeOutline,
         });
+        // 구 API/AI가 숙소를 빠뜨려도 마지막 날 제외 Day에 hotel 보정
+        const placesWithHotels = ensureOvernightHotelsInPlaces(
+          result.places ?? [],
+          {
+            days: input.days,
+            nights: input.nights,
+            lodgingCandidates: result.lodgingCandidates,
+            preferredLodgingId: result.preferredLodgingId,
+            cityId: resolvedCityId,
+          },
+        );
         const next: Trip = {
           ...trip,
-          places: result.places,
+          places: placesWithHotels,
           plannedBudget: result.plannedBudget,
           lodgingCandidates: result.lodgingCandidates ?? [],
           preferredLodgingId: result.preferredLodgingId ?? null,

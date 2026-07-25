@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -9,6 +11,8 @@ import {
   Text,
   TextInput,
   View,
+  type NativeSyntheticEvent,
+  type TextInputFocusEventData,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ProvinceCityPicker } from "../components/ProvinceCityPicker";
@@ -59,21 +63,172 @@ function normalizeStartTime(raw: string): string {
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n));
+}
+
+type StepperProps = {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  unit?: string;
+  onChange: (n: number) => void;
+  colors: {
+    text: string;
+    textSecondary: string;
+    textMuted: string;
+    border: string;
+    bgElevated: string;
+    primary: string;
+    primaryFg: string;
+    chipBg: string;
+  };
+};
+
+function NumberStepper({
+  label,
+  value,
+  min,
+  max,
+  unit,
+  onChange,
+  colors,
+}: StepperProps) {
+  return (
+    <View style={styles.fieldCol}>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>
+        {label}
+      </Text>
+      <View
+        style={[
+          styles.stepper,
+          { borderColor: colors.border, backgroundColor: colors.bgElevated },
+        ]}
+      >
+        <Pressable
+          style={[
+            styles.stepBtn,
+            { backgroundColor: colors.chipBg },
+            value <= min && { opacity: 0.4 },
+          ]}
+          disabled={value <= min}
+          onPress={() => onChange(clamp(value - 1, min, max))}
+          accessibilityRole="button"
+          accessibilityLabel={`${label} 감소`}
+        >
+          <Text style={[styles.stepBtnText, { color: colors.text }]}>−</Text>
+        </Pressable>
+        <Text
+          style={[styles.stepValue, { color: colors.text }]}
+          accessibilityLabel={`${label} ${value}${unit || ""}`}
+        >
+          {value}
+          {unit ? (
+            <Text style={[styles.stepUnit, { color: colors.textMuted }]}>
+              {unit}
+            </Text>
+          ) : null}
+        </Text>
+        <Pressable
+          style={[
+            styles.stepBtn,
+            { backgroundColor: colors.primary },
+            value >= max && { opacity: 0.4 },
+          ]}
+          disabled={value >= max}
+          onPress={() => onChange(clamp(value + 1, min, max))}
+          accessibilityRole="button"
+          accessibilityLabel={`${label} 증가`}
+        >
+          <Text style={[styles.stepBtnText, { color: colors.primaryFg }]}>
+            +
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
   const [departureCityId, setDepartureCityId] =
     useState<DepartureCityId>("seoul");
   const [selected, setSelected] = useState<MvpCityId[]>(["busan"]);
-  const [nights, setNights] = useState("2");
-  const [days, setDays] = useState("3");
-  const [party, setParty] = useState("2");
+  const [nights, setNights] = useState(2);
+  const [days, setDays] = useState(3);
+  const [party, setParty] = useState(2);
   const [startAddress, setStartAddress] = useState("");
   const [startLat, setStartLat] = useState<number | undefined>();
   const [startLng, setStartLng] = useState<number | undefined>();
   const [startTime, setStartTime] = useState("09:00");
   const [userRequest, setUserRequest] = useState("");
   const [locating, setLocating] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvt =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const scrollFocusedIntoView = (
+    e: NativeSyntheticEvent<TextInputFocusEventData>,
+  ) => {
+    const target = e?.nativeEvent?.target;
+    setTimeout(
+      () => {
+        if (!scrollRef.current || target == null) {
+          scrollRef.current?.scrollToEnd({ animated: true });
+          return;
+        }
+        const responder = (
+          scrollRef.current as unknown as {
+            getScrollResponder?: () => {
+              scrollResponderScrollNativeHandleToKeyboard?: (
+                node: number,
+                offset: number,
+                animated: boolean,
+              ) => void;
+            };
+          }
+        ).getScrollResponder?.();
+        responder?.scrollResponderScrollNativeHandleToKeyboard?.(
+          target as unknown as number,
+          120,
+          true,
+        );
+      },
+      Platform.OS === "ios" ? 280 : 120,
+    );
+  };
+
+  const changeNights = (n: number) => {
+    const next = clamp(n, 0, 14);
+    setNights(next);
+    // 박수 변경 시 일수를 최소 박수+1로 맞춤 (당일치기 0박 1일)
+    setDays((d) => Math.max(d, next + 1));
+  };
+
+  const changeDays = (d: number) => {
+    const next = clamp(d, 1, 15);
+    setDays(next);
+    // 일수가 박수보다 작아지지 않게 (nights <= days-1)
+    setNights((n) => Math.min(n, Math.max(0, next - 1)));
+  };
 
   const useCurrentLocation = async () => {
     if (!Location || Platform.OS === "web") {
@@ -134,9 +289,9 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       Alert.alert("여행지 필요", "여행 도시를 하나 이상 선택해 주세요.");
       return;
     }
-    const n = Math.min(14, Math.max(1, parseInt(nights, 10) || 2));
-    const d = Math.min(15, Math.max(1, parseInt(days, 10) || n + 1));
-    const p = Math.min(12, Math.max(1, parseInt(party, 10) || 2));
+    const n = clamp(nights, 0, 14);
+    const d = clamp(Math.max(days, n + 1), 1, 15);
+    const p = clamp(party, 1, 12);
     const cityIds = selected;
     const dep = CITIES[departureCityId];
     const addr = startAddress.trim();
@@ -164,195 +319,215 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
     },
   ];
 
+  const stepperColors = {
+    text: colors.text,
+    textSecondary: colors.textSecondary,
+    textMuted: colors.textMuted,
+    border: colors.border,
+    bgElevated: colors.bgElevated,
+    primary: colors.primary,
+    primaryFg: colors.primaryFg,
+    chipBg: colors.chipBg,
+  };
+
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={styles.root}
-      contentContainerStyle={{
-        paddingBottom: Math.max(insets.bottom, 16) + 24,
-      }}
-      keyboardShouldPersistTaps="handled"
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 8 : 0}
     >
-      <Pressable
-        onPress={onBack}
-        style={styles.backHit}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel="뒤로"
-      >
-        <Text style={[styles.back, { color: colors.accent }]}>← 뒤로</Text>
-      </Pressable>
-      <Text style={[styles.title, { color: colors.text }]}>여행자 정보</Text>
-      <Text style={[styles.hint, { color: colors.textMuted }]}>
-        출발 도시·여행지·일정을 입력하면 AI가 국내 추천 경로를 만듭니다.
-      </Text>
-
-      <Text style={[styles.label, { color: colors.textSecondary }]}>
-        출발 도시
-      </Text>
-      <View style={styles.cityRow}>
-        {DEPARTURE_CITY_IDS.map((id) => {
-          const on = departureCityId === id;
-          return (
-            <Pressable
-              key={id}
-              style={[
-                styles.cityChip,
-                {
-                  backgroundColor: on ? colors.chipOnBg : colors.chipBg,
-                  borderColor: on ? colors.primary : colors.border,
-                },
-              ]}
-              onPress={() => setDepartureCityId(id)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: on }}
-              accessibilityLabel={`출발 ${CITIES[id].nameKo}`}
-            >
-              <Text
-                style={[
-                  styles.cityChipText,
-                  { color: on ? colors.chipOnFg : colors.chipFg },
-                ]}
-              >
-                {CITIES[id].nameKo}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <Text style={[styles.label, { color: colors.textSecondary }]}>
-        출발 상세 주소 (선택)
-      </Text>
-      <TextInput
-        style={inputStyle}
-        value={startAddress}
-        onChangeText={(t) => {
-          setStartAddress(t);
-          setStartLat(undefined);
-          setStartLng(undefined);
+      <ScrollView
+        ref={scrollRef}
+        style={styles.root}
+        contentContainerStyle={{
+          paddingBottom:
+            Math.max(insets.bottom, 16) +
+            24 +
+            (keyboardHeight > 0 ? keyboardHeight * 0.35 + 80 : 0),
         }}
-        placeholder={`예: ${CITIES[departureCityId].nameKo}시 …`}
-        placeholderTextColor={colors.textMuted}
-        accessibilityLabel="출발지 주소"
-      />
-      <Pressable
-        style={[
-          styles.gpsBtn,
-          { borderColor: colors.accent, backgroundColor: colors.accentMuted },
-          locating && { opacity: 0.6 },
-        ]}
-        onPress={() => void useCurrentLocation()}
-        disabled={locating || generating}
-        accessibilityRole="button"
-        accessibilityLabel="현재 위치로 출발지 입력"
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
       >
-        {locating ? (
-          <ActivityIndicator color={colors.accent} />
-        ) : (
-          <Text style={[styles.gpsBtnText, { color: colors.accent }]}>
-            현재 위치 (GPS)
-          </Text>
-        )}
-      </Pressable>
-
-      <Text style={[styles.label, { color: colors.textSecondary }]}>
-        여행지 (도 → 도시)
-      </Text>
-      <ProvinceCityPicker
-        selectedCityIds={selected}
-        onChangeCityIds={(ids) => setSelected(ids as MvpCityId[])}
-        maxCities={MAX_SELECTED_CITIES}
-      />
-
-      <View style={styles.fieldGrid}>
-        <View style={styles.fieldCol}>
-          <Text style={[styles.label, { color: colors.textSecondary }]}>
-            박수
-          </Text>
-          <TextInput
-            style={inputStyle}
-            keyboardType="number-pad"
-            value={nights}
-            onChangeText={setNights}
-            accessibilityLabel="박수"
-          />
-        </View>
-        <View style={styles.fieldCol}>
-          <Text style={[styles.label, { color: colors.textSecondary }]}>
-            일수
-          </Text>
-          <TextInput
-            style={inputStyle}
-            keyboardType="number-pad"
-            value={days}
-            onChangeText={setDays}
-            accessibilityLabel="일수"
-          />
-        </View>
-        <View style={styles.fieldCol}>
-          <Text style={[styles.label, { color: colors.textSecondary }]}>
-            인원
-          </Text>
-          <TextInput
-            style={inputStyle}
-            keyboardType="number-pad"
-            value={party}
-            onChangeText={setParty}
-            accessibilityLabel="인원"
-          />
-        </View>
-      </View>
-
-      <Text style={[styles.label, { color: colors.textSecondary }]}>
-        여행 시작 시간
-      </Text>
-      <TextInput
-        style={inputStyle}
-        value={startTime}
-        onChangeText={setStartTime}
-        onBlur={() => setStartTime(normalizeStartTime(startTime))}
-        placeholder="09:00"
-        placeholderTextColor={colors.textMuted}
-        keyboardType="numbers-and-punctuation"
-        accessibilityLabel="여행 시작 시간"
-      />
-      <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
-        기본 아침 09:00 · HH:mm
-      </Text>
-
-      <Text style={[styles.label, { color: colors.textSecondary }]}>
-        주요 요청
-      </Text>
-      <TextInput
-        style={[inputStyle, styles.requestInput]}
-        value={userRequest}
-        onChangeText={setUserRequest}
-        placeholder="예: 아이와 함께, 해산물 위주, 도보 위주…"
-        placeholderTextColor={colors.textMuted}
-        multiline
-        textAlignVertical="top"
-        accessibilityLabel="주요 요청"
-      />
-      <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
-        AI가 경로 작성에 적극 반영합니다.
-      </Text>
-
-      <Pressable
-        style={[
-          styles.primary,
-          { backgroundColor: colors.primary },
-          generating && { opacity: 0.6 },
-        ]}
-        onPress={submit}
-        disabled={generating}
-        accessibilityRole="button"
-        accessibilityLabel="AI 추천 경로 만들기"
-      >
-        <Text style={[styles.primaryText, { color: colors.primaryFg }]}>
-          {generating ? "AI 추천 경로 만드는 중…" : "AI 추천 경로 만들기"}
+        <Pressable
+          onPress={onBack}
+          style={styles.backHit}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="뒤로"
+        >
+          <Text style={[styles.back, { color: colors.accent }]}>← 뒤로</Text>
+        </Pressable>
+        <Text style={[styles.title, { color: colors.text }]}>여행자 정보</Text>
+        <Text style={[styles.hint, { color: colors.textMuted }]}>
+          출발 도시·여행지·일정을 입력하면 AI가 국내 추천 경로를 만듭니다.
         </Text>
-      </Pressable>
-    </ScrollView>
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>
+          출발 도시
+        </Text>
+        <View style={styles.cityRow}>
+          {DEPARTURE_CITY_IDS.map((id) => {
+            const on = departureCityId === id;
+            return (
+              <Pressable
+                key={id}
+                style={[
+                  styles.cityChip,
+                  {
+                    backgroundColor: on ? colors.chipOnBg : colors.chipBg,
+                    borderColor: on ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={() => setDepartureCityId(id)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={`출발 ${CITIES[id].nameKo}`}
+              >
+                <Text
+                  style={[
+                    styles.cityChipText,
+                    { color: on ? colors.chipOnFg : colors.chipFg },
+                  ]}
+                >
+                  {CITIES[id].nameKo}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>
+          출발 상세 주소 (선택)
+        </Text>
+        <TextInput
+          style={inputStyle}
+          value={startAddress}
+          onChangeText={(t) => {
+            setStartAddress(t);
+            setStartLat(undefined);
+            setStartLng(undefined);
+          }}
+          onFocus={scrollFocusedIntoView}
+          placeholder={`예: ${CITIES[departureCityId].nameKo}시 …`}
+          placeholderTextColor={colors.textMuted}
+          accessibilityLabel="출발지 주소"
+        />
+        <Pressable
+          style={[
+            styles.gpsBtn,
+            { borderColor: colors.accent, backgroundColor: colors.accentMuted },
+            locating && { opacity: 0.6 },
+          ]}
+          onPress={() => void useCurrentLocation()}
+          disabled={locating || generating}
+          accessibilityRole="button"
+          accessibilityLabel="현재 위치로 출발지 입력"
+        >
+          {locating ? (
+            <ActivityIndicator color={colors.accent} />
+          ) : (
+            <Text style={[styles.gpsBtnText, { color: colors.accent }]}>
+              현재 위치 (GPS)
+            </Text>
+          )}
+        </Pressable>
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>
+          여행지 (도 → 도시)
+        </Text>
+        <ProvinceCityPicker
+          selectedCityIds={selected}
+          onChangeCityIds={(ids) => setSelected(ids as MvpCityId[])}
+          maxCities={MAX_SELECTED_CITIES}
+        />
+
+        <View style={styles.fieldGrid}>
+          <NumberStepper
+            label="박수"
+            value={nights}
+            min={0}
+            max={14}
+            unit="박"
+            onChange={changeNights}
+            colors={stepperColors}
+          />
+          <NumberStepper
+            label="일수"
+            value={days}
+            min={1}
+            max={15}
+            unit="일"
+            onChange={changeDays}
+            colors={stepperColors}
+          />
+          <NumberStepper
+            label="인원"
+            value={party}
+            min={1}
+            max={12}
+            unit="명"
+            onChange={setParty}
+            colors={stepperColors}
+          />
+        </View>
+        <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+          − / + 로 조절 · 0박 1일은 당일치기
+        </Text>
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>
+          여행 시작 시간
+        </Text>
+        <TextInput
+          style={inputStyle}
+          value={startTime}
+          onChangeText={setStartTime}
+          onFocus={scrollFocusedIntoView}
+          onBlur={() => setStartTime(normalizeStartTime(startTime))}
+          placeholder="09:00"
+          placeholderTextColor={colors.textMuted}
+          keyboardType="numbers-and-punctuation"
+          accessibilityLabel="여행 시작 시간"
+        />
+        <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+          기본 아침 09:00 · HH:mm
+        </Text>
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>
+          주요 요청
+        </Text>
+        <TextInput
+          style={[inputStyle, styles.requestInput]}
+          value={userRequest}
+          onChangeText={setUserRequest}
+          onFocus={scrollFocusedIntoView}
+          placeholder="예: 아이와 함께, 해산물 위주, 도보 위주…"
+          placeholderTextColor={colors.textMuted}
+          multiline
+          textAlignVertical="top"
+          accessibilityLabel="주요 요청"
+        />
+        <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+          AI가 경로 작성에 적극 반영합니다.
+        </Text>
+
+        <Pressable
+          style={[
+            styles.primary,
+            { backgroundColor: colors.primary },
+            generating && { opacity: 0.6 },
+          ]}
+          onPress={submit}
+          disabled={generating}
+          accessibilityRole="button"
+          accessibilityLabel="AI 추천 경로 만들기"
+        >
+          <Text style={[styles.primaryText, { color: colors.primaryFg }]}>
+            {generating ? "AI 추천 경로 만드는 중…" : "AI 추천 경로 만들기"}
+          </Text>
+        </Pressable>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -380,6 +555,36 @@ const styles = StyleSheet.create({
     marginTop: space.xs,
   },
   fieldCol: { flex: 1 },
+  stepper: {
+    marginTop: space.sm,
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    flexDirection: "row",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  stepBtn: {
+    width: 40,
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepBtnText: {
+    fontSize: 22,
+    fontWeight: "800",
+    lineHeight: 26,
+  },
+  stepValue: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  stepUnit: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
   input: {
     marginTop: space.sm,
     borderWidth: 1,

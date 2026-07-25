@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,8 +11,27 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ItineraryPlace, PlaceCategory } from "../types";
-import { CATEGORY_LABEL, currencyForCity, formatMoney } from "../utils/cost";
-import { formatLodgingScoreLines } from "../utils/lodgingExplain";
+import {
+  CATEGORY_LABEL,
+  currencyForCity,
+  formatMoney,
+  formatPlaceMoney,
+} from "../utils/cost";
+import { formatDistanceKm, haversineKm } from "../utils/geo";
+import {
+  estimateLodgingBreakdown,
+  formatLodgingScoreLines,
+  lodgingTipFromBreakdown,
+} from "../utils/lodgingExplain";
+import { CITIES } from "../types";
+
+let Location: typeof import("expo-location") | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  Location = require("expo-location");
+} catch {
+  Location = null;
+}
 
 type Props = {
   visible: boolean;
@@ -46,12 +66,17 @@ export function PlaceSuggestModal({
   const insets = useSafeAreaInsets();
   const currency = currencyForCity(cityId);
   const isHotel = category === "hotel";
+  const isFood = category === "food";
   const aiSet = useMemo(
     () => new Set(aiRouteNames.map(normName)),
     [aiRouteNames],
   );
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<"idle" | "loading" | "ok" | "fail">(
+    "idle",
+  );
 
   useEffect(() => {
     if (!visible) return;
@@ -66,6 +91,56 @@ export function PlaceSuggestModal({
       setSelectedIds(initial);
     }
   }, [visible, places, aiSet, isHotel]);
+
+  useEffect(() => {
+    if (!visible) {
+      setGps(null);
+      setGpsStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      if (!Location || Platform.OS === "web") {
+        if (!cancelled) setGpsStatus("fail");
+        return;
+      }
+      setGpsStatus("loading");
+      try {
+        const existing = await Location.getForegroundPermissionsAsync();
+        if (existing.status !== "granted") {
+          const req = await Location.requestForegroundPermissionsAsync();
+          if (req.status !== "granted") {
+            if (!cancelled) setGpsStatus("fail");
+            return;
+          }
+        }
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy?.Balanced ?? 3,
+        });
+        if (cancelled) return;
+        setGps({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+        setGpsStatus("ok");
+      } catch {
+        if (!cancelled) setGpsStatus("fail");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
+  const distanceById = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!gps) return map;
+    for (const p of places) {
+      if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
+      map.set(p.id, haversineKm(gps, { lat: p.lat, lng: p.lng }));
+    }
+    return map;
+  }, [gps, places]);
 
   const toggle = (place: ItineraryPlace) => {
     setSelectedIds((prev) => {
@@ -87,6 +162,15 @@ export function PlaceSuggestModal({
     }
     onConfirm(isHotel ? picks.slice(0, 1) : picks);
   };
+
+  const gpsHint =
+    gpsStatus === "loading"
+      ? "현재 위치 확인 중…"
+      : gpsStatus === "ok"
+        ? "거리 · 현재 GPS 기준"
+        : gpsStatus === "fail"
+          ? "위치 권한 없음 · 거리 생략"
+          : "";
 
   return (
     <Modal
@@ -110,6 +194,7 @@ export function PlaceSuggestModal({
               : source === "places"
                 ? "여러 곳 선택 가능 · Google Places"
                 : "여러 곳 선택 가능 · 정적 POI"}
+            {gpsHint ? ` · ${gpsHint}` : ""}
           </Text>
           {loading ? (
             <ActivityIndicator style={{ marginVertical: 24 }} color="#0369a1" />
@@ -124,7 +209,32 @@ export function PlaceSuggestModal({
                   const must =
                     p.mustVisit ||
                     (typeof p.rating === "number" && p.rating >= 4.5);
-                  const reasonLines = formatLodgingScoreLines(p.scoreBreakdown);
+                  const lodgingScored =
+                    isHotel && !p.scoreBreakdown
+                      ? estimateLodgingBreakdown(p, cityId)
+                      : null;
+                  const scoreBd = p.scoreBreakdown ?? lodgingScored?.scoreBreakdown;
+                  const lodgingScore =
+                    p.lodgingScore ?? lodgingScored?.lodgingScore;
+                  const reasonLines = formatLodgingScoreLines(scoreBd);
+                  const cityNameKo = CITIES[cityId]?.nameKo ?? "";
+                  const tipFromApi = (p.aiReason || p.notes || "").trim();
+                  const tipLooksAddress =
+                    tipFromApi.length >= 16 &&
+                    /(시|군|구|로|길|동|특별자치|광역시)/.test(tipFromApi);
+                  const tipLooksRating =
+                    tipFromApi === (p.reviewSummary || "").trim();
+                  const lodgingTip =
+                    tipFromApi && !tipLooksAddress && !tipLooksRating
+                      ? tipFromApi
+                      : lodgingTipFromBreakdown(
+                          scoreBd,
+                          p.rating,
+                          cityNameKo,
+                        );
+                  const distKm = distanceById.get(p.id);
+                  const distLabel =
+                    distKm != null ? formatDistanceKm(distKm) : null;
                   return (
                     <Pressable
                       key={p.id}
@@ -160,51 +270,110 @@ export function PlaceSuggestModal({
                               <Text style={styles.aiBadgeText}>AI</Text>
                             </View>
                           ) : null}
+                          {distLabel ? (
+                            <View style={styles.distBadge}>
+                              <Text style={styles.distBadgeText}>
+                                {distLabel}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
-                        {p.signatureFood ? (
-                          <Text style={styles.meta}>
-                            대표 · {p.signatureFood}
-                          </Text>
+                        {isFood ? (
+                          <>
+                            <Text style={styles.metaStrong}>
+                              대표 메뉴 ·{" "}
+                              {p.signatureFood &&
+                              !/^(establishment|point of interest|food|restaurant)/i.test(
+                                p.signatureFood,
+                              )
+                                ? p.signatureFood
+                                : "현지 인기 메뉴"}
+                            </Text>
+                            <Text style={styles.metaStrong}>
+                              가격 ·{" "}
+                              {formatPlaceMoney(
+                                p.estimatedCost,
+                                p.category,
+                                currency,
+                              )}
+                            </Text>
+                            {p.reviewSummary || p.rating != null ? (
+                              <Text style={styles.meta}>
+                                {p.reviewSummary ||
+                                  (p.rating != null
+                                    ? `평점 ${p.rating}`
+                                    : "")}
+                              </Text>
+                            ) : null}
+                            {p.notes ? (
+                              <Text style={styles.meta} numberOfLines={2}>
+                                {p.notes}
+                              </Text>
+                            ) : null}
+                          </>
                         ) : null}
-                        {p.reviewSummary || p.rating != null ? (
-                          <Text style={styles.meta}>
-                            {p.reviewSummary ||
-                              (p.rating != null ? `평점 ${p.rating}` : "")}
-                          </Text>
+                        {!isFood &&
+                        !isHotel &&
+                        (p.signatureFood ||
+                          p.reviewSummary ||
+                          p.rating != null) ? (
+                          <>
+                            {p.signatureFood ? (
+                              <Text style={styles.meta}>
+                                대표 · {p.signatureFood}
+                              </Text>
+                            ) : null}
+                            {p.reviewSummary || p.rating != null ? (
+                              <Text style={styles.meta}>
+                                {p.reviewSummary ||
+                                  (p.rating != null
+                                    ? `평점 ${p.rating}`
+                                    : "")}
+                              </Text>
+                            ) : null}
+                          </>
                         ) : null}
                         {isHotel ? (
-                          <View style={styles.reasonBox}>
-                            <Text style={styles.reasonTitle}>
-                              AI 선택 이유
-                              {p.lodgingScore
-                                ? ` · ${p.lodgingScore}점`
-                                : ""}
+                          <>
+                            {p.reviewSummary || p.rating != null ? (
+                              <Text style={styles.meta}>
+                                {p.reviewSummary ||
+                                  (p.rating != null
+                                    ? `평점 ${p.rating}`
+                                    : "")}
+                              </Text>
+                            ) : null}
+                            <Text style={styles.meta}>
+                              예상 · {formatMoney(p.estimatedCost, currency)}
                             </Text>
-                            {reasonLines.length > 0 ? (
-                              reasonLines.map((line) => (
+                            <View style={styles.reasonBox}>
+                              <Text style={styles.reasonTitle}>
+                                AI 선택 이유
+                                {lodgingScore ? ` · ${lodgingScore}점` : ""}
+                              </Text>
+                              {reasonLines.map((line) => (
                                 <Text key={line} style={styles.reasonLine}>
                                   · {line}
                                 </Text>
-                              ))
-                            ) : (
-                              <Text style={styles.reasonLine}>
-                                ·{" "}
-                                {p.notes ||
-                                  p.aiReason ||
-                                  "동선·가격·평점을 종합해 추천"}
-                              </Text>
-                            )}
-                            {p.notes ? (
-                              <Text style={styles.reasonLine}>· {p.notes}</Text>
-                            ) : null}
-                          </View>
-                        ) : (
+                              ))}
+                              {lodgingTip ? (
+                                <Text style={styles.reasonLine}>
+                                  · {lodgingTip}
+                                </Text>
+                              ) : null}
+                            </View>
+                          </>
+                        ) : !isFood ? (
                           <Text style={styles.meta}>
                             {CATEGORY_LABEL[p.category] || p.category} ·{" "}
-                            {formatMoney(p.estimatedCost, currency)}
+                            {formatPlaceMoney(
+                              p.estimatedCost,
+                              p.category,
+                              currency,
+                            )}
                             {p.notes ? ` · ${p.notes}` : ""}
                           </Text>
-                        )}
+                        ) : null}
                       </View>
                     </Pressable>
                   );
@@ -302,7 +471,20 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   aiBadgeText: { fontSize: 10, fontWeight: "800", color: "#c2410c" },
+  distBadge: {
+    backgroundColor: "#ecfdf5",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  distBadgeText: { fontSize: 11, fontWeight: "800", color: "#047857" },
   meta: { marginTop: 3, fontSize: 12, color: "#64748b" },
+  metaStrong: {
+    marginTop: 3,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#334155",
+  },
   reasonBox: {
     marginTop: 6,
     padding: 8,
