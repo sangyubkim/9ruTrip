@@ -400,6 +400,7 @@ async function handle(req, res) {
         category: body?.category,
         partySize: Number(body?.partySize) || 2,
         mapsApiKey: env.googleMapsApiKey,
+        tourApiServiceKey: env.tourApiServiceKey,
         geminiApiKey: env.geminiApiKey,
         geminiModel: env.geminiModel,
         llmTimeoutMs: env.llmTimeoutMs,

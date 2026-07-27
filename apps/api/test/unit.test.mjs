@@ -24,8 +24,15 @@ import {
   finalizePlaceChain,
   isChainDeparturePlace,
   overnightDayIndexes,
+  suggestPlacesByCategory,
 } from "../lib/itinerary.mjs";
 import { clearFestivalCache, listFestivals } from "../lib/festivals.mjs";
+import {
+  clearTourApiCache,
+  formatTourPoolForPrompt,
+  suggestViaTourApi,
+  tourStaysToLodgingCandidates,
+} from "../lib/tourapi.mjs";
 
 describe("festivals", () => {
   it("uses the catalog when TourAPI key is absent", async () => {
@@ -693,5 +700,93 @@ describe("crowd hint heuristic", () => {
   });
   it("returns evening crowd at 18", () => {
     assert.equal(crowdHintForHour(18), "저녁 혼잡 가능");
+  });
+});
+
+describe("tourapi places", () => {
+  it("formats prompt pool and lodging candidates from TourAPI stays", () => {
+    const pool = {
+      attraction: [
+        {
+          id: "tour-1",
+          name: "남산타워",
+          cityId: "seoul",
+          lat: 37.55,
+          lng: 126.98,
+        },
+      ],
+      food: [],
+      hotel: [
+        {
+          id: "tour-h1",
+          name: "서울호텔",
+          cityId: "seoul",
+          lat: 37.56,
+          lng: 126.98,
+          notes: "중구",
+        },
+      ],
+    };
+    const prompt = formatTourPoolForPrompt(pool);
+    assert.match(prompt, /남산타워/);
+    assert.match(prompt, /TourAPI/);
+    const lodging = tourStaysToLodgingCandidates(pool.hotel, {
+      nights: 2,
+      partySize: 2,
+      topN: 3,
+      cityId: "seoul",
+    });
+    assert.equal(lodging.length, 1);
+    assert.equal(lodging[0].category, "hotel");
+    assert.ok(lodging[0].estimatedCost > 0);
+  });
+
+  it("suggestViaTourApi maps locationBasedList2 items", async () => {
+    clearTourApiCache();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          response: {
+            header: { resultCode: "0000", resultMsg: "OK" },
+            body: {
+              items: {
+                item: [
+                  {
+                    contentid: "attr-1",
+                    title: "경복궁",
+                    mapx: "126.977",
+                    mapy: "37.579",
+                    addr1: "서울특별시 종로구",
+                  },
+                ],
+              },
+            },
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    try {
+      const places = await suggestViaTourApi({
+        cityId: "seoul",
+        category: "attraction",
+        serviceKey: "test-key",
+      });
+      assert.equal(places.length, 1);
+      assert.equal(places[0].id, "tour-attr-1");
+      assert.equal(places[0].name, "경복궁");
+      assert.equal(places[0].category, "attraction");
+
+      const suggested = await suggestPlacesByCategory({
+        cityId: "seoul",
+        category: "attraction",
+        tourApiServiceKey: "test-key",
+      });
+      assert.equal(suggested.source, "tourapi");
+      assert.equal(suggested.places[0].name, "경복궁");
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearTourApiCache();
+    }
   });
 });

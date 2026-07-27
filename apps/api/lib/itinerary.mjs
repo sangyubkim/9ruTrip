@@ -12,6 +12,13 @@ import {
   normalizeOutboundTransportMode,
   OUTBOUND_MODE_LABEL,
 } from "./transport.mjs";
+import {
+  fetchTourPlacePool,
+  formatTourPoolForPrompt,
+  suggestViaTourApi,
+  tourPlacesToSuggestItems,
+  tourStaysToLodgingCandidates,
+} from "./tourapi.mjs";
 
 function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -754,16 +761,24 @@ export function buildFallbackItinerary({
   days,
   partySize,
   cityId = "seoul",
-}) {
+  placeTemplates,
+  lodgingCandidates: providedLodging,
+} = {}) {
   const city = resolveCity(cityId);
-  const templates = fallbackTemplates(city.id, partySize);
+  const templates =
+    Array.isArray(placeTemplates) && placeTemplates.length
+      ? placeTemplates
+      : fallbackTemplates(city.id, partySize);
 
-  const lodgingCandidates = buildLodgingCandidates({
-    nights: Math.max(1, nights),
-    partySize,
-    topN: 5,
-    cityId: city.id,
-  });
+  const lodgingCandidates =
+    Array.isArray(providedLodging) && providedLodging.length
+      ? providedLodging
+      : buildLodgingCandidates({
+          nights: Math.max(1, nights),
+          partySize,
+          topN: 5,
+          cityId: city.id,
+        });
 
   const preferred = lodgingCandidates[0];
   const perDay = Math.max(2, Math.ceil(templates.length / days));
@@ -820,14 +835,19 @@ export function buildMultiCityFallbackItinerary({
   days,
   partySize,
   cityIds = ["seoul", "busan"],
+  placeTemplatesByCity,
+  lodgingCandidatesByCity,
 }) {
   const unique = [...new Set(cityIds)].filter(isValidCityId);
   if (unique.length <= 1) {
+    const cid = unique[0] || "seoul";
     return buildFallbackItinerary({
       nights,
       days,
       partySize,
-      cityId: unique[0] || "seoul",
+      cityId: cid,
+      placeTemplates: placeTemplatesByCity?.[cid],
+      lodgingCandidates: lodgingCandidatesByCity?.[cid],
     });
   }
 
@@ -856,6 +876,8 @@ export function buildMultiCityFallbackItinerary({
       days: legDays,
       partySize,
       cityId: leg.cityId,
+      placeTemplates: placeTemplatesByCity?.[leg.cityId],
+      lodgingCandidates: lodgingCandidatesByCity?.[leg.cityId],
     });
     if (!lodgingCandidates.length) {
       lodgingCandidates = part.lodgingCandidates || [];
@@ -995,11 +1017,68 @@ export async function generateItinerary(body, env) {
   const cityId = isValidCityId(cityIds[0]) ? cityIds[0] : "seoul";
   const city = resolveCity(cityId);
   const mapsApiKey = env.googleMapsApiKey || "";
+  const tourApiServiceKey = String(env.tourApiServiceKey || "").trim();
   const isMulti = cityIds.length > 1;
   const domestic = isDomesticCity(cityId) || cityIds.every(isDomesticCity);
   const currency = domestic ? "KRW" : "JPY";
   // 프롬프트 cityId enum은 요청 도시만 — 전체 카탈로그(도쿄 포함)를 넣으면 모델이 이탈함
   const cityEnum = cityIds.join("|");
+
+  let tourPool = { attraction: [], food: [], hotel: [] };
+  if (domestic && tourApiServiceKey) {
+    try {
+      tourPool = await fetchTourPlacePool({
+        cityIds,
+        serviceKey: tourApiServiceKey,
+        perCategory: 12,
+      });
+    } catch {
+      tourPool = { attraction: [], food: [], hotel: [] };
+    }
+  }
+  const tourLodgingCandidates = tourStaysToLodgingCandidates(tourPool.hotel, {
+    nights: Math.max(1, nights),
+    partySize,
+    topN: 5,
+    cityId,
+  });
+  const tourPromptBlock = formatTourPoolForPrompt(tourPool);
+  const placeTemplatesByCity = {};
+  const lodgingCandidatesByCity = {};
+  for (const cid of cityIds.filter(isDomesticCity)) {
+    const cityAttractions = tourPool.attraction.filter((p) => p.cityId === cid);
+    const cityFood = tourPool.food.filter((p) => p.cityId === cid);
+    const merged = tourPlacesToSuggestItems(
+      [...cityAttractions, ...cityFood],
+      { partySize },
+    ).map(({ id, dayIndex, order, ...rest }) => rest);
+    if (merged.length) placeTemplatesByCity[cid] = merged;
+    const cityHotels = tourPool.hotel.filter((p) => p.cityId === cid);
+    const lod = tourStaysToLodgingCandidates(cityHotels, {
+      nights: Math.max(1, nights),
+      partySize,
+      topN: 5,
+      cityId: cid,
+    });
+    if (lod.length) lodgingCandidatesByCity[cid] = lod;
+  }
+  const fallbackOpts = {
+    nights,
+    days,
+    partySize,
+    cityId,
+    placeTemplates: placeTemplatesByCity[cityId],
+    lodgingCandidates:
+      lodgingCandidatesByCity[cityId] || tourLodgingCandidates,
+  };
+  const multiFallbackOpts = {
+    nights,
+    days,
+    partySize,
+    cityIds,
+    placeTemplatesByCity,
+    lodgingCandidatesByCity,
+  };
   const originName =
     body?.origin && typeof body.origin === "object"
       ? String(body.origin.address || body.origin.name || "").trim()
@@ -1056,7 +1135,9 @@ export async function generateItinerary(body, env) {
     const lodgingCandidates =
       Array.isArray(base.lodgingCandidates) && base.lodgingCandidates.length
         ? base.lodgingCandidates
-        : buildLodgingCandidates({ nights, partySize, topN: 5, cityId });
+        : tourLodgingCandidates.length
+          ? tourLodgingCandidates
+          : buildLodgingCandidates({ nights, partySize, topN: 5, cityId });
     const preferredLodgingId =
       base.preferredLodgingId || lodgingCandidates[0]?.id || null;
     const cities =
@@ -1129,13 +1210,8 @@ export async function generateItinerary(body, env) {
   if (!env.geminiApiKey) {
     return finish(
       isMulti
-        ? buildMultiCityFallbackItinerary({
-            nights,
-            days,
-            partySize,
-            cityIds,
-          })
-        : buildFallbackItinerary({ nights, days, partySize, cityId }),
+        ? buildMultiCityFallbackItinerary(multiFallbackOpts)
+        : buildFallbackItinerary(fallbackOpts),
     );
   }
 
@@ -1237,7 +1313,8 @@ lodgingCandidates의 estimatedCost는 ${nights}박 총액. lodgingCandidates는 
 hotel·lodgingCandidates: breakfastIncluded는 조식 포함 여부(불확실하면 필드 생략). 조식 별도면 breakfastPricePerPerson(${costUnit}). pricePerPerson은 1박 숙박 인당(${partySize}명 기준).
 plannedBudget는 인원(${partySize}명) 기준 총액(맛집·관광은 1인×인원).
 plannedTime은 하루 일정 순서에 맞는 도착/시작 시각. hotel은 가능하면 저녁(숙소 복귀) 시각.
-travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0).`;
+travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0).
+${tourPromptBlock ? `\n${tourPromptBlock}\n` : ""}`;
 
   try {
     const { text, engine } = await geminiComplete({
@@ -1266,13 +1343,8 @@ travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0
       }
       return finish(
         isMulti
-          ? buildMultiCityFallbackItinerary({
-              nights,
-              days,
-              partySize,
-              cityIds,
-            })
-          : buildFallbackItinerary({ nights, days, partySize, cityId }),
+          ? buildMultiCityFallbackItinerary(multiFallbackOpts)
+          : buildFallbackItinerary(fallbackOpts),
       );
     }
 
@@ -1331,12 +1403,14 @@ travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0
       : [];
 
     if (lodgingCandidates.length === 0) {
-      lodgingCandidates = buildLodgingCandidates({
-        nights,
-        partySize,
-        topN: 5,
-        cityId,
-      });
+      lodgingCandidates = tourLodgingCandidates.length
+        ? tourLodgingCandidates
+        : buildLodgingCandidates({
+            nights,
+            partySize,
+            topN: 5,
+            cityId,
+          });
     }
 
     const citiesFromParsed = Array.isArray(parsed.cities)
@@ -1358,12 +1432,7 @@ travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0
       : undefined;
 
     const defaultCities = isMulti
-      ? buildMultiCityFallbackItinerary({
-          nights,
-          days,
-          partySize,
-          cityIds,
-        }).cities
+      ? buildMultiCityFallbackItinerary(multiFallbackOpts).cities
       : [
           {
             cityId,
@@ -1401,13 +1470,8 @@ travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0
     );
     return finish(
       isMulti
-        ? buildMultiCityFallbackItinerary({
-            nights,
-            days,
-            partySize,
-            cityIds,
-          })
-        : buildFallbackItinerary({ nights, days, partySize, cityId }),
+        ? buildMultiCityFallbackItinerary(multiFallbackOpts)
+        : buildFallbackItinerary(fallbackOpts),
     );
   }
 }
@@ -2324,17 +2388,58 @@ function staticSuggestPool(cityId, partySize) {
   ];
 }
 
-/** 카테고리별 삽입용 제안 장소 (Places 선택 → 정적 POI 폴백) */
+/** 카테고리별 삽입용 제안 장소 (TourAPI → Places → 정적 POI) */
 export async function suggestPlacesByCategory({
   cityId = "seoul",
   category,
   partySize = 2,
   mapsApiKey = "",
+  tourApiServiceKey = "",
   geminiApiKey = "",
   geminiModel,
   llmTimeoutMs,
 } = {}) {
   const city = resolveCity(cityId);
+  const domestic = isDomesticCity(city.id);
+  const tourKey = String(tourApiServiceKey || "").trim();
+
+  if (domestic && tourKey) {
+    try {
+      let fromTour = await suggestViaTourApi({
+        cityId: city.id,
+        category,
+        partySize,
+        serviceKey: tourKey,
+        limit: 12,
+      });
+      if (fromTour?.length) {
+        if (category === "food") {
+          fromTour = await enrichFoodMenus(fromTour, {
+            city,
+            partySize,
+            geminiApiKey,
+            geminiModel,
+            llmTimeoutMs,
+          });
+        }
+        if (category === "hotel") {
+          fromTour = await enrichHotelSuggests(fromTour, {
+            cityId: city.id,
+            cityNameKo: city.nameKo,
+            nights: 2,
+            partySize,
+            city,
+            geminiApiKey,
+            geminiModel,
+            llmTimeoutMs,
+          });
+        }
+        return { places: fromTour, source: "tourapi" };
+      }
+    } catch {
+      /* Google / static fallback */
+    }
+  }
 
   if (mapsApiKey) {
     try {
