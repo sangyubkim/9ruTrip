@@ -208,6 +208,27 @@ function tourApiItems(data) {
   return Array.isArray(items) ? items : items ? [items] : [];
 }
 
+/** TourAPI searchFestival2는 공연·의식·투어까지 포함하므로 축제성 항목만 남김 */
+const FESTIVAL_TITLE_INCLUDE =
+  /축제|페스티벌|페스타|박람회|문화제|예술제|연등|단오|머드|불꽃|한마당|비엔날레|군항제|춘향제|[가-힣]{2,}제$/;
+const FESTIVAL_TITLE_EXCLUDE =
+  /투어|의식|교대|공연|라이트쇼|전시|상설|워크숍|세미나|콘서트|뮤지컬|연극|오페라|산책|방문의\s*해|파수|수문장|건축투어|작품투어|페인터/;
+
+function isFestivalLikeTourItem(item) {
+  const title = String(item?.title || "").trim();
+  if (!title) return false;
+  const cat2 = String(item?.cat2 || "").trim();
+  const cat3 = String(item?.cat3 || "").trim();
+  // A0207 = 축제, A0208 = 공연/행사
+  if (cat2 === "A0207" || cat3.startsWith("A0207")) return true;
+  if (cat2 === "A0208" || cat3.startsWith("A0208")) {
+    return FESTIVAL_TITLE_INCLUDE.test(title);
+  }
+  if (FESTIVAL_TITLE_INCLUDE.test(title)) return true;
+  if (FESTIVAL_TITLE_EXCLUDE.test(title)) return false;
+  return false;
+}
+
 async function fetchTourApiItems({ serviceKey, startDate, endDate }) {
   const items = [];
   const eventStartDate = startDate.replaceAll("-", "");
@@ -253,6 +274,7 @@ function normalizeTourApiFestivals(items, { startDate, endDate, lat, lng, cityId
 
   return sortFestivals(items
     .map((item) => {
+      if (!isFestivalLikeTourItem(item)) return null;
       const festivalStartDate = tourApiDate(item?.eventstartdate);
       const festivalEndDate = tourApiDate(item?.eventenddate);
       const festivalLat = Number(item?.mapy);
