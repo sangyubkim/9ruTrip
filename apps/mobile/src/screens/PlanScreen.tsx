@@ -40,6 +40,7 @@ import { PlannedTimeModal } from "../components/PlannedTimeModal";
 import { PlanDayMap } from "../components/PlanDayMap";
 import { ProvinceCityPickerModal } from "../components/ProvinceCityPickerModal";
 import { SeedCourseInclusionBanner } from "../components/SeedCourseInclusionBanner";
+import { FestivalInclusionBanner } from "../components/FestivalInclusionBanner";
 import { TransportCompareSheet } from "../components/TransportCompareSheet";
 import { WeatherCrowdChip } from "../components/WeatherCrowdChip";
 import { AddPlaceScreen } from "./AddPlaceScreen";
@@ -173,6 +174,33 @@ function renumberGlobal(places: ItineraryPlace[]): ItineraryPlace[] {
     (a, b) => a.dayIndex - b.dayIndex || a.order - b.order,
   );
   return sorted.map((p, i) => ({ ...p, order: i }));
+}
+
+/** Day0 여행 출발 카드 (서버 prependOriginDeparturePlace 와 동일 판별) */
+function isOriginDeparturePlace(p: ItineraryPlace): boolean {
+  if (p.category !== "transport" && p.category !== "other") return false;
+  const notes = String(p.notes || "");
+  return /여행\s*출발|출발지/.test(notes) && !(Number(p.estimatedCost) > 0);
+}
+
+/** 출발지→첫 여행지 장거리 구간 — 도보/대중/택시 비교 대상 아님 */
+function isOutboundTravelLeg(
+  place: ItineraryPlace,
+  prev: ItineraryPlace | null,
+): boolean {
+  if (place.travelFromPrevCostKind === "toll" || place.travelFromPrevCostKind === "fare") {
+    return true;
+  }
+  if (/자차|기차|버스|비행기/.test(String(place.notes || ""))) return true;
+  if (prev && isOriginDeparturePlace(prev)) return true;
+  if (
+    !prev &&
+    Number(place.travelFromPrevMinutes) > 0 &&
+    Number(place.dayIndex) === 0
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function budgetOf(places: ItineraryPlace[], partySize: number): number {
@@ -612,6 +640,7 @@ export function PlanScreen({
           trip: assigned,
           dayIndex: day,
           targetCityId: targetCity,
+          completedPlaceIds: trip.completedPlaceIds ?? [],
         });
         const places = ensureOvernightHotelsInPlaces(res.places, {
           days: assigned.days,
@@ -1135,6 +1164,7 @@ export function PlanScreen({
         places: trip.places,
         dayIndex: day,
         cityId: dayCityId,
+        completedPlaceIds: trip.completedPlaceIds ?? [],
       });
       const before = res.before?.join(" → ") || "(없음)";
       const after = res.after?.join(" → ") || "(없음)";
@@ -1372,6 +1402,14 @@ export function PlanScreen({
     const routeNo = mapNo >= 0 ? mapNo + 1 : null;
     const hasPreviousPlace =
       mapPlaces.findIndex((place) => place.id === item.id) > 0;
+    const prevPlace = (() => {
+      const idx = mapPlaces.findIndex((place) => place.id === item.id);
+      return idx > 0 ? mapPlaces[idx - 1]! : null;
+    })();
+    const outboundLeg = isOutboundTravelLeg(item, prevPlace);
+    // 첫 장소라도 outbound(출발→목적지) 분이 있으면 이동 칩 표시
+    const showTravelChip =
+      hasPreviousPlace || Number(item.travelFromPrevMinutes) > 0;
     const hotelNightly =
       item.category === "hotel"
         ? formatHotelNightlyMoney(item.estimatedCost, currency)
@@ -1407,7 +1445,19 @@ export function PlanScreen({
               { backgroundColor: colors.bgElevated, borderColor: colors.border },
             ]}
           >
-          {hasPreviousPlace && (travel ? (
+          {showTravelChip && travel ? (
+            outboundLeg ? (
+              <View
+                style={[styles.compareChip, { backgroundColor: colors.accentMuted }]}
+                accessibilityRole="text"
+                accessibilityLabel={`출발지에서 이동 ${travel}`}
+              >
+                <Text style={[styles.compareChipText, { color: colors.accent }]}>
+                  {routeNo != null ? `${routeNo} · ` : ""}
+                  출발지에서 › {travel}
+                </Text>
+              </View>
+            ) : (
             <Pressable
               onPress={() => void openTransportCompare(item)}
               style={[styles.compareChip, { backgroundColor: colors.accentMuted }]}
@@ -1419,7 +1469,8 @@ export function PlanScreen({
                 {routeNo != null ? `${routeNo} · ` : ""}이동 · 비교 › {travel}
               </Text>
             </Pressable>
-          ) : (
+            )
+          ) : showTravelChip ? (
             <Pressable
               onPress={() => void openTransportCompare(item)}
               style={[styles.compareChipMuted, { backgroundColor: colors.bgMuted }]}
@@ -1432,7 +1483,7 @@ export function PlanScreen({
                 {routeNo != null ? `${routeNo} · ` : ""}이동 · 비교
               </Text>
             </Pressable>
-          ))}
+          ) : null}
           <Pressable
             onPress={() => setSelectedPlaceId(item.id)}
             style={[
@@ -1749,6 +1800,13 @@ export function PlanScreen({
                 updatedAt: new Date().toISOString(),
               });
             }}
+          />
+        ) : null}
+
+        {(trip.routeBriefing?.festivals?.length ?? 0) > 0 ? (
+          <FestivalInclusionBanner
+            festivals={trip.routeBriefing!.festivals!}
+            places={trip.places}
           />
         ) : null}
 

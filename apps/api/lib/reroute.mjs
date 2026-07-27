@@ -4,6 +4,11 @@ import { enrichPlacesWithTransport } from "./transport.mjs";
 import { isKnownCityId, resolveCity } from "./cities.mjs";
 import { fetchTourPlacePool } from "./tourapi.mjs";
 import { groundDomesticPlaces } from "./place-ground.mjs";
+import {
+  applyMajorSchedulePostConstraints,
+  completedIdSet,
+  isScheduleLockedPlace,
+} from "./schedule-constraints.mjs";
 
 function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -62,11 +67,7 @@ export async function rerouteItinerary(body, env) {
   const reason = String(
     body?.reason || "사용자가 동선을 벗어남",
   ).slice(0, 800);
-  const completedIds = new Set(
-    Array.isArray(body?.completedPlaceIds)
-      ? body.completedPlaceIds.map(String)
-      : [],
-  );
+  const completedIds = completedIdSet(body?.completedPlaceIds);
 
   const dayLeg = Array.isArray(trip.cities)
     ? trip.cities.find(
@@ -90,17 +91,21 @@ export async function rerouteItinerary(body, env) {
     trip.lodgingReturnTime || body?.lodgingReturnTime || "21:00",
   ).slice(0, 8);
 
+  // 완료 + Day0 여행 출발 카드 유지
   const keepPlaces = trip.places.filter(
-    (p) => p.dayIndex !== dayIndex || completedIds.has(String(p.id)),
+    (p) =>
+      p.dayIndex !== dayIndex || isScheduleLockedPlace(p, completedIds),
   );
-  const completedToday = trip.places
-    .filter((p) => p.dayIndex === dayIndex && completedIds.has(String(p.id)))
+  const lockedToday = trip.places
+    .filter(
+      (p) => p.dayIndex === dayIndex && isScheduleLockedPlace(p, completedIds),
+    )
     .sort((a, b) => a.order - b.order);
 
-  const last = completedToday[completedToday.length - 1];
+  const last = lockedToday[lockedToday.length - 1];
   const remainingSlots = Math.max(
     2,
-    4 - completedToday.filter((p) => p.category !== "hotel").length,
+    4 - lockedToday.filter((p) => p.category !== "hotel").length,
   );
 
   const fallbackNew = buildFallbackRemaining({
@@ -108,7 +113,7 @@ export async function rerouteItinerary(body, env) {
     partySize,
     from: last,
     count: remainingSlots,
-    startOrder: completedToday.length,
+    startOrder: lockedToday.length,
     city,
     domestic,
   });
@@ -128,23 +133,31 @@ export async function rerouteItinerary(body, env) {
 - partySize: ${partySize}, nights: ${nights}, days: ${days}
 - 숙소 복귀 시각: ${lodgingReturnTime}
 - 재루트 이유: ${reason}
-- 이미 완료된 장소: ${JSON.stringify(
-        completedToday.map((p) => ({
+- 이미 유지되는 장소(완료·여행 출발): ${JSON.stringify(
+        lockedToday.map((p) => ({
           name: p.name,
           lat: p.lat,
           lng: p.lng,
           plannedTime: p.plannedTime,
+          category: p.category,
         })),
       )}
-- 시작 좌표(마지막 완료지 또는 ${hubName}): ${JSON.stringify(
+- 시작 좌표(마지막 유지 지점 또는 ${hubName}): ${JSON.stringify(
         last
           ? { lat: last.lat, lng: last.lng, name: last.name }
           : { lat: city.center.lat, lng: city.center.lng, name: hubName },
       )}
 - 남은 슬롯 약 ${remainingSlots}개
+- 점심 food는 11:00–14:00(목표 12:00), 저녁 food는 18:00–20:00(목표 18:30)
+- food가 1곳이면 점심만, 2곳이면 점심·저녁 각 1곳
+- Day ${dayIndex + 1} 숙소: ${
+        dayIndex >= 1
+          ? "아침은 전날 숙소(체인)·저녁은 숙박 hotel 맨 끝"
+          : "여행 출발 유지, 숙박 hotel은 맨 끝"
+      }
 - 숙소 규칙: ${
         days > 1 && nights > 0 && dayIndex < days - 1
-          ? `이 Day는 마지막 날이 아니므로 hotel 1곳 포함(저녁 복귀)`
+          ? `이 Day는 마지막 날이 아니므로 hotel 1곳 포함(저녁 맨 끝 복귀)`
           : "마지막 날 또는 당일치기이므로 hotel 제외"
       }
 - 동선이 자연스럽고 이동 시간은 차로 기준, 비용도 현실적으로 (${currency})
@@ -213,7 +226,7 @@ export async function rerouteItinerary(body, env) {
     }
   }
 
-  const merged = finalizePlaceChain([...keepPlaces, ...newPlaces], {
+  const chained = finalizePlaceChain([...keepPlaces, ...newPlaces], {
     days,
     nights,
     lodgingCandidates: Array.isArray(trip.lodgingCandidates)
@@ -240,6 +253,34 @@ export async function rerouteItinerary(body, env) {
     const raw = String(trip.startTime || "09:00").trim();
     return /^\d{1,2}:\d{2}$/.test(raw) ? raw : "09:00";
   })();
+
+  let tourPoolForMeals = { food: [] };
+  if (domestic) {
+    const tourKey = String(env.tourApiServiceKey || "").trim();
+    if (tourKey) {
+      try {
+        tourPoolForMeals = await fetchTourPlacePool({
+          cityIds: [cityId],
+          serviceKey: tourKey,
+          perCategory: 8,
+        });
+      } catch {
+        tourPoolForMeals = { food: [] };
+      }
+    }
+  }
+
+  const merged = applyMajorSchedulePostConstraints(chained, {
+    dayIndex,
+    days,
+    startHour,
+    tourPool: tourPoolForMeals,
+    partySize,
+    cities: trip.cities,
+    cityId,
+    completedPlaceIds: [...completedIds],
+  });
+
   const originLat = Number(trip.startLat ?? trip.origin?.lat);
   const originLng = Number(trip.startLng ?? trip.origin?.lng);
   const enriched = await enrichPlacesWithTransport(merged, {

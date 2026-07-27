@@ -472,7 +472,8 @@ function WaypointRow({
     bgMuted: string;
   };
 }) {
-  const n = waypoint.order || index + 1;
+  // API order/subnum can duplicate — UI number is sorted-list position
+  const n = index + 1;
   const info =
     waypoint.address ||
     (waypoint.overview ? waypoint.overview.slice(0, 80) : "") ||

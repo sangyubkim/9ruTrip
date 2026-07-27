@@ -12,6 +12,7 @@ import {
   lodgingScoreBreakdown,
   normalizeOutboundTransportMode,
   OUTBOUND_MODE_LABEL,
+  prependOriginDeparturePlace,
 } from "./transport.mjs";
 import {
   enrichTourPlacesWithDetails,
@@ -1247,7 +1248,7 @@ export async function generateItinerary(body, env) {
       return next;
     });
     // 식사 슬롯 보강 후 항상 순차 재계산(체류 60분+이동). 식사 창 하한은 enrich가 notes로 유지.
-    const enriched = await enrichPlacesWithTransport(clearedForEnrich, {
+    const enrichedCore = await enrichPlacesWithTransport(clearedForEnrich, {
       mapsApiKey,
       forceRecalc: true,
       cityId,
@@ -1258,6 +1259,47 @@ export async function generateItinerary(body, env) {
       origin: originPoint,
       outboundTransportMode,
     });
+    // Day0 맨 앞 출발 카드(startTime) — 첫 POI 도착=start+outbound 는 enrich가 이미 반영
+    const enriched = prependOriginDeparturePlace(enrichedCore, {
+      startTime,
+      startAddress,
+      origin: originPoint
+        ? { ...originPoint, name: startAddress || undefined }
+        : null,
+      outboundTransportMode,
+    });
+    const day0First = enriched.find((p) => (Number(p.dayIndex) || 0) === 0);
+    const day0Poi = enriched.find(
+      (p) =>
+        (Number(p.dayIndex) || 0) === 0 &&
+        p.category !== "transport" &&
+        !String(p.notes || "").includes("여행 출발"),
+    );
+    console.info(
+      "[generateItinerary.finish] day0 timeline",
+      JSON.stringify({
+        startTime,
+        startMinutes,
+        origin: originPoint,
+        outboundTransportMode,
+        departure: day0First
+          ? {
+              name: day0First.name,
+              plannedTime: day0First.plannedTime,
+              notes: day0First.notes,
+            }
+          : null,
+        firstPoi: day0Poi
+          ? {
+              name: day0Poi.name,
+              plannedTime: day0Poi.plannedTime,
+              travelFromPrevMinutes: day0Poi.travelFromPrevMinutes,
+            }
+          : null,
+        clearedPlannedTimes: true,
+        forceRecalc: true,
+      }),
+    );
     const partyCost = (p) => {
       const c = Math.max(0, Number(p.estimatedCost) || 0);
       if (p.category === "food" || p.category === "attraction") {

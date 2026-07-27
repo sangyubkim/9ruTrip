@@ -3,11 +3,15 @@ import {
   buildFallbackItinerary,
   finalizePlaceChain,
 } from "./itinerary.mjs";
-import { ensureDailyMealSlots } from "./meal-slots.mjs";
-import { enrichPlacesWithTransport } from "./transport.mjs";
+import { enrichPlacesWithTransport, prependOriginDeparturePlace } from "./transport.mjs";
 import { isKnownCityId, resolveCity } from "./cities.mjs";
 import { fetchTourPlacePool } from "./tourapi.mjs";
 import { groundDomesticPlaces } from "./place-ground.mjs";
+import {
+  applyMajorSchedulePostConstraints,
+  completedIdSet,
+  isScheduleLockedPlace,
+} from "./schedule-constraints.mjs";
 
 function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -181,8 +185,16 @@ export async function regenerateDayItinerary(body, env) {
     trip.lodgingReturnTime || body?.lodgingReturnTime || "21:00",
   ).slice(0, 8);
   const neighbors = neighborDayContext(trip.places, dayIndex);
+  const completedIds = completedIdSet(body?.completedPlaceIds);
 
-  const keepPlaces = trip.places.filter((p) => p.dayIndex !== dayIndex);
+  // 다른 Day + 당일 잠금(완료·여행 출발) 유지
+  const keepPlaces = trip.places.filter(
+    (p) =>
+      p.dayIndex !== dayIndex || isScheduleLockedPlace(p, completedIds),
+  );
+  const lockedToday = trip.places.filter(
+    (p) => p.dayIndex === dayIndex && isScheduleLockedPlace(p, completedIds),
+  );
   let newPlaces = buildFallbackDayPlaces({
     dayIndex,
     days,
@@ -215,6 +227,13 @@ export async function regenerateDayItinerary(body, env) {
       }
 - 반드시 ${city.nameKo} 및 인근 명소만 제안
 - attraction·food 위주로 4~6곳 정도
+- 유지되는 장소(완료·여행 출발)는 다시 만들지 마세요: ${JSON.stringify(
+        lockedToday.map((p) => ({
+          name: p.name,
+          category: p.category,
+          plannedTime: p.plannedTime,
+        })),
+      )}
 
 전날(Day ${dayIndex}) 참고(없으면 빈 배열):
 ${JSON.stringify(neighbors.previousDay)}
@@ -337,18 +356,30 @@ ${JSON.stringify(neighbors.nextDay)}
     }
   }
 
-  const withMeals = ensureDailyMealSlots(merged, {
+  const withMeals = applyMajorSchedulePostConstraints(merged, {
+    dayIndex,
     days,
     startHour,
     tourPool: tourPoolForMeals,
     partySize,
     cities,
     cityId,
+    completedPlaceIds: [...completedIds],
   });
 
   const originLat = Number(trip.startLat ?? trip.origin?.lat);
   const originLng = Number(trip.startLng ?? trip.origin?.lng);
-  const enriched = await enrichPlacesWithTransport(withMeals, {
+  const originPoint =
+    Number.isFinite(originLat) && Number.isFinite(originLng)
+      ? { lat: originLat, lng: originLng }
+      : null;
+  // 재생성 분도 LLM plannedTime 제거 후 startTime+outbound로 재부여
+  const clearedForEnrich = withMeals.map((p) => {
+    const next = { ...p };
+    delete next.plannedTime;
+    return next;
+  });
+  const enrichedCore = await enrichPlacesWithTransport(clearedForEnrich, {
     mapsApiKey: env.googleMapsApiKey || "",
     forceRecalc: true,
     cityId,
@@ -356,10 +387,18 @@ ${JSON.stringify(neighbors.nextDay)}
     startMinutes,
     startTime,
     lodgingReturnTime,
-    origin:
-      Number.isFinite(originLat) && Number.isFinite(originLng)
-        ? { lat: originLat, lng: originLng }
-        : null,
+    origin: originPoint,
+    outboundTransportMode: trip.outboundTransportMode || "car",
+  });
+  const enriched = prependOriginDeparturePlace(enrichedCore, {
+    startTime,
+    startAddress: String(trip.startAddress || trip.origin?.name || "").trim(),
+    origin: originPoint
+      ? {
+          ...originPoint,
+          name: String(trip.startAddress || trip.origin?.name || "").trim(),
+        }
+      : null,
     outboundTransportMode: trip.outboundTransportMode || "car",
   });
 

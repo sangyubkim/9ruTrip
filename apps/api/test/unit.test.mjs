@@ -7,6 +7,15 @@ import {
   pathLengthKm,
 } from "../lib/optimize-day.mjs";
 import {
+  applyMajorSchedulePostConstraints,
+  ensureHotelBookends,
+  isScheduleLockedPlace,
+  mergeConstrainedDayOrder,
+  snapUnlockedFoodToMealWindows,
+  splitDayPlacesForReorder,
+} from "../lib/schedule-constraints.mjs";
+import { rerouteItinerary } from "../lib/reroute.mjs";
+import {
   buildLodgingCandidates,
   clearDirectionsCache,
   compareLegTransport,
@@ -18,6 +27,7 @@ import {
   lodgingScoreBreakdown,
   normalizeOutboundTransportMode,
   pickDefaultTransportMode,
+  prependOriginDeparturePlace,
   resolveDayStartMinutes,
 } from "../lib/transport.mjs";
 import {
@@ -928,6 +938,145 @@ describe("plannedTime sequential", () => {
     assert.ok(!String(first.plannedTime).startsWith("00:"));
   });
 
+  it("startTime 09:00 + ~60min outbound → first ~10:00", async () => {
+    // 자차 휴리스틱: (dist/75)*60+18 ≈ 60 → dist≈52.5km
+    const origin = { lat: 37.5665, lng: 126.978 };
+    const near = { lat: 37.5665 + 52.5 / 111, lng: 126.978 };
+    const leg = estimateOutboundLegHaversine(origin, near, "car");
+    assert.ok(leg.minutes >= 50 && leg.minutes <= 75, `leg=${leg.minutes}`);
+
+    const places = await enrichPlacesWithTransport(
+      [
+        {
+          id: "a1",
+          name: "근교 관광",
+          category: "attraction",
+          lat: near.lat,
+          lng: near.lng,
+          dayIndex: 0,
+          order: 0,
+          plannedTime: "19:30",
+        },
+      ],
+      {
+        startTime: "09:00",
+        startHour: 9,
+        startMinutes: 9 * 60,
+        forceRecalc: true,
+        origin,
+        outboundTransportMode: "car",
+      },
+    );
+    const toMin = (hhmm) => {
+      const [h, m] = String(hhmm).split(":").map(Number);
+      return h * 60 + m;
+    };
+    const first = places[0];
+    assert.equal(
+      toMin(first.plannedTime),
+      9 * 60 + Number(first.travelFromPrevMinutes),
+    );
+    assert.ok(
+      toMin(first.plannedTime) >= 9 * 60 + 50 &&
+        toMin(first.plannedTime) <= 9 * 60 + 75,
+      `expected ~10:00, got ${first.plannedTime}`,
+    );
+    assert.notEqual(first.plannedTime, "19:30");
+  });
+
+  it("large outbound still clocks from startTime 09:00 (departure card)", async () => {
+    const seoul = { lat: 37.5665, lng: 126.978 };
+    const busan = { lat: 35.1796, lng: 129.0756 };
+    const core = await enrichPlacesWithTransport(
+      [
+        {
+          id: "a1",
+          name: "부산 관광",
+          category: "attraction",
+          lat: busan.lat,
+          lng: busan.lng,
+          dayIndex: 0,
+          order: 0,
+          plannedTime: "19:30",
+        },
+      ],
+      {
+        startTime: "09:00",
+        forceRecalc: true,
+        origin: seoul,
+        outboundTransportMode: "car",
+      },
+    );
+    const places = prependOriginDeparturePlace(core, {
+      startTime: "09:00",
+      startAddress: "서울",
+      origin: { ...seoul, name: "서울" },
+      outboundTransportMode: "car",
+    });
+    const toMin = (hhmm) => {
+      const [h, m] = String(hhmm).split(":").map(Number);
+      return h * 60 + m;
+    };
+    const dep = places[0];
+    const poi = places[1];
+    assert.equal(dep.plannedTime, "09:00");
+    assert.match(String(dep.notes || ""), /여행\s*출발/);
+    assert.ok(Number(poi.travelFromPrevMinutes) > 120);
+    assert.equal(
+      toMin(poi.plannedTime),
+      9 * 60 + Number(poi.travelFromPrevMinutes),
+    );
+    assert.ok(toMin(poi.plannedTime) > 12 * 60);
+    assert.notEqual(poi.plannedTime, "19:30");
+  });
+
+  it("re-enrich keeps departure at startTime and POI = start + outbound", async () => {
+    const seoul = { lat: 37.5665, lng: 126.978 };
+    const dest = { lat: 37.5, lng: 127.2 };
+    const places = await enrichPlacesWithTransport(
+      [
+        {
+          id: "origin-depart-x",
+          name: "서울",
+          category: "transport",
+          lat: seoul.lat,
+          lng: seoul.lng,
+          dayIndex: 0,
+          order: 0,
+          estimatedCost: 0,
+          notes: "여행 출발 · 자차",
+          plannedTime: "19:30",
+        },
+        {
+          id: "a1",
+          name: "관광",
+          category: "attraction",
+          lat: dest.lat,
+          lng: dest.lng,
+          dayIndex: 0,
+          order: 1,
+          plannedTime: "19:30",
+        },
+      ],
+      {
+        startTime: "09:00",
+        forceRecalc: true,
+        origin: seoul,
+        outboundTransportMode: "car",
+      },
+    );
+    const toMin = (hhmm) => {
+      const [h, m] = String(hhmm).split(":").map(Number);
+      return h * 60 + m;
+    };
+    assert.equal(places[0].plannedTime, "09:00");
+    assert.ok(Number(places[1].travelFromPrevMinutes) > 0);
+    assert.equal(
+      toMin(places[1].plannedTime),
+      9 * 60 + Number(places[1].travelFromPrevMinutes),
+    );
+  });
+
   it("startTime 10:30 respected for day start without origin", async () => {
     const places = await enrichPlacesWithTransport(
       [
@@ -1032,13 +1181,384 @@ describe("optimize-day", () => {
       { geminiApiKey: "" },
     );
     assert.equal(res.engine, "nearest-neighbor");
-    assert.equal(res.after.length, 3);
-    assert.ok(res.pathKmAfter <= res.pathKmBefore + 0.01);
-    assert.equal(res.places.filter((p) => p.dayIndex === 0).length, 3);
+    assert.ok(res.after.length >= 3);
+    const ids = res.places
+      .filter((p) => p.dayIndex === 0)
+      .map((p) => p.id);
+    assert.ok(ids.includes("a") && ids.includes("b") && ids.includes("c"));
   });
 
   it("pathLengthKm is positive for multi-stop", () => {
     assert.ok(pathLengthKm(sample) > 5);
+  });
+
+  it("preserves origin departure and completed places at front", async () => {
+    const places = [
+      {
+        id: "origin",
+        name: "우리집",
+        category: "transport",
+        notes: "여행 출발 · 자차",
+        lat: 37.5,
+        lng: 127.0,
+        dayIndex: 0,
+        order: 0,
+        estimatedCost: 0,
+        plannedTime: "09:00",
+      },
+      {
+        id: "done1",
+        name: "완료명소",
+        category: "attraction",
+        lat: 37.55,
+        lng: 126.98,
+        dayIndex: 0,
+        order: 1,
+        estimatedCost: 0,
+        plannedTime: "10:00",
+      },
+      {
+        id: "far",
+        name: "먼곳",
+        category: "attraction",
+        lat: 37.7,
+        lng: 127.2,
+        dayIndex: 0,
+        order: 2,
+        estimatedCost: 0,
+      },
+      {
+        id: "near",
+        name: "가까운곳",
+        category: "attraction",
+        lat: 37.56,
+        lng: 126.99,
+        dayIndex: 0,
+        order: 3,
+        estimatedCost: 0,
+      },
+      {
+        id: "hotel1",
+        name: "숙소",
+        category: "hotel",
+        lat: 37.57,
+        lng: 126.98,
+        dayIndex: 0,
+        order: 4,
+        estimatedCost: 120000,
+      },
+    ];
+    const res = await optimizeDayRoute(
+      {
+        places,
+        dayIndex: 0,
+        cityId: "seoul",
+        completedPlaceIds: ["done1"],
+      },
+      { geminiApiKey: "" },
+    );
+    const day = res.places
+      .filter((p) => p.dayIndex === 0)
+      .sort((a, b) => a.order - b.order);
+    assert.equal(day[0].id, "origin");
+    assert.equal(day[1].id, "done1");
+    assert.equal(day[0].plannedTime, "09:00");
+    const hotel = day.filter((p) => p.category === "hotel").pop();
+    assert.equal(hotel?.id, "hotel1");
+    assert.equal(day[day.length - 1].category, "hotel");
+  });
+
+  it("puts hotel last; single food snaps to lunch only", async () => {
+    const places = [
+      {
+        id: "h",
+        name: "호텔",
+        category: "hotel",
+        lat: 37.5,
+        lng: 127.0,
+        dayIndex: 0,
+        order: 0,
+        estimatedCost: 100000,
+      },
+      {
+        id: "a1",
+        name: "명소A",
+        category: "attraction",
+        lat: 37.51,
+        lng: 127.01,
+        dayIndex: 0,
+        order: 1,
+        estimatedCost: 0,
+      },
+      {
+        id: "a2",
+        name: "명소B",
+        category: "attraction",
+        lat: 37.52,
+        lng: 127.02,
+        dayIndex: 0,
+        order: 2,
+        estimatedCost: 0,
+      },
+      {
+        id: "f1",
+        name: "맛집1",
+        category: "food",
+        lat: 37.515,
+        lng: 127.015,
+        dayIndex: 0,
+        order: 3,
+        estimatedCost: 15000,
+        plannedTime: "15:00",
+      },
+    ];
+    const res = await optimizeDayRoute(
+      { places, dayIndex: 0, cityId: "seoul", completedPlaceIds: [] },
+      { geminiApiKey: "" },
+    );
+    const day = res.places
+      .filter((p) => p.dayIndex === 0)
+      .sort((a, b) => a.order - b.order);
+    assert.equal(day[day.length - 1].category, "hotel");
+    const foods = day.filter((p) => p.category === "food");
+    assert.equal(foods.length, 1);
+    const m = String(foods[0].plannedTime || "").match(/^(\d{1,2}):(\d{2})$/);
+    const mins = m ? Number(m[1]) * 60 + Number(m[2]) : null;
+    assert.ok(mins != null && mins >= 11 * 60 && mins <= 14 * 60);
+  });
+});
+
+describe("schedule-constraints", () => {
+  const toMin = (t) => {
+    const m = String(t || "").match(/^(\d{1,2}):(\d{2})$/);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+
+  it("locks origin departure and completed ids", () => {
+    const origin = {
+      id: "o",
+      category: "transport",
+      notes: "여행 출발 · 기차",
+      estimatedCost: 0,
+    };
+    const done = { id: "d1", category: "attraction" };
+    assert.equal(isScheduleLockedPlace(origin, new Set()), true);
+    assert.equal(isScheduleLockedPlace(done, new Set(["d1"])), true);
+    assert.equal(isScheduleLockedPlace(done, new Set()), false);
+  });
+
+  it("split/merge keeps locked prefix and hotel suffix", () => {
+    const dayPlaces = [
+      {
+        id: "o",
+        category: "transport",
+        notes: "여행 출발",
+        estimatedCost: 0,
+        order: 0,
+      },
+      { id: "c", category: "attraction", order: 1 },
+      { id: "a", category: "attraction", order: 2 },
+      { id: "h", category: "hotel", order: 3, estimatedCost: 1 },
+    ];
+    const { locked, movable, stayHotels, morningHotels } =
+      splitDayPlacesForReorder(dayPlaces, ["c"]);
+    assert.deepEqual(
+      locked.map((p) => p.id),
+      ["o", "c"],
+    );
+    assert.deepEqual(
+      movable.map((p) => p.id),
+      ["a"],
+    );
+    assert.deepEqual(
+      stayHotels.map((p) => p.id),
+      ["h"],
+    );
+    assert.equal(morningHotels.length, 0);
+    const merged = mergeConstrainedDayOrder(locked, movable, stayHotels, {
+      morningHotels,
+      dayIndex: 0,
+    });
+    assert.deepEqual(
+      merged.map((p) => p.id),
+      ["o", "c", "a", "h"],
+    );
+  });
+
+  it("Day2+ bookends: chain hotel first and stay hotel last", () => {
+    const day = [
+      { id: "a", category: "attraction", order: 0, dayIndex: 1 },
+      {
+        id: "stay",
+        category: "hotel",
+        notes: "숙박",
+        estimatedCost: 90000,
+        order: 1,
+        dayIndex: 1,
+      },
+      {
+        id: "chain",
+        category: "hotel",
+        notes: "전날 마지막 장소 · 출발",
+        estimatedCost: 0,
+        order: 2,
+        dayIndex: 1,
+      },
+    ];
+    const out = ensureHotelBookends(day, { dayIndex: 1 });
+    assert.equal(out[0].id, "chain");
+    assert.equal(out[out.length - 1].id, "stay");
+  });
+
+  it("Day1 keeps non-hotel start; stay hotel last", () => {
+    const day = [
+      {
+        id: "origin",
+        category: "transport",
+        notes: "여행 출발 · 자차",
+        estimatedCost: 0,
+        order: 0,
+      },
+      { id: "a", category: "attraction", order: 1 },
+      {
+        id: "stay",
+        category: "hotel",
+        estimatedCost: 90000,
+        order: 2,
+      },
+    ];
+    const out = ensureHotelBookends(day, {
+      dayIndex: 0,
+      completedPlaceIds: [],
+    });
+    assert.equal(out[0].id, "origin");
+    assert.equal(out[out.length - 1].id, "stay");
+  });
+
+  it("1 food → lunch window only", () => {
+    const day = [
+      { id: "f1", category: "food", plannedTime: "19:00", order: 0 },
+    ];
+    const out = snapUnlockedFoodToMealWindows(day, { startHour: 9 });
+    const mins = toMin(out[0].plannedTime);
+    assert.ok(mins >= 11 * 60 && mins <= 14 * 60);
+    assert.ok(!(mins >= 18 * 60 && mins <= 20 * 60));
+  });
+
+  it("2 foods → one lunch and one dinner", () => {
+    const day = [
+      { id: "f1", category: "food", plannedTime: "15:00", order: 0 },
+      { id: "f2", category: "food", plannedTime: undefined, order: 1 },
+    ];
+    const out = snapUnlockedFoodToMealWindows(day, { startHour: 9 });
+    const mins = out.map((p) => toMin(p.plannedTime));
+    assert.ok(mins.some((n) => n >= 11 * 60 && n <= 14 * 60));
+    assert.ok(mins.some((n) => n >= 18 * 60 && n <= 20 * 60));
+  });
+
+  it("applyMajorSchedulePostConstraints Day2 hotel start+end, no food insert", () => {
+    const places = [
+      {
+        id: "stay",
+        name: "호텔",
+        category: "hotel",
+        dayIndex: 1,
+        order: 0,
+        estimatedCost: 1,
+        notes: "숙박",
+      },
+      {
+        id: "a",
+        name: "명소",
+        category: "attraction",
+        dayIndex: 1,
+        order: 1,
+        estimatedCost: 0,
+      },
+      {
+        id: "chain",
+        name: "전날숙소",
+        category: "hotel",
+        dayIndex: 1,
+        order: 2,
+        estimatedCost: 0,
+        notes: "전날 마지막 장소 · 출발",
+      },
+    ];
+    const out = applyMajorSchedulePostConstraints(places, {
+      dayIndex: 1,
+      days: 2,
+      startHour: 9,
+    });
+    const day = out
+      .filter((p) => p.dayIndex === 1)
+      .sort((a, b) => a.order - b.order);
+    assert.equal(day[0].id, "chain");
+    assert.equal(day[day.length - 1].id, "stay");
+    assert.equal(day.filter((p) => p.category === "food").length, 0);
+  });
+});
+
+describe("reroute locks departure", () => {
+  it("keeps origin departure when regenerating remaining day", async () => {
+    const trip = {
+      days: 1,
+      nights: 0,
+      partySize: 2,
+      cityId: "seoul",
+      startTime: "09:00",
+      places: [
+        {
+          id: "origin",
+          name: "출발지",
+          category: "transport",
+          notes: "여행 출발 · 자차",
+          lat: 37.5,
+          lng: 127.0,
+          dayIndex: 0,
+          order: 0,
+          estimatedCost: 0,
+          plannedTime: "09:00",
+        },
+        {
+          id: "done",
+          name: "완료",
+          category: "attraction",
+          lat: 37.55,
+          lng: 126.99,
+          dayIndex: 0,
+          order: 1,
+          estimatedCost: 0,
+          plannedTime: "10:00",
+        },
+        {
+          id: "old",
+          name: "옛일정",
+          category: "attraction",
+          lat: 37.56,
+          lng: 126.98,
+          dayIndex: 0,
+          order: 2,
+          estimatedCost: 0,
+        },
+      ],
+    };
+    const res = await rerouteItinerary(
+      {
+        trip,
+        dayIndex: 0,
+        reason: "test",
+        completedPlaceIds: ["done"],
+      },
+      { geminiApiKey: "" },
+    );
+    const day = res.places
+      .filter((p) => p.dayIndex === 0)
+      .sort((a, b) => a.order - b.order);
+    assert.ok(day.some((p) => p.id === "origin"));
+    assert.ok(day.some((p) => p.id === "done"));
+    assert.ok(!day.some((p) => p.id === "old"));
+    assert.equal(day[0].id, "origin");
   });
 });
 

@@ -1,6 +1,11 @@
 import { geminiComplete, parseJsonLoose } from "./gemini.mjs";
 import { haversineKm } from "./transport.mjs";
 import { isKnownCityId, resolveCity } from "./cities.mjs";
+import {
+  applyMajorSchedulePostConstraints,
+  mergeConstrainedDayOrder,
+  splitDayPlacesForReorder,
+} from "./schedule-constraints.mjs";
 
 /**
  * Nearest-neighbor 휴리스틱: start에서 가장 가까운 미방문 장소를 반복 선택.
@@ -53,7 +58,8 @@ function cityLabel(cityId) {
 
 /**
  * POST /trip/optimize-day
- * { places, dayIndex, cityId } → 해당 day 순서 재배치 (Gemini 또는 NN 폴백)
+ * { places, dayIndex, cityId, completedPlaceIds? }
+ * → 완료·출발 카드 고정, 나머지 재배치, hotel 북엔드, 식사 창 스냅
  */
 export async function optimizeDayRoute(body, env) {
   const allPlaces = Array.isArray(body?.places) ? body.places : [];
@@ -62,6 +68,9 @@ export async function optimizeDayRoute(body, env) {
   }
 
   const cityId = isKnownCityId(body?.cityId) ? body.cityId : "seoul";
+  const completedPlaceIds = Array.isArray(body?.completedPlaceIds)
+    ? body.completedPlaceIds.map(String)
+    : [];
   const dayIndexes = [
     ...new Set(allPlaces.map((p) => Number(p.dayIndex) || 0)),
   ];
@@ -70,6 +79,7 @@ export async function optimizeDayRoute(body, env) {
     Math.max(0, Number(body?.dayIndex ?? 0)),
     maxDay,
   );
+  const days = maxDay + 1;
 
   const dayPlaces = allPlaces
     .filter((p) => Number(p.dayIndex) === dayIndex)
@@ -91,25 +101,64 @@ export async function optimizeDayRoute(body, env) {
   const beforeNames = dayPlaces.map((p) => p.name);
   const beforeKm = pathLengthKm(dayPlaces);
 
-  // hotel이 있으면 첫 슬롯 고정(숙소 기준 출발)
-  const hotelIdx = dayPlaces.findIndex((p) => p.category === "hotel");
-  const startIdx = hotelIdx >= 0 ? hotelIdx : 0;
+  const { locked, morningHotels, movable, stayHotels } =
+    splitDayPlacesForReorder(dayPlaces, completedPlaceIds);
 
-  let ordered = nearestNeighborOrder(dayPlaces, startIdx);
+  let movableOrdered =
+    movable.length <= 1 ? [...movable] : nearestNeighborOrder(movable, 0);
+  let ordered = mergeConstrainedDayOrder(locked, movableOrdered, stayHotels, {
+    morningHotels,
+    dayIndex,
+  });
   let engine = "nearest-neighbor";
   let summary = `${cityLabel(cityId)} Day ${dayIndex + 1} 동선을 최근접 휴리스틱으로 재배치했습니다.`;
 
-  if (env?.geminiApiKey) {
+  if (env?.geminiApiKey && movable.length > 1) {
     try {
       const prompt = `당신은 ${cityLabel(cityId)} 당일 동선 최적화 플래너입니다.
-아래 장소들을 이동 거리·피로도를 고려해 방문 순서를 재배치하세요.
-- 첫 장소는 가능하면 숙소(hotel) 또는 기존 첫 장소를 유지
-- 점심/저녁 식사(food)는 무리한 왕복 없이 자연스럽게
-- 동일 id만 사용, 장소 추가/삭제 금지
+아래 "재배치 대상" 장소만 이동 거리·피로도를 고려해 방문 순서를 재배치하세요.
+고정 장소(완료·여행 출발)와 숙소(hotel)는 순서에 넣지 마세요 — 서버가 앞/뒤에 붙입니다.
 
-입력 (순서=현재):
+규칙:
+- orderedIds 에는 재배치 대상 id만, 전부 1회씩
+- 장소 추가/삭제 금지
+- food 1곳이면 점심(11:00–14:00), 2곳이면 점심+저녁(18:00–20:00)
+- Day ${dayIndex + 1}: ${
+        dayIndex >= 1
+          ? "아침은 전날 숙소(체인 hotel), 저녁은 숙박 hotel"
+          : "시작은 여행 출발 유지, 저녁은 숙박 hotel"
+      }
+
+고정(참고, 순서 고정):
 ${JSON.stringify(
-  dayPlaces.map((p) => ({
+  locked.map((p) => ({
+    id: p.id,
+    name: p.name,
+    category: p.category,
+  })),
+)}
+
+아침 숙소(Day2+ 맨 앞, 참고):
+${JSON.stringify(
+  morningHotels.map((p) => ({
+    id: p.id,
+    name: p.name,
+    category: p.category,
+  })),
+)}
+
+숙소(맨 끝 고정, 참고):
+${JSON.stringify(
+  stayHotels.map((p) => ({
+    id: p.id,
+    name: p.name,
+    category: p.category,
+  })),
+)}
+
+재배치 대상 (현재 순서):
+${JSON.stringify(
+  movable.map((p) => ({
     id: p.id,
     name: p.name,
     category: p.category,
@@ -135,7 +184,7 @@ ${JSON.stringify(
       const ids = Array.isArray(parsed?.orderedIds)
         ? parsed.orderedIds.map(String)
         : [];
-      const byId = new Map(dayPlaces.map((p) => [String(p.id), p]));
+      const byId = new Map(movable.map((p) => [String(p.id), p]));
       const rebuilt = [];
       for (const id of ids) {
         const p = byId.get(id);
@@ -145,8 +194,12 @@ ${JSON.stringify(
         }
       }
       for (const p of byId.values()) rebuilt.push(p);
-      if (rebuilt.length === dayPlaces.length) {
-        ordered = rebuilt;
+      if (rebuilt.length === movable.length) {
+        movableOrdered = rebuilt;
+        ordered = mergeConstrainedDayOrder(locked, movableOrdered, stayHotels, {
+          morningHotels,
+          dayIndex,
+        });
         engine = "gemini";
         summary =
           typeof parsed?.summary === "string" && parsed.summary.trim()
@@ -158,16 +211,13 @@ ${JSON.stringify(
     }
   }
 
-  const afterNames = ordered.map((p) => p.name);
-  const afterKm = pathLengthKm(ordered);
-
   const others = allPlaces.filter((p) => Number(p.dayIndex) !== dayIndex);
   const renumberedDay = ordered.map((p, i) => ({
     ...p,
     dayIndex,
     order: i,
   }));
-  const merged = [...others, ...renumberedDay].sort(
+  let merged = [...others, ...renumberedDay].sort(
     (a, b) =>
       (Number(a.dayIndex) || 0) - (Number(b.dayIndex) || 0) ||
       (Number(a.order) || 0) - (Number(b.order) || 0),
@@ -175,6 +225,19 @@ ${JSON.stringify(
   merged.forEach((p, i) => {
     p.order = i;
   });
+
+  merged = applyMajorSchedulePostConstraints(merged, {
+    dayIndex,
+    days,
+    startHour: 9,
+    completedPlaceIds,
+  });
+
+  const afterDay = merged
+    .filter((p) => Number(p.dayIndex) === dayIndex)
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  const afterNames = afterDay.map((p) => p.name);
+  const afterKm = pathLengthKm(afterDay);
 
   return {
     places: merged,

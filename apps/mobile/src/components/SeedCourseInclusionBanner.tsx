@@ -182,6 +182,18 @@ export function SeedCourseInclusionBanner({
               >
                 {item.order}. {item.name}
               </Text>
+              <Text
+                style={[
+                  styles.dayLabel,
+                  {
+                    color: item.included
+                      ? colors.accent
+                      : colors.textMuted,
+                  },
+                ]}
+              >
+                {item.dayLabel}
+              </Text>
             </View>
           ))}
         </View>
@@ -219,4 +231,11 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   mark: { fontSize: 14, fontWeight: "900", width: 16, marginTop: 1 },
   wpName: { flex: 1, fontSize: 13, fontWeight: "600", lineHeight: 18 },
+  dayLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 1,
+    minWidth: 52,
+    textAlign: "right",
+  },
 });

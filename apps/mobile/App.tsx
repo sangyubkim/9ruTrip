@@ -38,6 +38,7 @@ import {
   flushDiarySyncQueue,
 } from "./src/storage/diarySyncQueueStorage";
 import { tripToDiaryEntry } from "./src/utils/diary";
+import { mergeFestivalsIntoRouteBriefing } from "./src/utils/routeBriefing";
 import type { Screen, TravelDiaryEntry, Trip } from "./src/types";
 import {
   buildCityLegs,
@@ -310,6 +311,11 @@ function AppInner() {
             : undefined;
         const seedCourseSafe =
           seedCourse?.contentId && seedCourse.title ? seedCourse : undefined;
+        // 축제 메타: API routeBriefing 우선, 없으면 생성 시 선택값으로 보강
+        const routeBriefing = mergeFestivalsIntoRouteBriefing(
+          result.routeBriefing,
+          input.preferredFestivals,
+        );
         const trip = createEmptyTrip({
           ...input,
           cityId: resolvedCityId,
@@ -318,7 +324,7 @@ function AppInner() {
           mainRequest: input.userRequest,
           briefing,
           routeOutline,
-          routeBriefing: result.routeBriefing,
+          routeBriefing,
           seedCourse: seedCourseSafe,
         });
         // 구 API/AI가 숙소를 빠뜨려도 마지막 날 제외 Day에 hotel 보정
@@ -346,7 +352,7 @@ function AppInner() {
           cities,
           briefing,
           routeOutline,
-          routeBriefing: result.routeBriefing,
+          routeBriefing,
           seedCourse: seedCourseSafe,
           startAddress: input.startAddress,
           startLat: input.startLat,

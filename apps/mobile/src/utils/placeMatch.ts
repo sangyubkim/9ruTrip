@@ -30,7 +30,23 @@ export type PlaceMatchLike = {
   googlePlaceId?: string;
   lat?: number;
   lng?: number;
+  dayIndex?: number;
+  cityId?: string;
+  notes?: string;
+  aiReason?: string;
 };
+
+/** 포함 Day 표시: dayIndex(0-based) → "Day N", 미매칭 → "미포함" */
+export type InclusionDayLabel = `Day ${number}` | "미포함";
+
+export function formatInclusionDayLabel(
+  dayIndex?: number | null,
+): InclusionDayLabel {
+  if (dayIndex == null || !Number.isFinite(Number(dayIndex)) || Number(dayIndex) < 0) {
+    return "미포함";
+  }
+  return `Day ${Math.floor(Number(dayIndex)) + 1}`;
+}
 
 function hasCoords(p: PlaceMatchLike): p is PlaceMatchLike & { lat: number; lng: number } {
   return Number.isFinite(p.lat) && Number.isFinite(p.lng);
@@ -71,16 +87,17 @@ export function findDuplicatePlace<T extends PlaceMatchLike>(
   return places.find((p) => isSamePlace(p, candidate));
 }
 
-/** 추천 코스 경유지가 일정 places에 포함되는지 */
-export function isWaypointInPlaces(
-  places: PlaceMatchLike[],
+/** 추천 코스 경유지와 일치하는 일정 장소 (첫 매칭) */
+export function findPlaceForWaypoint<T extends PlaceMatchLike>(
+  places: T[],
   waypoint: { name: string; contentId?: string; lat?: number; lng?: number },
-): boolean {
+): T | undefined {
   const cid = String(waypoint.contentId || "").trim();
-  if (cid && places.some((p) => String(p.contentId || "").trim() === cid)) {
-    return true;
+  if (cid) {
+    const byId = places.find((p) => String(p.contentId || "").trim() === cid);
+    if (byId) return byId;
   }
-  return places.some(
+  return places.find(
     (p) =>
       namesSimilar(p.name, waypoint.name) ||
       (hasCoords(p) &&
@@ -92,6 +109,14 @@ export function isWaypointInPlaces(
         ) <= PROXIMITY_KM &&
         namesSimilar(p.name, waypoint.name)),
   );
+}
+
+/** 추천 코스 경유지가 일정 places에 포함되는지 */
+export function isWaypointInPlaces(
+  places: PlaceMatchLike[],
+  waypoint: { name: string; contentId?: string; lat?: number; lng?: number },
+): boolean {
+  return Boolean(findPlaceForWaypoint(places, waypoint));
 }
 
 export type CourseWaypointLike = {
@@ -107,6 +132,8 @@ export type SeedCourseInclusionItem = {
   order: number;
   contentId?: string;
   included: boolean;
+  /** 포함 Day (예: "Day 2") 또는 "미포함" */
+  dayLabel: InclusionDayLabel;
 };
 
 export type SeedCourseInclusion = {
@@ -114,6 +141,29 @@ export type SeedCourseInclusion = {
   includedCount: number;
   totalCount: number;
   items: SeedCourseInclusionItem[];
+};
+
+export type FestivalLike = {
+  name: string;
+  cityId?: string;
+  cityName?: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+export type FestivalInclusionItem = {
+  name: string;
+  included: boolean;
+  dayLabel: InclusionDayLabel;
+  cityName?: string;
+  /** 매칭된 일정 장소명 (축제명과 다를 때) */
+  placeName?: string;
+};
+
+export type FestivalInclusion = {
+  includedCount: number;
+  totalCount: number;
+  items: FestivalInclusionItem[];
 };
 
 /** routeSummary "A → B → C" 로부터 경유지명 복원 (상세 없을 때 폴백) */
@@ -135,16 +185,84 @@ export function computeSeedCourseInclusion(
 ): SeedCourseInclusion {
   const items: SeedCourseInclusionItem[] = waypoints
     .filter((w) => w?.name)
-    .map((w, i) => ({
-      name: w.name,
-      order: Number.isFinite(Number(w.order)) ? Number(w.order) : i + 1,
-      contentId: w.contentId,
-      included: isWaypointInPlaces(places, w),
-    }))
+    .map((w, i) => {
+      const matched = findPlaceForWaypoint(places, w);
+      const included = Boolean(matched);
+      return {
+        name: w.name,
+        order: Number.isFinite(Number(w.order)) ? Number(w.order) : i + 1,
+        contentId: w.contentId,
+        included,
+        dayLabel: included
+          ? formatInclusionDayLabel(matched?.dayIndex)
+          : "미포함",
+      };
+    })
     .sort((a, b) => a.order - b.order);
   const includedCount = items.filter((x) => x.included).length;
   return {
     title,
+    includedCount,
+    totalCount: items.length,
+    items,
+  };
+}
+
+function placeMentionsFestival(place: PlaceMatchLike, festivalName: string): boolean {
+  const blob = `${place.notes || ""} ${place.aiReason || ""}`;
+  if (!blob.trim()) return false;
+  const nFest = normalizePlaceName(festivalName);
+  if (!nFest || nFest.length < 2) return false;
+  return normalizePlaceName(blob).includes(nFest) || namesSimilar(blob, festivalName);
+}
+
+/** 축제 ↔ 일정 장소 매칭 (이름·도시·notes/aiReason) */
+export function findPlaceForFestival<T extends PlaceMatchLike>(
+  places: T[],
+  festival: FestivalLike,
+): T | undefined {
+  const festName = String(festival.name || "").trim();
+  if (!festName) return undefined;
+  const festCity = String(festival.cityId || "").trim();
+
+  const scored = places
+    .map((p) => {
+      let score = 0;
+      if (namesSimilar(p.name, festName)) score += 3;
+      if (placeMentionsFestival(p, festName)) score += 2;
+      if (festCity && p.cityId && String(p.cityId) === festCity) score += 1;
+      return { p, score };
+    })
+    .filter((x) => x.score >= 2)
+    .sort((a, b) => b.score - a.score);
+
+  return scored[0]?.p;
+}
+
+/** 선택 축제가 일정에 반영됐는지 + Day 라벨 */
+export function computeFestivalInclusion(
+  festivals: FestivalLike[],
+  places: PlaceMatchLike[],
+): FestivalInclusion {
+  const items: FestivalInclusionItem[] = (festivals || [])
+    .filter((f) => f?.name)
+    .map((f) => {
+      const matched = findPlaceForFestival(places, f);
+      const included = Boolean(matched);
+      return {
+        name: f.name,
+        cityName: f.cityName,
+        included,
+        dayLabel: included
+          ? formatInclusionDayLabel(matched?.dayIndex)
+          : "미포함",
+        ...(matched && !namesSimilar(matched.name, f.name)
+          ? { placeName: matched.name }
+          : {}),
+      };
+    });
+  const includedCount = items.filter((x) => x.included).length;
+  return {
     includedCount,
     totalCount: items.length,
     items,

@@ -1,5 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { Trip } from "../types";
+import { FestivalInclusionBanner } from "../components/FestivalInclusionBanner";
 import { SeedCourseInclusionBanner } from "../components/SeedCourseInclusionBanner";
 import { useTheme } from "../theme/ThemeContext";
 import { radius, space } from "../theme/tokens";
@@ -12,18 +13,6 @@ type Props = {
   onBack: () => void;
 };
 
-function formatFestivalPeriod(startDate?: string, endDate?: string) {
-  const formatDate = (date: string) => {
-    const [, month, day] = date.match(/^\d{4}-(\d{2})-(\d{2})$/) ?? [];
-    return month && day ? `${Number(month)}/${Number(day)}` : date;
-  };
-  if (!startDate && !endDate) return "";
-  if (startDate && endDate) {
-    return `${formatDate(startDate)}–${formatDate(endDate)}`;
-  }
-  return formatDate(startDate || endDate || "");
-}
-
 export function BriefingScreen({ trip, onContinue, onBack }: Props) {
   const { colors } = useTheme();
   const rb = resolveRouteBriefing(trip);
@@ -32,7 +21,10 @@ export function BriefingScreen({ trip, onContinue, onBack }: Props) {
   const hasRequest =
     rb.requests?.reflected ||
     Boolean(rb.requests?.mainRequest || rb.requests?.extraRequest || prefs.length);
-  const hasCourse = rb.courseReflected || Boolean(rb.seedCourse?.title);
+  const hasCourse =
+    Boolean(trip.seedCourse?.title) ||
+    Boolean(rb.courseReflected && rb.seedCourse?.title);
+  const hasFestivals = festivals.length > 0;
 
   return (
     <ScrollView
@@ -142,34 +134,24 @@ export function BriefingScreen({ trip, onContinue, onBack }: Props) {
         )}
       </View>
 
-      <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-          반영된 축제
-        </Text>
-        {festivals.length > 0 ? (
-          festivals.map((f, i) => {
-            const period = formatFestivalPeriod(f.startDate, f.endDate);
-            return (
-              <View key={`${f.name}-${i}`} style={i > 0 ? styles.rowBlock : undefined}>
-                <Text style={[styles.body, { color: colors.text }]}>{f.name}</Text>
-                <Text style={[styles.meta, { color: colors.textMuted, marginTop: 2 }]}>
-                  {[f.cityName, period].filter(Boolean).join(" · ") || "일정에 포함"}
-                </Text>
-              </View>
-            );
-          })
-        ) : (
-          <Text style={[styles.bodyMuted, { color: colors.textMuted }]}>
-            선택한 축제가 없어 축제 방문은 반영되지 않았습니다.
+      {hasFestivals ? (
+        <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
+          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+            반영된 축제
           </Text>
-        )}
-      </View>
+          <FestivalInclusionBanner
+            festivals={festivals}
+            places={trip.places}
+            variant="briefing"
+          />
+        </View>
+      ) : null}
 
-      <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-          반영된 관광공사 코스
-        </Text>
-        {hasCourse && (trip.seedCourse?.title || rb.seedCourse?.title) ? (
+      {hasCourse && (trip.seedCourse?.title || rb.seedCourse?.title) ? (
+        <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
+          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+            반영된 관광공사 코스
+          </Text>
           <SeedCourseInclusionBanner
             seedCourse={{
               contentId: trip.seedCourse?.contentId,
@@ -188,12 +170,8 @@ export function BriefingScreen({ trip, onContinue, onBack }: Props) {
             cityId={trip.cityId}
             variant="briefing"
           />
-        ) : (
-          <Text style={[styles.bodyMuted, { color: colors.textMuted }]}>
-            추천 코스 시드 없이 AI가 직접 경로를 구성했습니다.
-          </Text>
-        )}
-      </View>
+        </View>
+      ) : null}
 
       {rb.scheduleRule ? (
         <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>

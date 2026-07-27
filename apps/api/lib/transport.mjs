@@ -139,6 +139,24 @@ export function estimateOutboundLegHaversine(from, to, mode = "car") {
 /**
  * Maps 키가 있으면 car→driving / train·bus→transit, flight는 휴리스틱
  */
+/**
+ * Directions가 환승 대기·우회로 비정상적으로 길면 하버사인 폴백 사용.
+ * (예: 서울→태백 대중교통 API가 10시간+로 나와 09:00 출발이 19:30 도착처럼 보임)
+ */
+function pickOutboundMinutes(dirMinutes, fallbackMinutes, distanceKm) {
+  const dir = Number(dirMinutes) || 0;
+  const fb = Math.max(0, Number(fallbackMinutes) || 0);
+  if (!(dir > 0)) return fb;
+  const dist = Number(distanceKm) || 0;
+  const bloated =
+    dist > 0 &&
+    dist < 350 &&
+    dir > 8 * 60 &&
+    fb > 0 &&
+    dir > fb * 2;
+  return bloated ? fb : dir;
+}
+
 export async function estimateOutboundLeg(from, to, mode, apiKey = "") {
   const outboundMode = normalizeOutboundTransportMode(mode);
   const fallback = estimateOutboundLegHaversine(from, to, outboundMode);
@@ -157,10 +175,14 @@ export async function estimateOutboundLeg(from, to, mode, apiKey = "") {
         );
       const toll =
         km < 15 ? 0 : Math.round(1200 + Math.max(0, km - 15) * 105);
+      const minutes = Math.max(
+        25,
+        pickOutboundMinutes(opt.minutes, fallback.minutes, km),
+      );
       return {
         mode: "car",
         modeLabel: "자차",
-        minutes: Math.max(25, Number(opt.minutes) || fallback.minutes),
+        minutes,
         estimatedCost: Math.max(0, toll),
         costKind: "toll",
         engine: String(opt.engine || "").startsWith("directions:")
@@ -176,7 +198,11 @@ export async function estimateOutboundLeg(from, to, mode, apiKey = "") {
     const usedDirections = String(opt.engine || "").startsWith("directions:");
     const minutes = Math.max(
       outboundMode === "bus" ? 50 : 40,
-      Number(opt.minutes) || fallback.minutes,
+      pickOutboundMinutes(
+        opt.minutes,
+        fallback.minutes,
+        fallback.distanceKm,
+      ),
     );
     // Directions fare가 있으면 우선, 없으면 모드 휴리스틱
     const fareFromApi =
@@ -1198,6 +1224,84 @@ function isChainDeparturePlaceForEnrich(p) {
   return /전날|연결\s*출발|출발$/.test(notes) && !(Number(p.estimatedCost) > 0);
 }
 
+/** Day0 일정 맨 앞 — 여행 출발지 카드 (enrich·재계산용) */
+export function isOriginDeparturePlace(p) {
+  if (!p) return false;
+  if (p.category !== "transport" && p.category !== "other") return false;
+  const notes = String(p.notes || "");
+  return /여행\s*출발|출발지/.test(notes) && !(Number(p.estimatedCost) > 0);
+}
+
+/**
+ * Day0 맨 앞에 출발 카드 삽입. plannedTime=startTime, 첫 POI의 outbound 이동값은 유지.
+ */
+export function prependOriginDeparturePlace(
+  places,
+  {
+    startTime = "09:00",
+    startAddress = "",
+    origin = null,
+    outboundTransportMode = "car",
+  } = {},
+) {
+  if (!Array.isArray(places) || places.length === 0) return places;
+
+  const originPoint =
+    origin &&
+    Number.isFinite(Number(origin.lat)) &&
+    Number.isFinite(Number(origin.lng))
+      ? { lat: Number(origin.lat), lng: Number(origin.lng) }
+      : null;
+  const label = String(startAddress || origin?.name || origin?.address || "")
+    .trim();
+  if (!originPoint && !label) return places;
+
+  const day0 = places
+    .filter((p) => (Number(p.dayIndex) || 0) === 0)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  if (day0.length === 0) return places;
+  if (day0.some(isOriginDeparturePlace)) return places;
+
+  const firstPoi = day0.find((p) => !isOriginDeparturePlace(p)) || day0[0];
+  const mode = normalizeOutboundTransportMode(outboundTransportMode);
+  const startHhmm = (() => {
+    const m = String(startTime || "09:00")
+      .trim()
+      .match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return "09:00";
+    const h = Math.min(23, Math.max(0, Number(m[1])));
+    const min = Math.min(59, Math.max(0, Number(m[2])));
+    return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+  })();
+
+  const departure = {
+    id: `origin-depart-${Date.now().toString(36)}`,
+    name: label || "출발지",
+    category: "transport",
+    lat: originPoint?.lat ?? (Number(firstPoi.lat) || 0),
+    lng: originPoint?.lng ?? (Number(firstPoi.lng) || 0),
+    estimatedCost: 0,
+    notes: `여행 출발 · ${OUTBOUND_MODE_LABEL[mode] || mode}`,
+    dayIndex: 0,
+    order: -1,
+    plannedTime: startHhmm,
+    travelFromPrevMinutes: 0,
+    travelFromPrevCost: 0,
+    transportEngine: "none",
+  };
+
+  const merged = [departure, ...places];
+  merged.sort(
+    (a, b) =>
+      (Number(a.dayIndex) || 0) - (Number(b.dayIndex) || 0) ||
+      (a.order ?? 0) - (b.order ?? 0),
+  );
+  merged.forEach((p, i) => {
+    p.order = i;
+  });
+  return merged;
+}
+
 function minutesToHhmm(totalMinutes) {
   const normalized = ((Math.floor(totalMinutes) % (24 * 60)) + 24 * 60) % (24 * 60);
   const hh = Math.floor(normalized / 60);
@@ -1326,14 +1430,51 @@ export async function enrichPlacesWithTransport(
     let prev = null;
     for (let i = 0; i < dayList.length; i++) {
       let p = { ...dayList[i] };
-      const isDayStart = i === 0 || isChainDeparturePlaceForEnrich(p);
+      const isOriginDep = isOriginDeparturePlace(p);
+      const isDayStart =
+        i === 0 || isChainDeparturePlaceForEnrich(p) || isOriginDep;
       const isOutboundFirst =
         Number(dayIndex) === 0 &&
         i === 0 &&
         originPoint != null &&
-        !isChainDeparturePlaceForEnrich(p);
+        !isChainDeparturePlaceForEnrich(p) &&
+        !isOriginDep;
+      const outboundFromDeparture =
+        Number(dayIndex) === 0 &&
+        prev != null &&
+        isOriginDeparturePlace(prev) &&
+        !isOriginDep;
 
-      if (prev) {
+      if (prev && outboundFromDeparture) {
+        const fromPoint =
+          originPoint ||
+          (Number.isFinite(Number(prev.lat)) &&
+          Number.isFinite(Number(prev.lng))
+            ? { lat: Number(prev.lat), lng: Number(prev.lng) }
+            : null);
+        if (fromPoint) {
+          const leg = await estimateOutboundLeg(
+            fromPoint,
+            p,
+            outboundMode,
+            mapsApiKey,
+          );
+          p.travelFromPrevMinutes = leg.minutes;
+          p.travelFromPrevCost = leg.estimatedCost;
+          p.travelFromPrevCostKind = leg.costKind;
+          p.transportEngine = leg.engine;
+          p.transportOptions = undefined;
+          if (leg.note && !(p.notes && String(p.notes).includes(leg.note))) {
+            p.notes = p.notes ? `${p.notes} · ${leg.note}` : leg.note;
+          }
+        } else {
+          p.travelFromPrevMinutes = 0;
+          p.travelFromPrevCost = 0;
+          p.transportEngine = "none";
+          p.transportOptions = undefined;
+        }
+        minutesFromStart += Number(p.travelFromPrevMinutes) || 0;
+      } else if (prev) {
         const needRecalc =
           forceRecalc ||
           !(Number(p.travelFromPrevMinutes) > 0) ||
@@ -1387,7 +1528,7 @@ export async function enrichPlacesWithTransport(
 
       // 점심/저녁: 순차 도착이 창 prefer보다 이르면 창까지 대기(forceRecalc가 식사를 오전으로 당기지 않음)
       const mealFloor = mealArriveFloorMinutes(p);
-      if (mealFloor != null) {
+      if (mealFloor != null && !isOriginDep) {
         minutesFromStart = Math.max(minutesFromStart, mealFloor);
       }
 
@@ -1398,7 +1539,10 @@ export async function enrichPlacesWithTransport(
 
       // 저녁 숙소: 앞 일정 순차 도착만 사용(기존 21:00 스탬프 유지 금지).
       // lodgingReturnTime 바닥은 직전 plannedTime 없을 때만.
-      if (isLastStayHotel) {
+      if (isOriginDep) {
+        p.plannedTime = minutesToHhmm(dayStartMinutes);
+        minutesFromStart = dayStartMinutes;
+      } else if (isLastStayHotel) {
         const hasPrevPlanned =
           prev != null &&
           prev.plannedTime &&
@@ -1427,7 +1571,9 @@ export async function enrichPlacesWithTransport(
         }
       }
 
-      minutesFromStart += defaultStayMinutes(p.category);
+      if (!isOriginDep) {
+        minutesFromStart += defaultStayMinutes(p.category);
+      }
 
       if (p.category === "hotel") {
         const bd = lodgingScoreBreakdown(p, { cityId });
@@ -1435,6 +1581,27 @@ export async function enrichPlacesWithTransport(
           p.lodgingScore = bd.lodgingScore;
         }
         if (!p.scoreBreakdown) p.scoreBreakdown = bd.scoreBreakdown;
+      }
+
+      if (
+        Number(dayIndex) === 0 &&
+        i === 0 &&
+        (isOutboundFirst || isOriginDep)
+      ) {
+        console.info(
+          "[enrichPlacesWithTransport] day0 start",
+          JSON.stringify({
+            dayStartMinutes,
+            startTime: startTime || null,
+            origin: originPoint,
+            outboundMode,
+            place: p.name,
+            plannedTime: p.plannedTime,
+            travelFromPrevMinutes: p.travelFromPrevMinutes ?? 0,
+            isOriginDep,
+            isOutboundFirst,
+          }),
+        );
       }
 
       out.push(p);

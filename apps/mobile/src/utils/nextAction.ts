@@ -20,7 +20,16 @@ function parsePlannedMinutes(plannedTime?: string): number | null {
 export function getNextAction(trip: Trip, now = new Date()): NextAction | null {
   const completed = new Set(trip.completedPlaceIds ?? []);
   const pending = [...trip.places]
-    .filter((p) => !completed.has(p.id) && p.category !== "hotel")
+    .filter(
+      (p) =>
+        !completed.has(p.id) &&
+        p.category !== "hotel" &&
+        !(
+          (p.category === "transport" || p.category === "other") &&
+          /여행\s*출발|출발지/.test(String(p.notes || "")) &&
+          !(Number(p.estimatedCost) > 0)
+        ),
+    )
     .sort((a, b) => a.dayIndex - b.dayIndex || a.order - b.order);
 
   if (pending.length === 0) return null;

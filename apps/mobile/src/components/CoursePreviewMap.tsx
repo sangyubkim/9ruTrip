@@ -30,11 +30,16 @@ export function CoursePreviewMap({
   const mapCfg = getMapViewConfig(cityId);
   const fillFlex = height === "flex";
 
+  // Keep list position for pin labels (API order/subnum can duplicate).
+  // Filter after numbering so map pins match accordion 1..N even if some lack coords.
   const coords = useMemo(
     () =>
-      (waypoints || []).filter(
-        (w) => Number.isFinite(Number(w.lat)) && Number.isFinite(Number(w.lng)),
-      ),
+      (waypoints || [])
+        .map((w, index) => ({ ...w, displayIndex: index + 1 }))
+        .filter(
+          (w) =>
+            Number.isFinite(Number(w.lat)) && Number.isFinite(Number(w.lng)),
+        ),
     [waypoints],
   );
 
@@ -116,7 +121,7 @@ export function CoursePreviewMap({
             "좌표가 있는 경유지만 번호 순서로 표시합니다."}
         </Text>
         {coords.map((p, i) => {
-          const n = p.order || i + 1;
+          const n = p.displayIndex;
           return (
             <Text
               key={`${p.contentId || p.name}-${i}`}
@@ -164,7 +169,7 @@ export function CoursePreviewMap({
           />
         ) : null}
         {coords.map((p, i) => {
-          const n = p.order || i + 1;
+          const n = p.displayIndex;
           return (
             <Marker
               key={`${p.contentId || p.name}-${i}`}

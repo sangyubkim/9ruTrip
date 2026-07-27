@@ -15,6 +15,12 @@ function isChainDeparturePlace(p: ItineraryPlace): boolean {
   return /전날|연결\s*출발|출발$/.test(notes) && !(Number(p.estimatedCost) > 0);
 }
 
+function isOriginDeparturePlace(p: ItineraryPlace): boolean {
+  if (p.category !== "transport" && p.category !== "other") return false;
+  const notes = String(p.notes || "");
+  return /여행\s*출발|출발지/.test(notes) && !(Number(p.estimatedCost) > 0);
+}
+
 function uid(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -124,6 +130,8 @@ export function ensureOvernightHotelsInPlaces(
     if (overnightSet.has(d)) {
       const hotels = arr.filter((p) => p.category === "hotel");
       const rest = arr.filter((p) => p.category !== "hotel");
+      const originDep = rest.filter((p) => isOriginDeparturePlace(p));
+      const restCore = rest.filter((p) => !isOriginDeparturePlace(p));
       const stay = hotels.filter((p) => !isChainDeparturePlace(p));
       const chainMorning = hotels.filter((p) => isChainDeparturePlace(p));
       // 체인 아침 출발은 앞에 두고 plannedTime 비움; 저녁 숙소는 끝으로.
@@ -131,8 +139,9 @@ export function ensureOvernightHotelsInPlaces(
       const last = stay[stay.length - 1];
       const dayList = last
         ? [
+            ...originDep,
             ...chainMorning.map(clearChainMorning),
-            ...rest,
+            ...restCore,
             {
               ...last,
               plannedTime:
@@ -142,7 +151,11 @@ export function ensureOvernightHotelsInPlaces(
                   : returnHhmm,
             },
           ]
-        : [...chainMorning.map(clearChainMorning), ...rest];
+        : [
+            ...originDep,
+            ...chainMorning.map(clearChainMorning),
+            ...restCore,
+          ];
       dayList.forEach((p, i) => {
         p.order = i;
         p.dayIndex = d;

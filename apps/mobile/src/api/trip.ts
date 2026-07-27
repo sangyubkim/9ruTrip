@@ -247,6 +247,8 @@ export type RegenerateDayRequest = {
   dayIndex: number;
   /** 배정할 도시 (없으면 trip.cities / trip.cityId) */
   targetCityId?: MvpCityId;
+  /** 완료·고정 장소 — Day 재생성 시 유지 */
+  completedPlaceIds?: string[];
 };
 
 export type RegenerateDayResponse = {
@@ -583,6 +585,8 @@ export async function optimizeDay(payload: {
   places: ItineraryPlace[];
   dayIndex: number;
   cityId?: MvpCityId;
+  /** 완료된 장소 — 재배치에서 제외 */
+  completedPlaceIds?: string[];
 }): Promise<OptimizeDayResponse> {
   const res = await apiFetch("/trip/optimize-day", {
     method: "POST",
