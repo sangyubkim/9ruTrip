@@ -1,5 +1,12 @@
-import { geminiComplete, parseJsonLoose } from "./gemini.mjs";
 import { CITIES, isKnownCityId, resolveCity } from "./cities.mjs";
+
+const TOUR_API_ENDPOINT =
+  "https://apis.data.go.kr/B551011/KorService2/searchFestival2";
+const TOUR_API_PAGE_SIZE = 100;
+const TOUR_API_MAX_PAGES = 3;
+const TOUR_API_TIMEOUT_MS = 10_000;
+const TOUR_API_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const tourApiCache = new Map();
 
 const FESTIVAL_CATALOG = [
   { id: "taebaek-snow", name: "태백산눈축제", cityId: "taebaek", startMonth: 1, startDay: 24, endMonth: 2, endDay: 2, lat: 37.164, lng: 128.985 },
@@ -121,6 +128,21 @@ function catalogFestivals({ startDate, endDate, lat, lng, cityId }) {
   }));
 }
 
+function originForFestivalDistance(lat, lng, cityId) {
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  if (isKnownCityId(cityId)) return resolveCity(cityId).center;
+  return null;
+}
+
+function sortFestivals(festivals) {
+  return festivals.sort(
+    (a, b) =>
+      a.startDate.localeCompare(b.startDate) ||
+      a.name.localeCompare(b.name, "ko") ||
+      a.id.localeCompare(b.id),
+  );
+}
+
 function normalizedCityKey(value) {
   return String(value || "")
     .toLowerCase()
@@ -148,76 +170,179 @@ function resolveFestivalCityId(festival) {
   return nearest?.distanceKm <= 60 ? nearest.city.id : null;
 }
 
+function isValidDateString(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return false;
+  const [year, month, day] = String(value).split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function tourApiDate(value) {
+  const compact = String(value || "").trim();
+  if (!/^\d{8}$/.test(compact)) return null;
+  const date = `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+  return isValidDateString(date) ? date : null;
+}
+
+function datesOverlap(startDate, endDate, tripStart, tripEnd) {
+  return (
+    new Date(`${startDate}T00:00:00Z`) <= tripEnd &&
+    new Date(`${endDate}T23:59:59Z`) >= tripStart
+  );
+}
+
+function decodedServiceKey(serviceKey) {
+  try {
+    return decodeURIComponent(serviceKey);
+  } catch {
+    return serviceKey;
+  }
+}
+
+function tourApiItems(data) {
+  const items = data?.response?.body?.items?.item;
+  return Array.isArray(items) ? items : items ? [items] : [];
+}
+
+async function fetchTourApiItems({ serviceKey, startDate, endDate }) {
+  const items = [];
+  const eventStartDate = startDate.replaceAll("-", "");
+  for (let pageNo = 1; pageNo <= TOUR_API_MAX_PAGES; pageNo += 1) {
+    const params = new URLSearchParams({
+      serviceKey: decodedServiceKey(serviceKey),
+      MobileOS: "ETC",
+      MobileApp: "9ruTrip",
+      eventStartDate,
+      eventEndDate: endDate.replaceAll("-", ""),
+      _type: "json",
+      numOfRows: String(TOUR_API_PAGE_SIZE),
+      pageNo: String(pageNo),
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TOUR_API_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${TOUR_API_ENDPOINT}?${params}`, {
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`TourAPI ${response.status}`);
+      const data = await response.json();
+      const header = data?.response?.header;
+      if (header?.resultCode && header.resultCode !== "0000") {
+        throw new Error(`TourAPI ${header.resultCode}: ${header.resultMsg || ""}`);
+      }
+      const pageItems = tourApiItems(data);
+      items.push(...pageItems);
+      if (pageItems.length < TOUR_API_PAGE_SIZE) break;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return items;
+}
+
+function normalizeTourApiFestivals(items, { startDate, endDate, lat, lng, cityId }) {
+  if (!isValidDateString(startDate) || !isValidDateString(endDate)) return [];
+  const tripStart = new Date(`${startDate}T00:00:00Z`);
+  const tripEnd = new Date(`${endDate}T23:59:59Z`);
+  if (tripStart > tripEnd) return [];
+  const origin = originForFestivalDistance(lat, lng, cityId);
+
+  return sortFestivals(items
+    .map((item) => {
+      const festivalStartDate = tourApiDate(item?.eventstartdate);
+      const festivalEndDate = tourApiDate(item?.eventenddate);
+      const festivalLat = Number(item?.mapy);
+      const festivalLng = Number(item?.mapx);
+      const contentId = String(item?.contentid || "").trim();
+      const resolvedCityId = resolveFestivalCityId({
+        cityName: item?.addr1,
+        location: item?.addr1,
+        lat: festivalLat,
+        lng: festivalLng,
+      });
+      if (
+        !String(item?.title || "").trim() ||
+        !contentId ||
+        !festivalStartDate ||
+        !festivalEndDate ||
+        festivalStartDate > festivalEndDate ||
+        !Number.isFinite(festivalLat) ||
+        !Number.isFinite(festivalLng) ||
+        festivalLat < -90 ||
+        festivalLat > 90 ||
+        festivalLng < -180 ||
+        festivalLng > 180 ||
+        !resolvedCityId ||
+        !datesOverlap(festivalStartDate, festivalEndDate, tripStart, tripEnd)
+      ) {
+        return null;
+      }
+      return {
+        id: `tour-${contentId}`,
+        name: String(item.title).trim().slice(0, 80),
+        cityId: resolvedCityId,
+        cityName: resolveCity(resolvedCityId).nameKo,
+        startDate: festivalStartDate,
+        endDate: festivalEndDate,
+        lat: festivalLat,
+        lng: festivalLng,
+        distanceKm: origin
+          ? Math.round(haversineKm(origin, { lat: festivalLat, lng: festivalLng }))
+          : undefined,
+      };
+    })
+    .filter(Boolean));
+}
+
+async function listTourApiFestivals(input, serviceKey) {
+  const cacheKey = `${input.startDate}|${input.endDate}|${input.lat}|${input.lng}|${input.cityId}`;
+  const cached = tourApiCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.festivals;
+
+  const items = await fetchTourApiItems({
+    serviceKey,
+    startDate: input.startDate,
+    endDate: input.endDate,
+  });
+  const festivals = normalizeTourApiFestivals(items, input);
+  if (festivals.length) {
+    tourApiCache.set(cacheKey, {
+      festivals,
+      expiresAt: Date.now() + TOUR_API_CACHE_TTL_MS,
+    });
+  }
+  return festivals;
+}
+
+export function clearFestivalCache() {
+  tourApiCache.clear();
+}
+
 export async function listFestivals(body, env) {
   const startDate = String(body?.startDate || "");
   const endDate = String(body?.endDate || "");
   const lat = Number(body?.lat);
   const lng = Number(body?.lng);
   const cityId = String(body?.cityId || "");
-  const fallback = catalogFestivals({ startDate, endDate, lat, lng, cityId });
-  if (!env.geminiApiKey) return { festivals: fallback, source: "catalog" };
+  const fallback = sortFestivals(
+    catalogFestivals({ startDate, endDate, lat, lng, cityId }),
+  );
+  const serviceKey = String(env?.tourApiServiceKey || "").trim();
+  if (!serviceKey) return { festivals: fallback, source: "catalog" };
 
   try {
-    const { text } = await geminiComplete({
-      apiKey: env.geminiApiKey,
-      model: env.geminiModel,
-      timeoutMs: Math.min(env.llmTimeoutMs, 30_000),
-      systemHint: "Return valid JSON only. Never invent uncertain festival dates or locations.",
-      prompt: `한국 국내 여행 축제를 기간 기준으로 추천합니다.
-여행 기간: ${startDate}~${endDate}
-여행 기간과 실제로 겹치는 주요 계절 축제를 지역이 겹치지 않도록 여러 건(가능하면 5~10건) 반환하세요.
-유명하거나 매년 정기 개최되어 일정이 신뢰 가능한 축제만 반환하세요. 정확한 개최일·도시가 불확실하면 제외하세요.
-cityId가 확실하지 않으면 cityName에 시·군·구 이름을 넣고 좌표를 반드시 포함하세요.
-반드시 JSON만 반환: {"festivals":[{"name":"축제명","cityId":"국내 도시 ID 또는 빈 문자열","cityName":"개최 시·군·구","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","lat":number,"lng":number}]}
-등록 도시 ID: ${[...new Set(Object.values(CITIES).filter((city) => city.countryId === "kr").map((city) => city.id))].join(", ")}.`,
-    });
-    const items = Array.isArray(parseJsonLoose(text)?.festivals)
-      ? parseJsonLoose(text).festivals
-      : [];
-    const origin =
-      Number.isFinite(lat) && Number.isFinite(lng)
-        ? { lat, lng }
-        : isKnownCityId(cityId)
-          ? resolveCity(cityId).center
-          : null;
-    const tripStart = new Date(`${startDate}T00:00:00Z`);
-    const tripEnd = new Date(`${endDate}T23:59:59Z`);
-    const festivals = items
-      .map((festival) => ({ festival, cityId: resolveFestivalCityId(festival) }))
-      .filter(({ festival, cityId }) => {
-        const festivalStart = new Date(`${festival?.startDate}T00:00:00Z`);
-        const festivalEnd = new Date(`${festival?.endDate}T23:59:59Z`);
-        return (
-          festival &&
-          cityId &&
-          /^\d{4}-\d{2}-\d{2}$/.test(String(festival.startDate)) &&
-          /^\d{4}-\d{2}-\d{2}$/.test(String(festival.endDate)) &&
-          !Number.isNaN(festivalStart.valueOf()) &&
-          !Number.isNaN(festivalEnd.valueOf()) &&
-          festivalStart <= festivalEnd &&
-          festivalStart <= tripEnd &&
-          festivalEnd >= tripStart
-        );
-      })
-      .map(({ festival, cityId }, index) => ({
-        id: `gemini-${cityId}-${index}`,
-        name: String(festival.name).slice(0, 80),
-        cityId,
-        cityName: resolveCity(cityId).nameKo,
-        startDate: festival.startDate,
-        endDate: festival.endDate,
-        lat: Number(festival.lat) || resolveCity(cityId).center.lat,
-        lng: Number(festival.lng) || resolveCity(cityId).center.lng,
-        distanceKm: origin
-          ? Math.round(
-              haversineKm(origin, {
-                lat: Number(festival.lat) || resolveCity(cityId).center.lat,
-                lng: Number(festival.lng) || resolveCity(cityId).center.lng,
-              }),
-            )
-          : undefined,
-      }));
-    return { festivals: festivals.length ? festivals : fallback, source: festivals.length ? "gemini" : "catalog" };
+    const festivals = await listTourApiFestivals(
+      { startDate, endDate, lat, lng, cityId },
+      serviceKey,
+    );
+    return {
+      festivals: festivals.length ? festivals : fallback,
+      source: festivals.length ? "tourapi" : "catalog",
+    };
   } catch {
     return { festivals: fallback, source: "catalog" };
   }

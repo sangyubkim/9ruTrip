@@ -60,6 +60,7 @@ const env = {
   geminiApiKey: process.env.GEMINI_API_KEY?.trim() ?? "",
   geminiModel: process.env.GEMINI_MODEL?.trim() ?? "gemini-flash-lite-latest",
   llmTimeoutMs: Number(process.env.LLM_TIMEOUT_MS ?? 90_000) || 90_000,
+  tourApiServiceKey: process.env.TOUR_API_SERVICE_KEY?.trim() ?? "",
   // blog-pipeline 은 WP_BASE_URL, 9ruDocs/9ruTrip 은 WP_SITE_URL
   wpSiteUrl:
     process.env.WP_SITE_URL?.trim() ||

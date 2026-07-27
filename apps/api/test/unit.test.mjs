@@ -25,6 +25,110 @@ import {
   isChainDeparturePlace,
   overnightDayIndexes,
 } from "../lib/itinerary.mjs";
+import { clearFestivalCache, listFestivals } from "../lib/festivals.mjs";
+
+describe("festivals", () => {
+  it("uses the catalog when TourAPI key is absent", async () => {
+    const result = await listFestivals(
+      { startDate: "2026-07-25", endDate: "2026-07-28", cityId: "seoul" },
+      {},
+    );
+
+    assert.equal(result.source, "catalog");
+    assert.ok(result.festivals.length > 0);
+    assert.ok(result.festivals.every((festival) => festival.id.startsWith("tour-") === false));
+  });
+
+  it("normalizes, filters, sorts, and caches TourAPI festivals", async () => {
+    clearFestivalCache();
+    const originalFetch = globalThis.fetch;
+    let requestCount = 0;
+    globalThis.fetch = async (url) => {
+      requestCount += 1;
+      const parsedUrl = new URL(url);
+      assert.equal(parsedUrl.origin + parsedUrl.pathname, "https://apis.data.go.kr/B551011/KorService2/searchFestival2");
+      assert.equal(parsedUrl.searchParams.get("serviceKey"), "encoded/key=");
+      assert.equal(parsedUrl.searchParams.get("eventStartDate"), "20260601");
+      assert.equal(parsedUrl.searchParams.get("eventEndDate"), "20260604");
+      return new Response(
+        JSON.stringify({
+          response: {
+            header: { resultCode: "0000", resultMsg: "OK" },
+            body: {
+              items: {
+                item: [
+                  {
+                    contentid: "2",
+                    title: "늦은 축제",
+                    eventstartdate: "20260603",
+                    eventenddate: "20260605",
+                    mapx: "126.978",
+                    mapy: "37.5665",
+                    addr1: "서울특별시 중구",
+                  },
+                  {
+                    contentid: "1",
+                    title: "이른 축제",
+                    eventstartdate: "20260601",
+                    eventenddate: "20260602",
+                    mapx: "126.99",
+                    mapy: "37.57",
+                    addr1: "서울특별시 종로구",
+                  },
+                  {
+                    contentid: "outside",
+                    title: "기간 밖 축제",
+                    eventstartdate: "20260520",
+                    eventenddate: "20260530",
+                    mapx: "126.978",
+                    mapy: "37.5665",
+                    addr1: "서울특별시 중구",
+                  },
+                  {
+                    contentid: "invalid-coordinate",
+                    title: "좌표 오류 축제",
+                    eventstartdate: "20260602",
+                    eventenddate: "20260604",
+                    mapx: "126.978",
+                    mapy: "200",
+                    addr1: "서울특별시 중구",
+                  },
+                ],
+              },
+            },
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    };
+
+    try {
+      const payload = {
+        startDate: "2026-06-01",
+        endDate: "2026-06-04",
+        lat: 37.5665,
+        lng: 126.978,
+      };
+      const first = await listFestivals(payload, {
+        tourApiServiceKey: "encoded%2Fkey%3D",
+      });
+      const second = await listFestivals(payload, {
+        tourApiServiceKey: "encoded%2Fkey%3D",
+      });
+
+      assert.equal(first.source, "tourapi");
+      assert.deepEqual(
+        first.festivals.map((festival) => festival.id),
+        ["tour-1", "tour-2"],
+      );
+      assert.deepEqual(second, first);
+      assert.equal(requestCount, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearFestivalCache();
+    }
+  });
+});
 
 describe("parseKoreanCardSms", () => {
   it("parses amount and merchant from typical card SMS", () => {
