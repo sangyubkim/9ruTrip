@@ -36,7 +36,7 @@ export function useGpsDeviation(
   const [deviant, setDeviant] = useState(false);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [permission, setPermission] = useState<GpsDeviationState["permission"]>(
-    Location ? "undetermined" : "unavailable",
+    isDeviceLocationAvailable() ? "undetermined" : "unavailable",
   );
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
   const lastPlaceId = useRef<string | null>(null);
