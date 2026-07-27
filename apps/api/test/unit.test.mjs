@@ -93,6 +93,15 @@ describe("festivals", () => {
                     mapy: "200",
                     addr1: "서울특별시 중구",
                   },
+                  {
+                    contentid: "unmapped-city",
+                    title: "도시 미매핑 축제",
+                    eventstartdate: "20260602",
+                    eventenddate: "20260603",
+                    mapx: "132",
+                    mapy: "36",
+                    addr1: "도시 정보 없음",
+                  },
                 ],
               },
             },
@@ -119,8 +128,10 @@ describe("festivals", () => {
       assert.equal(first.source, "tourapi");
       assert.deepEqual(
         first.festivals.map((festival) => festival.id),
-        ["tour-1", "tour-2"],
+        ["tour-1", "tour-unmapped-city", "tour-2"],
       );
+      assert.equal(first.festivals[1].cityId, "unknown");
+      assert.equal(first.festivals[1].cityName, "도시 정보 없음");
       assert.deepEqual(second, first);
       assert.equal(requestCount, 1);
     } finally {

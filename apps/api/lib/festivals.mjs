@@ -276,7 +276,6 @@ function normalizeTourApiFestivals(items, { startDate, endDate, lat, lng, cityId
         festivalLat > 90 ||
         festivalLng < -180 ||
         festivalLng > 180 ||
-        !resolvedCityId ||
         !datesOverlap(festivalStartDate, festivalEndDate, tripStart, tripEnd)
       ) {
         return null;
@@ -284,8 +283,10 @@ function normalizeTourApiFestivals(items, { startDate, endDate, lat, lng, cityId
       return {
         id: `tour-${contentId}`,
         name: String(item.title).trim().slice(0, 80),
-        cityId: resolvedCityId,
-        cityName: resolveCity(resolvedCityId).nameKo,
+        cityId: resolvedCityId || "unknown",
+        cityName: resolvedCityId
+          ? resolveCity(resolvedCityId).nameKo
+          : String(item?.addr1 || "지역 정보 없음").trim().slice(0, 120),
         startDate: festivalStartDate,
         endDate: festivalEndDate,
         lat: festivalLat,

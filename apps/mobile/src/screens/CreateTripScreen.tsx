@@ -340,7 +340,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       return;
     }
     setSelectedFestivals((items) => [...items, festival]);
-    if (!selected.includes(festival.cityId)) {
+    if (festival.cityId !== "unknown" && !selected.includes(festival.cityId)) {
       applyCitySelection([...selected, festival.cityId], () => {
         setSelectedFestivals((items) => items.filter((item) => item.id !== festival.id));
       });
