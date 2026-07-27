@@ -32,6 +32,8 @@ const expoConfig = {
     infoPlist: {
       NSCameraUsageDescription: "여행지 리뷰 사진을 촬영합니다.",
       NSPhotoLibraryUsageDescription: "갤러리에서 여행 사진을 선택합니다.",
+      NSPhotoLibraryAddUsageDescription:
+        "촬영한 여행 사진을 갤러리에 저장합니다.",
       NSLocationWhenInUseUsageDescription:
         "일정 지도 표시와 경로 이탈 시 재루트 안내에 사용합니다.",
       LSApplicationQueriesSchemes: ["nmap"],
@@ -91,6 +93,14 @@ const expoConfig = {
       {
         photosPermission: "갤러리에서 여행 사진을 선택합니다.",
         cameraPermission: "카메라로 여행 사진을 촬영합니다.",
+      },
+    ],
+    [
+      "expo-media-library",
+      {
+        photosPermission: "갤러리에서 여행 사진을 선택합니다.",
+        savePhotosPermission: "촬영한 여행 사진을 갤러리에 저장합니다.",
+        granularPermissions: ["photo"],
       },
     ],
     [

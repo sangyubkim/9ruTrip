@@ -16,6 +16,8 @@ type Props = {
   startDate?: string;
   endDate?: string;
   onChange: (startDate: string, endDate?: string) => void;
+  /** 선택 날짜 초기화 (시작·종료일 모두 해제) */
+  onClear?: () => void;
   colors: Colors;
   disabled?: boolean;
 };
@@ -44,9 +46,11 @@ export function DateRangeCalendar({
   startDate,
   endDate,
   onChange,
+  onClear,
   colors,
   disabled = false,
 }: Props) {
+  const hasSelection = Boolean(startDate);
   const initial = startDate ? parseIsoDate(startDate) : new Date();
   const [visibleMonth, setVisibleMonth] = useState(
     new Date(initial.getFullYear(), initial.getMonth(), 1),
@@ -182,6 +186,23 @@ export function DateRangeCalendar({
           );
         })}
       </View>
+      {onClear && hasSelection ? (
+        <Pressable
+          style={[
+            styles.clearButton,
+            { borderColor: colors.border, backgroundColor: colors.chipBg },
+            disabled && styles.clearButtonDisabled,
+          ]}
+          onPress={onClear}
+          disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel="선택한 여행 날짜 지우기"
+        >
+          <Text style={[styles.clearButtonText, { color: colors.text }]}>
+            지우기
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -245,4 +266,16 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   todayLabel: { marginTop: 1, fontSize: 8, fontWeight: "800", lineHeight: 9 },
+  clearButton: {
+    alignSelf: "flex-end",
+    marginTop: space.sm,
+    minHeight: 36,
+    paddingHorizontal: space.md,
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  clearButtonDisabled: { opacity: 0.4 },
+  clearButtonText: { fontSize: 13, fontWeight: "800" },
 });

@@ -108,8 +108,10 @@ import {
 } from "../utils/overnightHotels";
 import { summarizeRerouteChanges } from "../utils/reroutePreview";
 import {
+  hhmmToMinutes,
   lockedShiftedPlannedTimes,
   shiftPlannedTimesAfter,
+  shiftPlannedTimesByDelta,
 } from "../utils/shiftPlannedTimes";
 
 type Props = {
@@ -137,6 +139,27 @@ const MAP_PANE_HEIGHT = Math.round(Dimensions.get("window").height * 0.37);
 const UNDO_MS = 5000;
 const UNDO_MAX = 5;
 const HANDLE_HIT_SLOP = { top: 14, bottom: 14, left: 14, right: 14 };
+
+/** Plan 카드 카테고리 배지 — 카드는 라이트(#fff) 고정이므로 밝은 bg + 진한 글자 */
+const CATEGORY_BADGE: Record<
+  string,
+  { backgroundColor: string; borderColor: string; color: string }
+> = {
+  food: { backgroundColor: "#fff7ed", borderColor: "#fb923c", color: "#c2410c" },
+  hotel: { backgroundColor: "#f5f3ff", borderColor: "#a78bfa", color: "#6d28d9" },
+  attraction: {
+    backgroundColor: "#ecfdf5",
+    borderColor: "#34d399",
+    color: "#047857",
+  },
+  transport: {
+    backgroundColor: "#e0f2fe",
+    borderColor: "#38bdf8",
+    color: "#0369a1",
+  },
+  other: { backgroundColor: "#f1f5f9", borderColor: "#94a3b8", color: "#334155" },
+};
+const CATEGORY_BADGE_FALLBACK = CATEGORY_BADGE.other;
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -948,17 +971,39 @@ export function PlanScreen({
     flashInline(`직접 추가됨 · Day ${day + 1}`);
   };
 
-  const savePlannedTime = (hhmm: string) => {
-    if (!timeEditPlace) return;
-    const id = timeEditPlace.id;
-    setTimeEditPlace(null);
+  /** 한 장소 예정 시각 변경 시, 당일 미완료 일정 전체를 동일 Δ로 앞뒤 시프트 */
+  const applyPlannedTimeWithDayShift = (
+    place: ItineraryPlace,
+    hhmm: string,
+  ) => {
+    const oldMins = hhmmToMinutes(place.plannedTime);
+    const newMins = hhmmToMinutes(hhmm);
+    let places = trip.places.map((p) =>
+      p.id === place.id ? { ...p, plannedTime: hhmm } : p,
+    );
+    if (oldMins != null && newMins != null) {
+      const delta = newMins - oldMins;
+      if (delta !== 0) {
+        places = shiftPlannedTimesByDelta(places, {
+          dayIndex: place.dayIndex,
+          deltaMinutes: delta,
+          completedPlaceIds: trip.completedPlaceIds ?? [],
+          excludePlaceId: place.id,
+        });
+      }
+    }
     onChangeTrip({
       ...trip,
-      places: trip.places.map((p) =>
-        p.id === id ? { ...p, plannedTime: hhmm } : p,
-      ),
+      places,
       updatedAt: new Date().toISOString(),
     });
+  };
+
+  const savePlannedTime = (hhmm: string) => {
+    if (!timeEditPlace) return;
+    const place = timeEditPlace;
+    setTimeEditPlace(null);
+    applyPlannedTimeWithDayShift(place, hhmm);
   };
 
   const applyCurrentTime = (place: ItineraryPlace) => {
@@ -966,13 +1011,7 @@ export function PlanScreen({
     const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(
       now.getMinutes(),
     ).padStart(2, "0")}`;
-    onChangeTrip({
-      ...trip,
-      places: trip.places.map((p) =>
-        p.id === place.id ? { ...p, plannedTime: hhmm } : p,
-      ),
-      updatedAt: new Date().toISOString(),
-    });
+    applyPlannedTimeWithDayShift(place, hhmm);
     flashInline(`시각 ${hhmm}으로 맞춤`);
   };
 
@@ -1289,6 +1328,8 @@ export function PlanScreen({
         ? formatHotelNightlyMoney(item.estimatedCost, currency)
         : null;
     const detailLines = placeDetailLines(item, { maxLines: 2 });
+    const badgeStyle =
+      CATEGORY_BADGE[item.category] ?? CATEGORY_BADGE_FALLBACK;
     return (
       <ScaleDecorator>
         <Swipeable
@@ -1365,48 +1406,6 @@ export function PlanScreen({
                 ≡
               </Text>
             </Pressable>
-            <View
-              style={[
-                styles.categoryBadge,
-                {
-                  backgroundColor:
-                    item.category === "food"
-                      ? "#fff7ed"
-                      : item.category === "hotel"
-                        ? "#f5f3ff"
-                        : item.category === "attraction"
-                          ? "#ecfdf5"
-                          : colors.chipBg,
-                  borderColor:
-                    item.category === "food"
-                      ? "#fb923c"
-                      : item.category === "hotel"
-                        ? "#a78bfa"
-                        : item.category === "attraction"
-                          ? "#34d399"
-                          : colors.border,
-                },
-              ]}
-              accessibilityLabel={CATEGORY_LABEL[item.category] || item.category}
-            >
-              <Text
-                style={[
-                  styles.categoryBadgeText,
-                  {
-                    color:
-                      item.category === "food"
-                        ? "#c2410c"
-                        : item.category === "hotel"
-                          ? "#6d28d9"
-                          : item.category === "attraction"
-                            ? "#047857"
-                            : colors.textMutedOnCard,
-                  },
-                ]}
-              >
-                {CATEGORY_LABEL[item.category] || item.category}
-              </Text>
-            </View>
             {routeNo != null ? (
               <View
                 style={[
@@ -1431,7 +1430,23 @@ export function PlanScreen({
                 </Text>
               </View>
             ) : null}
-            <View style={{ flex: 1 }}>
+            <View
+              style={[
+                styles.categoryBadge,
+                {
+                  backgroundColor: badgeStyle.backgroundColor,
+                  borderColor: badgeStyle.borderColor,
+                },
+              ]}
+              accessibilityLabel={CATEGORY_LABEL[item.category] || item.category}
+            >
+              <Text
+                style={[styles.categoryBadgeText, { color: badgeStyle.color }]}
+              >
+                {CATEGORY_LABEL[item.category] || item.category}
+              </Text>
+            </View>
+            <View style={styles.rowBody}>
               <View style={styles.nameRow}>
                 <Pressable
                   onPress={() => setTimeEditPlace(item)}
@@ -2777,7 +2792,12 @@ const styles = StyleSheet.create({
     borderColor: "#e2e8f0",
   },
   settingsHint: { fontSize: 11, color: "#64748b", marginBottom: 8 },
-  nameRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minWidth: 0,
+  },
   searchBtn: {
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -2786,6 +2806,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#e0f2fe",
     justifyContent: "center",
     alignItems: "center",
+    flexShrink: 0,
   },
   searchBtnText: { color: "#0369a1", fontWeight: "800", fontSize: 12 },
   categoryBadge: {
@@ -2797,6 +2818,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     alignSelf: "center",
+    flexShrink: 0,
+    marginRight: 6,
   },
   categoryBadgeText: { fontSize: 11, fontWeight: "900" },
   timeBtn: {
@@ -2807,6 +2830,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
   timeText: { fontSize: 13, fontWeight: "800" },
   nowTimeBtn: {
@@ -2817,6 +2841,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#e0f2fe",
     justifyContent: "center",
     alignItems: "center",
+    flexShrink: 0,
   },
   nowTimeBtnText: { color: "#0369a1", fontWeight: "800", fontSize: 12 },
   enrichBar: {
@@ -3016,12 +3041,14 @@ const styles = StyleSheet.create({
   rowDone: { opacity: 0.55 },
   dragHandle: {
     paddingVertical: 8,
-    paddingHorizontal: 6,
-    marginRight: 6,
+    paddingHorizontal: 4,
+    marginRight: 4,
     justifyContent: "center",
     alignItems: "center",
-    minWidth: TOUCH_MIN,
+    alignSelf: "center",
+    minWidth: 32,
     minHeight: TOUCH_MIN,
+    flexShrink: 0,
   },
   drag: { fontSize: 22, color: "#64748b", width: 22, textAlign: "center" },
   mapNoBadge: {
@@ -3030,12 +3057,21 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
-    marginTop: 6,
+    alignSelf: "center",
+    marginRight: 6,
     paddingHorizontal: 6,
+    flexShrink: 0,
   },
   mapNoBadgeText: { fontSize: 13, fontWeight: "900" },
-  name: { flex: 1, fontWeight: "700", color: "#0f172a", fontSize: 15 },
+  rowBody: { flex: 1, minWidth: 0 },
+  name: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    fontWeight: "700",
+    color: "#0f172a",
+    fontSize: 15,
+  },
   meta: { marginTop: 4, fontSize: 12, color: "#64748b" },
   estimateHint: { marginTop: 2, fontSize: 11, color: "#94a3b8" },
   actionRow: {

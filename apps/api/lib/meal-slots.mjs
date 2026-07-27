@@ -46,6 +46,36 @@ function foodInWindow(dayPlaces, window) {
   });
 }
 
+/**
+ * enrich 순차 타임라인용: 점심/저녁 food 도착 하한(분).
+ * notes 라벨 또는 기존 plannedTime 창으로 판별. 해당 없으면 null.
+ */
+export function mealArriveFloorMinutes(place) {
+  if (!place || place.category !== "food") return null;
+  const notes = String(place.notes || "");
+  if (notes.includes("점심") && !notes.includes("저녁")) {
+    return MEAL_WINDOWS.lunch.preferMin;
+  }
+  if (notes.includes("저녁")) {
+    return MEAL_WINDOWS.dinner.preferMin;
+  }
+  const mins = hhmmToMinutes(place.plannedTime);
+  if (mins == null) return null;
+  if (
+    mins >= MEAL_WINDOWS.lunch.startMin &&
+    mins <= MEAL_WINDOWS.lunch.endMin
+  ) {
+    return MEAL_WINDOWS.lunch.preferMin;
+  }
+  if (
+    mins >= MEAL_WINDOWS.dinner.startMin &&
+    mins <= MEAL_WINDOWS.dinner.endMin
+  ) {
+    return MEAL_WINDOWS.dinner.preferMin;
+  }
+  return null;
+}
+
 function pickFoodCandidate({
   cityId,
   tourPool,

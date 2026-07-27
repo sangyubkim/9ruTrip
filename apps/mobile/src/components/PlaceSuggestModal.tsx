@@ -30,6 +30,7 @@ import {
   lodgingTipFromBreakdown,
 } from "../utils/lodgingExplain";
 import { placeDetailLines } from "../utils/placeDetails";
+import { openNaverSearch } from "../utils/naverSearch";
 import { CITIES } from "../types";
 
 type CenterMode = "gps" | "custom";
@@ -652,6 +653,18 @@ export function PlaceSuggestModal({
                               </>
                             ) : null}
                           </View>
+                          <Pressable
+                            onPress={(e) => {
+                              e.stopPropagation?.();
+                              void openNaverSearch(p.name);
+                            }}
+                            style={styles.searchBtn}
+                            accessibilityRole="link"
+                            accessibilityLabel={`${p.name} 네이버 검색`}
+                            hitSlop={6}
+                          >
+                            <Text style={styles.searchBtnText}>검색</Text>
+                          </Pressable>
                         </Pressable>
                       );
                     })
@@ -791,6 +804,18 @@ const styles = StyleSheet.create({
   },
   rowOn: { backgroundColor: "#f0f9ff" },
   checkCol: { paddingTop: 2 },
+  searchBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minHeight: 36,
+    borderRadius: 8,
+    backgroundColor: "#e0f2fe",
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+    alignSelf: "flex-start",
+  },
+  searchBtnText: { color: "#0369a1", fontWeight: "800", fontSize: 12 },
   checkbox: {
     width: 22,
     height: 22,

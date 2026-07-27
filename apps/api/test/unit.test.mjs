@@ -51,6 +51,7 @@ import {
 } from "../lib/tour-courses.mjs";
 import {
   ensureDailyMealSlots,
+  mealArriveFloorMinutes,
   MEAL_WINDOWS,
 } from "../lib/meal-slots.mjs";
 import {
@@ -494,6 +495,211 @@ describe("plannedTime sequential", () => {
     // hotel은 1시간 체류 규칙 제외 — 복귀 시각 이상
     assert.ok(toMin(h1.plannedTime) >= 21 * 60);
     assert.notEqual(defaultStayMinutes("hotel"), 60);
+  });
+
+  it("enrich keeps lunch/dinner in meal windows and does not jump 16:00→21:00 without dinner", async () => {
+    const base = [
+      {
+        id: "a1",
+        name: "명소A",
+        category: "attraction",
+        lat: 37.57,
+        lng: 126.98,
+        cityId: "seoul",
+        dayIndex: 0,
+        order: 0,
+        plannedTime: "10:00",
+        estimatedCost: 0,
+      },
+      {
+        id: "a2",
+        name: "명소B",
+        category: "attraction",
+        lat: 37.58,
+        lng: 126.99,
+        cityId: "seoul",
+        dayIndex: 0,
+        order: 1,
+        plannedTime: "16:00",
+        estimatedCost: 0,
+      },
+      {
+        id: "h1",
+        name: "호텔",
+        category: "hotel",
+        lat: 37.56,
+        lng: 126.98,
+        cityId: "seoul",
+        dayIndex: 0,
+        order: 2,
+        plannedTime: "21:00",
+        estimatedCost: 120000,
+      },
+    ];
+    const withMeals = ensureDailyMealSlots(base, {
+      days: 1,
+      startHour: 9,
+      tourPool: {
+        food: [
+          {
+            id: "f-l",
+            name: "점심식당",
+            lat: 37.571,
+            lng: 126.981,
+            cityId: "seoul",
+            estimatedCost: 12000,
+          },
+          {
+            id: "f-d",
+            name: "저녁식당",
+            lat: 37.572,
+            lng: 126.982,
+            cityId: "seoul",
+            estimatedCost: 18000,
+          },
+        ],
+      },
+      cityId: "seoul",
+    });
+    const places = await enrichPlacesWithTransport(withMeals, {
+      startHour: 9,
+      forceRecalc: true,
+      lodgingReturnTime: "21:00",
+      cityId: "seoul",
+    });
+    const toMin = (hhmm) => {
+      const [h, m] = String(hhmm).split(":").map(Number);
+      return h * 60 + m;
+    };
+    const foods = places.filter((p) => p.category === "food");
+    assert.equal(foods.length, 2);
+    const lunch = foods.find(
+      (p) =>
+        toMin(p.plannedTime) >= MEAL_WINDOWS.lunch.startMin &&
+        toMin(p.plannedTime) <= MEAL_WINDOWS.lunch.endMin,
+    );
+    const dinner = foods.find(
+      (p) =>
+        toMin(p.plannedTime) >= MEAL_WINDOWS.dinner.startMin &&
+        toMin(p.plannedTime) <= MEAL_WINDOWS.dinner.endMin,
+    );
+    assert.ok(lunch, "lunch remains in 11:00–14:00 after enrich");
+    assert.ok(dinner, "dinner remains in 18:00–20:00 after enrich");
+    assert.equal(defaultStayMinutes("food"), 60);
+    assert.equal(defaultStayMinutes("attraction"), 60);
+
+    const hotel = places.find((p) => p.category === "hotel");
+    const dayOrdered = places
+      .filter((p) => p.dayIndex === 0)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const hotelIdx = dayOrdered.findIndex((p) => p.id === hotel.id);
+    const beforeHotel = dayOrdered[hotelIdx - 1];
+    assert.equal(beforeHotel.category, "food");
+    assert.ok(
+      toMin(beforeHotel.plannedTime) >= MEAL_WINDOWS.dinner.startMin,
+      "last stop before hotel should be dinner, not a 16:00 attraction gap",
+    );
+    assert.ok(toMin(hotel.plannedTime) >= 21 * 60);
+  });
+
+  it("hotel plannedTime shifts past 21:00 when sequential arrival is later", async () => {
+    const places = await enrichPlacesWithTransport(
+      [
+        {
+          id: "a1",
+          name: "관광",
+          category: "attraction",
+          lat: 37.5,
+          lng: 127.0,
+          dayIndex: 0,
+          order: 0,
+          plannedTime: "20:00",
+          travelFromPrevMinutes: 0,
+          travelFromPrevCost: 0,
+        },
+        {
+          id: "f1",
+          name: "저녁",
+          category: "food",
+          lat: 37.505,
+          lng: 127.005,
+          dayIndex: 0,
+          order: 1,
+          plannedTime: "21:30",
+          notes: "저녁 식사",
+          travelFromPrevMinutes: 20,
+          travelFromPrevCost: 5000,
+          transportOptions: [
+            { mode: "taxi", minutes: 20, estimatedCost: 5000, engine: "test" },
+          ],
+        },
+        {
+          id: "h1",
+          name: "숙소",
+          category: "hotel",
+          lat: 37.51,
+          lng: 127.01,
+          dayIndex: 0,
+          order: 2,
+          plannedTime: "21:00",
+          travelFromPrevMinutes: 25,
+          travelFromPrevCost: 6000,
+          transportOptions: [
+            { mode: "taxi", minutes: 25, estimatedCost: 6000, engine: "test" },
+          ],
+        },
+      ],
+      {
+        startHour: 20,
+        forceRecalc: false,
+        lodgingReturnTime: "21:00",
+        cityId: "seoul",
+      },
+    );
+    const food = places.find((p) => p.id === "f1");
+    const hotel = places.find((p) => p.id === "h1");
+    const toMin = (hhmm) => {
+      const [h, m] = String(hhmm).split(":").map(Number);
+      return h * 60 + m;
+    };
+    assert.ok(toMin(food.plannedTime) >= MEAL_WINDOWS.dinner.preferMin);
+    const expectedHotelMin =
+      toMin(food.plannedTime) +
+      defaultStayMinutes("food") +
+      Number(hotel.travelFromPrevMinutes);
+    assert.ok(
+      toMin(hotel.plannedTime) >= expectedHotelMin,
+      `hotel=${hotel.plannedTime} expected>=${expectedHotelMin}`,
+    );
+    assert.ok(
+      toMin(hotel.plannedTime) > 21 * 60,
+      `hotel should pass 21:00, got ${hotel.plannedTime}`,
+    );
+  });
+
+  it("mealArriveFloorMinutes detects lunch/dinner labels and windows", () => {
+    assert.equal(
+      mealArriveFloorMinutes({
+        category: "food",
+        notes: "점심 식사",
+        plannedTime: "10:00",
+      }),
+      MEAL_WINDOWS.lunch.preferMin,
+    );
+    assert.equal(
+      mealArriveFloorMinutes({
+        category: "food",
+        notes: "저녁 식사",
+      }),
+      MEAL_WINDOWS.dinner.preferMin,
+    );
+    assert.equal(
+      mealArriveFloorMinutes({
+        category: "attraction",
+        notes: "점심 식사",
+      }),
+      null,
+    );
   });
 });
 
@@ -1511,6 +1717,7 @@ describe("tour courses (contentTypeId=25)", () => {
   it("maps cityId to TourAPI areaCode", () => {
     assert.equal(resolveTourAreaCode("seoul"), "1");
     assert.equal(resolveTourAreaCode("busan"), "6");
+    assert.equal(resolveTourAreaCode("daegu"), "4");
     assert.equal(resolveTourAreaCode("jeju"), "39");
     assert.equal(resolveTourAreaCode("suwon"), "31");
     assert.equal(resolveTourAreaCode("gyeongju"), "35");

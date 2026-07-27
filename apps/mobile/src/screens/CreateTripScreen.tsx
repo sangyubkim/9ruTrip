@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -44,6 +44,11 @@ import {
   reverseGeocodeLabel,
 } from "../utils/deviceLocation";
 import { openNaverSearch } from "../utils/naverSearch";
+import {
+  fetchDateRangeWeather,
+  toNaverWeatherPlaceLabel,
+  type DailyWeather,
+} from "../utils/weather";
 
 const OUTBOUND_TRANSPORT_OPTIONS: {
   id: OutboundTransportMode;
@@ -226,6 +231,9 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const [selectedCourse, setSelectedCourse] = useState<TourCourseDetail | null>(
     null,
   );
+  const [rangeWeather, setRangeWeather] = useState<DailyWeather[]>([]);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
 
   useEffect(() => {
     const showEvt =
@@ -285,13 +293,98 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
     }
   };
 
+  const clearDateRange = () => {
+    setStartDate(undefined);
+    setEndDate(undefined);
+    setRangeWeather([]);
+    setWeatherError(null);
+    setSelectedFestivals([]);
+    setFestivals([]);
+  };
+
   const locationReady = Boolean(
     departureCityId || startAddress.trim() || (startLat != null && startLng != null),
   );
   const datesReady = Boolean(startDate && endDate);
   const travelCityId = selected[0];
+  const weatherCityId = travelCityId ?? departureCityId;
+  const weatherCityName = weatherCityId
+    ? CITIES[weatherCityId]?.nameKo
+    : undefined;
+  const weatherCoords = (() => {
+    if (travelCityId && CITIES[travelCityId]?.center) {
+      return CITIES[travelCityId].center;
+    }
+    if (departureCityId && CITIES[departureCityId]?.center) {
+      return CITIES[departureCityId].center;
+    }
+    if (startLat != null && startLng != null) {
+      return { lat: startLat, lng: startLng };
+    }
+    return undefined;
+  })();
   const canLoadCourses =
     datesReady && Boolean(travelCityId) && isDomesticCityId(travelCityId);
+
+  const weatherReqId = useRef(0);
+
+  const loadRangeWeather = useCallback(
+    async (mode: "auto" | "refresh" = "auto") => {
+      if (!datesReady || !startDate || !endDate || !weatherCoords) {
+        setRangeWeather([]);
+        setWeatherError(null);
+        setWeatherLoading(false);
+        return;
+      }
+      const reqId = ++weatherReqId.current;
+      setWeatherLoading(true);
+      if (mode === "auto") {
+        setWeatherError(null);
+      }
+      try {
+        const days = await fetchDateRangeWeather(
+          weatherCoords.lat,
+          weatherCoords.lng,
+          startDate,
+          endDate,
+        );
+        if (reqId !== weatherReqId.current) return;
+        setRangeWeather(days);
+        setWeatherError(
+          days.length ? null : "해당 기간 예보를 찾지 못했습니다.",
+        );
+      } catch {
+        if (reqId !== weatherReqId.current) return;
+        if (mode === "refresh") {
+          // 갱신 실패 시 이전 예보를 유지하고 소프트한 안내만 표시
+          setWeatherError(
+            "날씨 예보를 불러오지 못했습니다. 이전 정보를 유지합니다.",
+          );
+        } else {
+          setRangeWeather([]);
+          setWeatherError("날씨 예보를 불러오지 못했습니다.");
+        }
+      } finally {
+        if (reqId === weatherReqId.current) {
+          setWeatherLoading(false);
+        }
+      }
+    },
+    [
+      datesReady,
+      startDate,
+      endDate,
+      weatherCoords?.lat,
+      weatherCoords?.lng,
+    ],
+  );
+
+  useEffect(() => {
+    void loadRangeWeather("auto");
+    return () => {
+      weatherReqId.current += 1;
+    };
+  }, [loadRangeWeather]);
 
   const loadCourses = async () => {
     if (!canLoadCourses || !travelCityId) return;
@@ -305,16 +398,15 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       });
       setCourses(list);
       if (!list.length) {
-        Alert.alert(
-          "추천 코스",
-          "이 지역에서 불러올 한국관광공사 추천 코스가 없습니다.",
-        );
+        Alert.alert("추천 코스", "이 지역 추천 코스가 없습니다");
       }
     } catch (e) {
-      Alert.alert(
-        "추천 코스",
-        e instanceof Error ? e.message : "코스 목록을 불러오지 못했습니다.",
-      );
+      const raw = e instanceof Error ? e.message : "";
+      const msg =
+        !raw || /^not found$/i.test(raw.trim())
+          ? "이 지역 추천 코스가 없습니다"
+          : raw;
+      Alert.alert("추천 코스", msg);
     } finally {
       setCoursesLoading(false);
     }
@@ -630,6 +722,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
           startDate={startDate}
           endDate={endDate}
           onChange={changeDateRange}
+          onClear={clearDateRange}
           colors={stepperColors}
           disabled={!locationReady}
         />
@@ -640,6 +733,110 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
             ? `${startDate.replaceAll("-", "/")}–${endDate.replaceAll("-", "/")} · ${nights}박 ${days}일`
             : "출발일을 선택한 뒤 복귀일을 선택해 주세요."}
         </Text>
+
+        {datesReady ? (
+          <View
+            style={[
+              styles.weatherPanel,
+              {
+                borderColor: colors.border,
+                backgroundColor: colors.bgElevated,
+              },
+            ]}
+          >
+            <View style={styles.weatherHeader}>
+              <Text style={[styles.weatherTitle, { color: colors.text }]}>
+                여행 기간 날씨
+                {weatherCityName ? ` · ${weatherCityName}` : ""}
+              </Text>
+              <Pressable
+                style={[
+                  styles.weatherRefreshBtn,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.chipBg,
+                  },
+                  (weatherLoading || !weatherCoords) && { opacity: 0.45 },
+                ]}
+                onPress={() => void loadRangeWeather("refresh")}
+                disabled={weatherLoading || !weatherCoords}
+                accessibilityRole="button"
+                accessibilityLabel="날씨 갱신"
+              >
+                {weatherLoading ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Text
+                    style={[styles.weatherRefreshText, { color: colors.accent }]}
+                  >
+                    갱신
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+            {rangeWeather.length ? (
+              <View style={styles.weatherDayList}>
+                {rangeWeather.map((day) => (
+                  <Text
+                    key={day.date}
+                    style={[styles.weatherDayText, { color: colors.textSecondary }]}
+                  >
+                    {day.label}
+                  </Text>
+                ))}
+              </View>
+            ) : weatherLoading ? (
+              <ActivityIndicator color={colors.accent} />
+            ) : weatherError ? (
+              <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+                {weatherError}
+              </Text>
+            ) : (
+              <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+                {weatherCoords
+                  ? "예보를 표시할 수 없습니다."
+                  : "출발 도시 또는 위치를 지정하면 예보를 불러옵니다."}
+              </Text>
+            )}
+            {weatherError && rangeWeather.length ? (
+              <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+                {weatherError}
+              </Text>
+            ) : null}
+            {startDate ? (
+              <Pressable
+                style={[
+                  styles.weatherNaverBtn,
+                  {
+                    borderColor: colors.accent,
+                    backgroundColor: colors.accentMuted,
+                  },
+                ]}
+                onPress={() => {
+                  // 상세주소는 네이버 날씨 검색이 비므로 시·군·구까지만 사용
+                  const city = weatherCityName?.trim() || "";
+                  const fromAddress = toNaverWeatherPlaceLabel(startAddress);
+                  const addrHasCity =
+                    Boolean(city) &&
+                    Boolean(fromAddress) &&
+                    (fromAddress.includes(city) ||
+                      fromAddress.split(/\s+/)[0] === city);
+                  const place =
+                    (addrHasCity
+                      ? fromAddress
+                      : city || fromAddress) || "여행지";
+                  void openNaverSearch(`${place} ${startDate} 날씨`);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="네이버에서 날씨 보기"
+              >
+                <Text style={[styles.weatherNaverText, { color: colors.accent }]}>
+                  네이버에서 날씨 보기
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
 
         <Text style={[styles.label, { color: colors.textSecondary }]}>
           여행 기간 축제
@@ -1056,6 +1253,41 @@ const styles = StyleSheet.create({
   },
   label: { marginTop: space.md, fontWeight: "700", fontSize: 13 },
   fieldHint: { marginTop: 4, fontSize: 12 },
+  weatherPanel: {
+    marginTop: space.sm,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: space.md,
+    gap: space.sm,
+  },
+  weatherHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+  },
+  weatherTitle: { flex: 1, fontSize: 14, fontWeight: "800" },
+  weatherRefreshBtn: {
+    minHeight: 32,
+    minWidth: 52,
+    paddingHorizontal: space.sm,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  weatherRefreshText: { fontWeight: "800", fontSize: 12 },
+  weatherDayList: { gap: 4 },
+  weatherDayText: { fontSize: 13, fontWeight: "600", lineHeight: 18 },
+  weatherNaverBtn: {
+    marginTop: 2,
+    minHeight: 40,
+    borderWidth: 1.5,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: space.md,
+  },
+  weatherNaverText: { fontWeight: "800", fontSize: 13 },
   fieldGrid: {
     flexDirection: "row",
     gap: space.sm,

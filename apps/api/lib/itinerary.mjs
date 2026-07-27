@@ -1231,14 +1231,14 @@ export async function generateItinerary(body, env) {
       cities,
       cityId: base.cityId || city.id,
     });
-    const mealsInserted = withMeals !== withBreakfast;
     const originPoint =
       Number.isFinite(startLat) && Number.isFinite(startLng)
         ? { lat: startLat, lng: startLng }
         : null;
+    // 식사 슬롯 보강 후 항상 순차 재계산(체류 60분+이동). 식사 창 하한은 enrich가 유지.
     const enriched = await enrichPlacesWithTransport(withMeals, {
       mapsApiKey,
-      forceRecalc: mealsInserted,
+      forceRecalc: true,
       cityId,
       startHour,
       startMinutes,

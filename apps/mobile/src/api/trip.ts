@@ -157,6 +157,15 @@ export async function fetchFestivals(payload: {
   return json.festivals ?? [];
 }
 
+/** 서버 미배포·라우트 누락 시 영문 404를 빈 목록 UX로 흡수 */
+function isCourseEndpointMissing(
+  status: number,
+  error?: string,
+): boolean {
+  if (status === 404) return true;
+  return /^not found$/i.test(String(error || "").trim());
+}
+
 export async function fetchTourCourses(payload: {
   cityId: MvpCityId;
   limit?: number;
@@ -172,6 +181,10 @@ export async function fetchTourCourses(payload: {
     courses?: TourCourseListItem[];
     error?: string;
   }>(res);
+  // 구버전 API(코스 라우트 없음)는 catch-all 404 "Not found" — 빈 목록으로 처리
+  if (isCourseEndpointMissing(res.status, json.error)) {
+    return [];
+  }
   if (!res.ok) throw new Error(json.error ?? `Course list failed: ${res.status}`);
   return json.courses ?? [];
 }

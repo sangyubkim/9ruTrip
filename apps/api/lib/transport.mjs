@@ -1,5 +1,6 @@
 import { isKnownCityId, resolveCity } from "./cities.mjs";
 import { estimateTransitLeg } from "./jp-transit.mjs";
+import { mealArriveFloorMinutes } from "./meal-slots.mjs";
 
 /** 하버사인 거리(km) */
 export function haversineKm(a, b) {
@@ -1227,7 +1228,8 @@ function normalizeLodgingReturnHhmm(value, fallback = "21:00") {
  * preferredTransportMode 가 있으면 해당 모드의 분·비용을 travelFromPrev*에 반영
  * 하루 첫 장소·체인 출발은 항상 startHour/startMinutes 기준으로 plannedTime 재부여
  * Day0 첫 장소는 origin+outboundTransportMode 가 있으면 출발→첫 목적지 구간 추정
- * 숙박 Day 마지막 숙소(호텔)는 lodgingReturnTime(기본 21:00)으로 고정
+ * 점심/저녁 food는 식사 창 prefer 시각 이전으로 당기지 않음(순차가 더 늦으면 그대로)
+ * 숙박 Day 마지막 숙소는 max(lodgingReturnTime, 순차 도착) — 오버플로 시 21:00 이후로 밀림
  */
 export async function enrichPlacesWithTransport(
   places,
@@ -1336,6 +1338,12 @@ export async function enrichPlacesWithTransport(
         minutesFromStart = dayStartMinutes + outboundMins;
       }
 
+      // 점심/저녁: 순차 도착이 창 prefer보다 이르면 창까지 대기(forceRecalc가 식사를 오전으로 당기지 않음)
+      const mealFloor = mealArriveFloorMinutes(p);
+      if (mealFloor != null) {
+        minutesFromStart = Math.max(minutesFromStart, mealFloor);
+      }
+
       if (
         forceRecalc ||
         isDayStart ||
@@ -1353,7 +1361,7 @@ export async function enrichPlacesWithTransport(
         }
       }
 
-      // 저녁 숙소 복귀: 목표 시각과 실제 도착(순차) 중 늦은 쪽 사용
+      // 저녁 숙소 복귀: 목표(기본 21:00)와 순차 도착 중 늦은 쪽 — 일정 오버플로 시 21:00 이후 허용
       const isLastStayHotel =
         returnHhmm &&
         i === dayList.length - 1 &&

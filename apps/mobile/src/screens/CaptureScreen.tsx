@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import * as MediaLibrary from "expo-media-library";
 import { EmptyState } from "../components/EmptyState";
 import { FadeIn } from "../components/FadeIn";
 import { InlineToast } from "../components/InlineToast";
@@ -24,6 +25,20 @@ type Props = {
   onChangeTrip: (trip: Trip) => void;
   onBack: () => void;
 };
+
+/** 카메라 촬영분만 기기 앨범에 저장. 실패해도 리뷰용 URI는 유지. */
+async function saveCameraPhotoToGallery(uri: string): Promise<void> {
+  try {
+    const { status } = await MediaLibrary.requestPermissionsAsync(true);
+    if (status !== "granted") {
+      console.warn("[CaptureScreen] 갤러리 저장 권한 없음");
+      return;
+    }
+    await MediaLibrary.saveToLibraryAsync(uri);
+  } catch (err) {
+    console.warn("[CaptureScreen] 갤러리 저장 실패", err);
+  }
+}
 
 export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
   const { colors } = useTheme();
@@ -56,7 +71,11 @@ export function CaptureScreen({ trip, onChangeTrip, onBack }: Props) {
           allowsEditing: true,
         });
     if (!result.canceled && result.assets[0]?.uri) {
-      setImageUri(result.assets[0].uri);
+      const uri = result.assets[0].uri;
+      setImageUri(uri);
+      if (fromCamera) {
+        await saveCameraPhotoToGallery(uri);
+      }
     }
   };
 
