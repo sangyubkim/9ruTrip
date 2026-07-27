@@ -316,6 +316,10 @@ ${JSON.stringify(neighbors.nextDay)}
     const min = Math.min(59, Math.max(0, Number(m[2])));
     return h * 60 + min;
   })();
+  const startTime = (() => {
+    const raw = String(trip.startTime || "09:00").trim();
+    return /^\d{1,2}:\d{2}$/.test(raw) ? raw : "09:00";
+  })();
 
   let tourPoolForMeals = { food: [] };
   if (domestic) {
@@ -342,14 +346,15 @@ ${JSON.stringify(neighbors.nextDay)}
     cityId,
   });
 
-  const originLat = Number(trip.startLat);
-  const originLng = Number(trip.startLng);
+  const originLat = Number(trip.startLat ?? trip.origin?.lat);
+  const originLng = Number(trip.startLng ?? trip.origin?.lng);
   const enriched = await enrichPlacesWithTransport(withMeals, {
     mapsApiKey: env.googleMapsApiKey || "",
     forceRecalc: true,
     cityId,
     startHour,
     startMinutes,
+    startTime,
     lodgingReturnTime,
     origin:
       Number.isFinite(originLat) && Number.isFinite(originLng)

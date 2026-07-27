@@ -236,14 +236,19 @@ export async function rerouteItinerary(body, env) {
     const min = Math.min(59, Math.max(0, Number(m[2])));
     return h * 60 + min;
   })();
-  const originLat = Number(trip.startLat);
-  const originLng = Number(trip.startLng);
+  const startTime = (() => {
+    const raw = String(trip.startTime || "09:00").trim();
+    return /^\d{1,2}:\d{2}$/.test(raw) ? raw : "09:00";
+  })();
+  const originLat = Number(trip.startLat ?? trip.origin?.lat);
+  const originLng = Number(trip.startLng ?? trip.origin?.lng);
   const enriched = await enrichPlacesWithTransport(merged, {
     mapsApiKey: env.googleMapsApiKey || "",
     forceRecalc: true,
     cityId,
     startHour,
     startMinutes,
+    startTime,
     lodgingReturnTime,
     origin:
       Number.isFinite(originLat) && Number.isFinite(originLng)

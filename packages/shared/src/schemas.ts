@@ -230,6 +230,17 @@ export const itineraryResponseSchema = z.object({
       source: z.string().optional(),
       stopCount: z.number().optional(),
       routeSummary: z.string().optional(),
+      waypoints: z
+        .array(
+          z.object({
+            order: z.number(),
+            name: z.string(),
+            contentId: z.string().optional(),
+            lat: z.number().optional(),
+            lng: z.number().optional(),
+          }),
+        )
+        .optional(),
     })
     .optional(),
 });

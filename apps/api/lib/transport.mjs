@@ -1223,10 +1223,53 @@ function normalizeLodgingReturnHhmm(value, fallback = "21:00") {
 }
 
 /**
+ * 하루 시작 시각(자정 기준 분).
+ * 우선순위: startTime(HH:mm) > startMinutes > startHour(기본 9).
+ * startMinutes에 시(0–23)를 분으로 잘못 넣는 경우(예: 9 → 00:09)를 보정.
+ * null/"" 은 Number(null)===0 함정으로 자정이 되지 않게 무시.
+ */
+export function resolveDayStartMinutes({
+  startTime,
+  startHour = 9,
+  startMinutes,
+} = {}) {
+  const fromTime = (() => {
+    const m = String(startTime ?? "")
+      .trim()
+      .match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    const h = Math.min(23, Math.max(0, Number(m[1])));
+    const min = Math.min(59, Math.max(0, Number(m[2])));
+    if (!Number.isFinite(h) || !Number.isFinite(min)) return null;
+    return h * 60 + min;
+  })();
+  if (fromTime != null) return fromTime;
+
+  const hourRaw = Number(startHour);
+  const hour = Number.isFinite(hourRaw)
+    ? Math.min(23, Math.max(0, Math.floor(hourRaw)))
+    : 9;
+
+  if (startMinutes != null && startMinutes !== "") {
+    const minsRaw = Number(startMinutes);
+    if (Number.isFinite(minsRaw)) {
+      let mins = Math.floor(minsRaw);
+      // 시(9)를 분(9→00:09)으로 오인한 호출 보정
+      if (mins >= 0 && mins <= 23 && mins === hour) {
+        mins = mins * 60;
+      }
+      return Math.max(0, Math.min(24 * 60 - 1, mins));
+    }
+  }
+
+  return hour * 60;
+}
+
+/**
  * day별 순서대로 travelFromPrev* / plannedTime / lodgingScore / transportOptions 보강
  * forceRecalc=true 이면 기존 travelFromPrev* 덮어씀 (DnD 후 재계산)
  * preferredTransportMode 가 있으면 해당 모드의 분·비용을 travelFromPrev*에 반영
- * 하루 첫 장소·체인 출발은 항상 startHour/startMinutes 기준으로 plannedTime 재부여
+ * 하루 첫 장소·체인 출발은 항상 startHour/startMinutes/startTime 기준으로 plannedTime 재부여
  * Day0 첫 장소는 origin+outboundTransportMode 가 있으면 출발→첫 목적지 구간 추정
  * 점심/저녁 food는 식사 창 prefer 시각 이전으로 당기지 않음(순차가 더 늦으면 그대로)
  * 숙박 Day 마지막 숙소는 직전 장소 plannedTime이 있으면 순차 도착만 사용.
@@ -1237,6 +1280,7 @@ export async function enrichPlacesWithTransport(
   {
     startHour = 9,
     startMinutes,
+    startTime,
     forceRecalc = false,
     mapsApiKey = "",
     cityId,
@@ -1252,9 +1296,11 @@ export async function enrichPlacesWithTransport(
       ? normalizeLodgingReturnHhmm(lodgingReturnTime, "21:00")
       : null;
 
-  const dayStartMinutes = Number.isFinite(Number(startMinutes))
-    ? Math.max(0, Math.min(24 * 60 - 1, Math.floor(Number(startMinutes))))
-    : Math.max(0, Math.min(23, Number(startHour) || 9)) * 60;
+  const dayStartMinutes = resolveDayStartMinutes({
+    startTime,
+    startHour,
+    startMinutes,
+  });
 
   const originPoint =
     origin &&

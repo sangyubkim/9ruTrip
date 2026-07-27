@@ -39,6 +39,7 @@ import { PlanCoachmark } from "../components/PlanCoachmark";
 import { PlannedTimeModal } from "../components/PlannedTimeModal";
 import { PlanDayMap } from "../components/PlanDayMap";
 import { ProvinceCityPickerModal } from "../components/ProvinceCityPickerModal";
+import { SeedCourseInclusionBanner } from "../components/SeedCourseInclusionBanner";
 import { TransportCompareSheet } from "../components/TransportCompareSheet";
 import { WeatherCrowdChip } from "../components/WeatherCrowdChip";
 import { AddPlaceScreen } from "./AddPlaceScreen";
@@ -106,6 +107,7 @@ import {
   ensureOvernightHotelsInPlaces,
   overnightDayIndexes,
 } from "../utils/overnightHotels";
+import { findDuplicatePlace } from "../utils/placeMatch";
 import { summarizeRerouteChanges } from "../utils/reroutePreview";
 import {
   hhmmToMinutes,
@@ -413,13 +415,16 @@ export function PlanScreen({
         const h = m ? Number(m[1]) : 9;
         return Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : 9;
       })();
+      // 출발 좌표: startLat/Lng 우선, 없으면 origin(PlaceRef) — outbound 반영에 필요
+      const originLat = Number(trip.startLat ?? trip.origin?.lat);
+      const originLng = Number(trip.startLng ?? trip.origin?.lng);
       const res = await enrichTransport(places, true, trip.cityId, {
         startHour,
         startTime: trip.startTime || DEFAULT_START_TIME,
         lodgingReturnTime:
           trip.lodgingReturnTime || DEFAULT_LODGING_RETURN_TIME,
-        startLat: trip.startLat,
-        startLng: trip.startLng,
+        startLat: Number.isFinite(originLat) ? originLat : undefined,
+        startLng: Number.isFinite(originLng) ? originLng : undefined,
         outboundTransportMode: trip.outboundTransportMode || "car",
       });
       const lock = opts?.lockPlannedTimesById;
@@ -835,11 +840,14 @@ export function PlanScreen({
   };
 
   const confirmSuggested = async (picks: ItineraryPlace[]) => {
-    setSuggestVisible(false);
-    if (!picks.length) return;
-    pushUndoSnapshot();
+    if (!picks.length) {
+      setSuggestVisible(false);
+      return;
+    }
 
     if (suggestCategory === "hotel") {
+      setSuggestVisible(false);
+      pushUndoSnapshot();
       const pick = picks[0];
       // 숙박일(마지막 날 제외)이면 전 숙박 Day에 동일 숙소, 아니면 당일만
       const overnight = overnightDayIndexes(trip.days, trip.nights);
@@ -873,30 +881,47 @@ export function PlanScreen({
       return;
     }
 
+    const dupes = picks.filter((p) => findDuplicatePlace(trip.places, p));
+    if (dupes.length > 0) {
+      const names = dupes
+        .map((p) => p.name)
+        .slice(0, 3)
+        .join(", ");
+      const more =
+        dupes.length > 3 ? ` 외 ${dupes.length - 3}곳` : "";
+      Alert.alert(
+        "중복 장소",
+        `이미 일정에 있는 장소입니다. 그래도 추가할까요?\n(${names}${more})`,
+        [
+          { text: "취소", style: "cancel" },
+          {
+            text: "추가",
+            onPress: () => {
+              setSuggestVisible(false);
+              void insertSuggestedPicks(picks);
+            },
+          },
+        ],
+      );
+      return;
+    }
+    setSuggestVisible(false);
+    await insertSuggestedPicks(picks);
+  };
+
+  const insertSuggestedPicks = async (picks: ItineraryPlace[]) => {
+    pushUndoSnapshot();
     const dayList = trip.places
       .filter((p) => p.dayIndex === day)
       .sort((a, b) => a.order - b.order);
     const others = trip.places.filter((p) => p.dayIndex !== day);
-    const existingNames = new Set(
-      dayList.map((p) => p.name.trim().toLowerCase().replace(/\s+/g, "")),
-    );
-    const added: ItineraryPlace[] = [];
-    for (const pick of picks) {
-      const key = pick.name.trim().toLowerCase().replace(/\s+/g, "");
-      if (existingNames.has(key)) continue;
-      existingNames.add(key);
-      added.push({
-        ...pick,
-        id: `place-${Date.now()}-${added.length}`,
-        dayIndex: day,
-        order: 0,
-        cityId: dayCityId,
-      });
-    }
-    if (!added.length) {
-      flashInline("이미 일정에 있는 장소입니다.");
-      return;
-    }
+    const added: ItineraryPlace[] = picks.map((pick, i) => ({
+      ...pick,
+      id: `place-${Date.now()}-${i}`,
+      dayIndex: day,
+      order: 0,
+      cityId: dayCityId,
+    }));
     const afterId = addPlaceCtx?.afterPlaceId ?? null;
     let insertAt = dayList.length;
     if (addPlaceCtx) {
@@ -923,6 +948,30 @@ export function PlanScreen({
   };
 
   const confirmManualPlace = async (place: EnrichedPlace) => {
+    const candidate = {
+      name: place.name,
+      category: place.category,
+      lat: place.lat,
+      lng: place.lng,
+    };
+    if (findDuplicatePlace(trip.places, candidate)) {
+      Alert.alert(
+        "중복 장소",
+        "이미 일정에 있는 장소입니다. 그래도 추가할까요?",
+        [
+          { text: "취소", style: "cancel" },
+          {
+            text: "추가",
+            onPress: () => void insertManualPlace(place),
+          },
+        ],
+      );
+      return;
+    }
+    await insertManualPlace(place);
+  };
+
+  const insertManualPlace = async (place: EnrichedPlace) => {
     const dayList = trip.places
       .filter((item) => item.dayIndex === day)
       .sort((a, b) => a.order - b.order);
@@ -1465,15 +1514,6 @@ export function PlanScreen({
                   {item.plannedTime ? `🕒 ${item.plannedTime}` : "🕒 --:--"}
                 </Text>
               </Pressable>
-              <Pressable
-                onPress={() => applyCurrentTime(item)}
-                style={styles.nowTimeBtn}
-                accessibilityRole="button"
-                accessibilityLabel="현재 시각으로 맞춤"
-                hitSlop={4}
-              >
-                <Text style={styles.nowTimeBtnText}>지금</Text>
-              </Pressable>
               <Text
                 style={[styles.name, { color: colors.textOnCard }]}
                 numberOfLines={2}
@@ -1582,6 +1622,15 @@ export function PlanScreen({
               >
                 <Text style={styles.actionDangerText}>삭제</Text>
               </Pressable>
+              <Pressable
+                onPress={() => applyCurrentTime(item)}
+                style={styles.nowTimeBtn}
+                accessibilityRole="button"
+                accessibilityLabel="현재시간으로 맞춤"
+                accessibilityHint="이 장소와 당일 미완료 일정을 기기 현재 시각 기준으로 맞춥니다"
+              >
+                <Text style={styles.nowTimeBtnText}>현재시간</Text>
+              </Pressable>
               {trip.status === "active" ? (
                 <Pressable
                   onPress={() => markDone(item.id)}
@@ -1686,6 +1735,22 @@ export function PlanScreen({
           {trip.partySize}명 · 계획 {money(trip.plannedBudget)} ·{" "}
           {STATUS_LABEL[trip.status] ?? trip.status}
         </Text>
+
+        {trip.seedCourse?.title ? (
+          <SeedCourseInclusionBanner
+            seedCourse={trip.seedCourse}
+            places={trip.places}
+            cityId={trip.cityId}
+            onWaypointsResolved={(waypoints) => {
+              if (trip.seedCourse?.waypoints?.length) return;
+              onChangeTrip({
+                ...trip,
+                seedCourse: { ...trip.seedCourse!, waypoints },
+                updatedAt: new Date().toISOString(),
+              });
+            }}
+          />
+        ) : null}
 
         <Pressable
           style={styles.moreBtn}
@@ -2839,16 +2904,16 @@ const styles = StyleSheet.create({
   },
   timeText: { fontSize: 13, fontWeight: "800" },
   nowTimeBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    minHeight: 36,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: TOUCH_MIN,
+    borderRadius: 10,
     backgroundColor: "#e0f2fe",
     justifyContent: "center",
     alignItems: "center",
     flexShrink: 0,
   },
-  nowTimeBtnText: { color: "#0369a1", fontWeight: "800", fontSize: 12 },
+  nowTimeBtnText: { color: "#0369a1", fontWeight: "800", fontSize: 13 },
   enrichBar: {
     flexDirection: "row",
     alignItems: "center",

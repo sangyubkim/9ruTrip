@@ -340,6 +340,7 @@ async function handle(req, res) {
         mapsApiKey: env.googleMapsApiKey,
         startHour: Number(body?.startHour) || startHourFromTime || 9,
         startMinutes: startMinutes ?? undefined,
+        startTime: body?.startTime || undefined,
         cityId: isKnownCityId(body?.cityId) ? body.cityId : undefined,
         lodgingReturnTime: body?.lodgingReturnTime || "21:00",
         origin:

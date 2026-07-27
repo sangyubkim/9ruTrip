@@ -18,6 +18,7 @@ import {
   lodgingScoreBreakdown,
   normalizeOutboundTransportMode,
   pickDefaultTransportMode,
+  resolveDayStartMinutes,
 } from "../lib/transport.mjs";
 import {
   buildFallbackItinerary,
@@ -831,6 +832,124 @@ describe("plannedTime sequential", () => {
       toMin(hotel.plannedTime) > 21 * 60,
       `hotel should pass 21:00, got ${hotel.plannedTime}`,
     );
+  });
+
+  it("resolveDayStartMinutes: HH:mm / hour-as-minutes guard / null", () => {
+    assert.equal(resolveDayStartMinutes({ startTime: "09:00" }), 9 * 60);
+    assert.equal(resolveDayStartMinutes({ startHour: 9 }), 9 * 60);
+    // 시(9)를 분으로 오인 → 00:09 방지
+    assert.equal(
+      resolveDayStartMinutes({ startHour: 9, startMinutes: 9 }),
+      9 * 60,
+    );
+    assert.equal(
+      resolveDayStartMinutes({ startMinutes: 9 * 60 + 30, startHour: 9 }),
+      9 * 60 + 30,
+    );
+    // startTime 우선 — 의도적 00:09 유지
+    assert.equal(resolveDayStartMinutes({ startTime: "00:09", startHour: 9 }), 9);
+    assert.equal(resolveDayStartMinutes({ startMinutes: null, startHour: 9 }), 9 * 60);
+    assert.equal(resolveDayStartMinutes({}), 9 * 60);
+  });
+
+  it("default 09:00 first place; no accidental 00:xx when start is 09:00", async () => {
+    const places = await enrichPlacesWithTransport(
+      [
+        {
+          id: "a1",
+          name: "관광",
+          category: "attraction",
+          lat: 37.57,
+          lng: 126.98,
+          dayIndex: 0,
+          order: 0,
+          plannedTime: "00:09",
+        },
+      ],
+      { startHour: 9, startTime: "09:00", forceRecalc: true },
+    );
+    assert.equal(places[0].plannedTime, "09:00");
+    assert.notEqual(places[0].plannedTime, "00:09");
+
+    const confused = await enrichPlacesWithTransport(
+      [
+        {
+          id: "a1",
+          name: "관광",
+          category: "attraction",
+          lat: 37.57,
+          lng: 126.98,
+          dayIndex: 0,
+          order: 0,
+          plannedTime: "23:50",
+        },
+      ],
+      { startHour: 9, startMinutes: 9, forceRecalc: true },
+    );
+    assert.equal(confused[0].plannedTime, "09:00");
+  });
+
+  it("first place arrival = startTime + outbound from origin", async () => {
+    const seoul = { lat: 37.5665, lng: 126.978 };
+    const busan = { lat: 35.1796, lng: 129.0756 };
+    const places = await enrichPlacesWithTransport(
+      [
+        {
+          id: "a1",
+          name: "부산 관광",
+          category: "attraction",
+          lat: busan.lat,
+          lng: busan.lng,
+          dayIndex: 0,
+          order: 0,
+          plannedTime: "00:09",
+        },
+      ],
+      {
+        startHour: 9,
+        startMinutes: 9 * 60,
+        startTime: "09:00",
+        forceRecalc: true,
+        origin: seoul,
+        outboundTransportMode: "car",
+      },
+    );
+    const first = places[0];
+    assert.ok(Number(first.travelFromPrevMinutes) > 0);
+    const toMin = (hhmm) => {
+      const [h, m] = String(hhmm).split(":").map(Number);
+      return h * 60 + m;
+    };
+    assert.equal(
+      toMin(first.plannedTime),
+      9 * 60 + Number(first.travelFromPrevMinutes),
+    );
+    assert.ok(toMin(first.plannedTime) >= 9 * 60 + 25);
+    assert.ok(!String(first.plannedTime).startsWith("00:"));
+  });
+
+  it("startTime 10:30 respected for day start without origin", async () => {
+    const places = await enrichPlacesWithTransport(
+      [
+        {
+          id: "a1",
+          name: "관광",
+          category: "attraction",
+          lat: 37.57,
+          lng: 126.98,
+          dayIndex: 0,
+          order: 0,
+          plannedTime: "00:09",
+        },
+      ],
+      {
+        startHour: 9,
+        startMinutes: 9,
+        startTime: "10:30",
+        forceRecalc: true,
+      },
+    );
+    assert.equal(places[0].plannedTime, "10:30");
   });
 
   it("mealArriveFloorMinutes detects lunch/dinner labels and windows", () => {

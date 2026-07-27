@@ -109,6 +109,7 @@ export type SeedCourseMeta = {
   source?: string;
   stopCount?: number;
   routeSummary?: string;
+  waypoints?: TourCourseWaypoint[];
 };
 
 export type ItineraryResponse = {

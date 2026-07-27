@@ -293,13 +293,21 @@ export type Trip = {
   routeOutline?: string;
   /** 구조화된 경로 구성·반영 내역 (브리핑 화면용) */
   routeBriefing?: RouteBriefing;
-  /** 한국관광공사 추천 코스 시드 메타 (브리핑 표시용) */
+  /** 한국관광공사 추천 코스 시드 메타 (브리핑·포함 여부 표시용) */
   seedCourse?: {
     contentId: string;
     title: string;
     source?: string;
     stopCount?: number;
     routeSummary?: string;
+    /** 경유지 목록 (포함 체크용; 없으면 contentId로 재조회) */
+    waypoints?: {
+      order: number;
+      name: string;
+      contentId?: string;
+      lat?: number;
+      lng?: number;
+    }[];
   };
   nights: number;
   days: number;

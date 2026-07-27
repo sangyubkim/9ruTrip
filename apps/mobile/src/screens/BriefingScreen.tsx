@@ -1,5 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { Trip } from "../types";
+import { SeedCourseInclusionBanner } from "../components/SeedCourseInclusionBanner";
 import { useTheme } from "../theme/ThemeContext";
 import { radius, space } from "../theme/tokens";
 import { currencyForCity, formatMoney } from "../utils/cost";
@@ -168,28 +169,25 @@ export function BriefingScreen({ trip, onContinue, onBack }: Props) {
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
           반영된 관광공사 코스
         </Text>
-        {hasCourse && rb.seedCourse ? (
-          <>
-            <Text style={[styles.body, { color: colors.text }]}>
-              {rb.seedCourse.title}
-            </Text>
-            <Text style={[styles.meta, { color: colors.textMuted }]}>
-              {[
-                rb.seedCourse.source || "한국관광공사",
-                rb.seedCourse.stopCount != null
-                  ? `경유지 ${rb.seedCourse.stopCount}곳`
-                  : null,
-                "시드로 사용",
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </Text>
-            {rb.seedCourse.routeSummary ? (
-              <Text style={[styles.meta, { color: colors.textMuted }]}>
-                {rb.seedCourse.routeSummary}
-              </Text>
-            ) : null}
-          </>
+        {hasCourse && (trip.seedCourse?.title || rb.seedCourse?.title) ? (
+          <SeedCourseInclusionBanner
+            seedCourse={{
+              contentId: trip.seedCourse?.contentId,
+              title: trip.seedCourse?.title || rb.seedCourse!.title,
+              source:
+                trip.seedCourse?.source ||
+                rb.seedCourse?.source ||
+                "한국관광공사",
+              stopCount:
+                trip.seedCourse?.stopCount ?? rb.seedCourse?.stopCount,
+              routeSummary:
+                trip.seedCourse?.routeSummary || rb.seedCourse?.routeSummary,
+              waypoints: trip.seedCourse?.waypoints,
+            }}
+            places={trip.places}
+            cityId={trip.cityId}
+            variant="briefing"
+          />
         ) : (
           <Text style={[styles.bodyMuted, { color: colors.textMuted }]}>
             추천 코스 시드 없이 AI가 직접 경로를 구성했습니다.

@@ -283,6 +283,33 @@ function AppInner() {
             cityIds: inputCityIds,
           });
         const briefing = result.briefing || result.summary;
+        // 포함 체크용 경유지: API meta + 생성 요청의 tourCourse.waypoints 병합
+        const seedCourse =
+          result.seedCourse || input.tourCourse
+            ? {
+                contentId:
+                  result.seedCourse?.contentId ||
+                  input.tourCourse?.contentId ||
+                  "",
+                title:
+                  result.seedCourse?.title ||
+                  input.tourCourse?.title ||
+                  "",
+                source: result.seedCourse?.source || "한국관광공사",
+                stopCount:
+                  result.seedCourse?.stopCount ??
+                  input.tourCourse?.waypoints?.length,
+                routeSummary:
+                  result.seedCourse?.routeSummary ||
+                  input.tourCourse?.routeSummary,
+                waypoints:
+                  result.seedCourse?.waypoints?.length
+                    ? result.seedCourse.waypoints
+                    : input.tourCourse?.waypoints || undefined,
+              }
+            : undefined;
+        const seedCourseSafe =
+          seedCourse?.contentId && seedCourse.title ? seedCourse : undefined;
         const trip = createEmptyTrip({
           ...input,
           cityId: resolvedCityId,
@@ -292,7 +319,7 @@ function AppInner() {
           briefing,
           routeOutline,
           routeBriefing: result.routeBriefing,
-          seedCourse: result.seedCourse,
+          seedCourse: seedCourseSafe,
         });
         // 구 API/AI가 숙소를 빠뜨려도 마지막 날 제외 Day에 hotel 보정
         const placesWithHotels = ensureOvernightHotelsInPlaces(
@@ -320,7 +347,7 @@ function AppInner() {
           briefing,
           routeOutline,
           routeBriefing: result.routeBriefing,
-          seedCourse: result.seedCourse,
+          seedCourse: seedCourseSafe,
           startAddress: input.startAddress,
           startLat: input.startLat,
           startLng: input.startLng,

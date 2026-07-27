@@ -1154,7 +1154,11 @@ export async function generateItinerary(body, env) {
   const startLng = Number(
     body?.startLng ?? body?.origin?.lng ?? Number.NaN,
   );
-  const startTime = body?.startTime;
+  // 미지정 시 기본 09:00 — LLM/폴백 plannedTime이 새벽에 남아도 enrich가 이 기준으로 재부여
+  const startTime =
+    body?.startTime != null && String(body.startTime).trim()
+      ? String(body.startTime).trim()
+      : "09:00";
   const startHour = parseStartHour(startTime);
   const startMinutes = parseStartMinutes(startTime);
   const outboundTransportMode = normalizeOutboundTransportMode(
@@ -1236,13 +1240,20 @@ export async function generateItinerary(body, env) {
       Number.isFinite(startLat) && Number.isFinite(startLng)
         ? { lat: startLat, lng: startLng }
         : null;
-    // 식사 슬롯 보강 후 항상 순차 재계산(체류 60분+이동). 식사 창 하한은 enrich가 유지.
-    const enriched = await enrichPlacesWithTransport(withMeals, {
+    // 생성 시 LLM이 남긴 00:xx/심야 plannedTime 제거 → enrich가 startTime+outbound로 순차 재부여
+    const clearedForEnrich = withMeals.map((p) => {
+      const next = { ...p };
+      delete next.plannedTime;
+      return next;
+    });
+    // 식사 슬롯 보강 후 항상 순차 재계산(체류 60분+이동). 식사 창 하한은 enrich가 notes로 유지.
+    const enriched = await enrichPlacesWithTransport(clearedForEnrich, {
       mapsApiKey,
       forceRecalc: true,
       cityId,
       startHour,
       startMinutes,
+      startTime,
       lodgingReturnTime,
       origin: originPoint,
       outboundTransportMode,
@@ -1269,6 +1280,25 @@ export async function generateItinerary(body, env) {
           source: "한국관광공사",
           stopCount: seedCourse.stopCount,
           routeSummary: seedCourse.routeSummary,
+          ...(Array.isArray(seedCourse.waypoints) && seedCourse.waypoints.length
+            ? {
+                waypoints: seedCourse.waypoints.map((w, i) => ({
+                  order: Number.isFinite(Number(w.order))
+                    ? Number(w.order)
+                    : i + 1,
+                  name: String(w.name || "").trim(),
+                  ...(w.contentId
+                    ? { contentId: String(w.contentId) }
+                    : {}),
+                  ...(Number.isFinite(Number(w.lat))
+                    ? { lat: Number(w.lat) }
+                    : {}),
+                  ...(Number.isFinite(Number(w.lng))
+                    ? { lng: Number(w.lng) }
+                    : {}),
+                })).filter((w) => w.name),
+              }
+            : {}),
         }
       : null;
     const endName =
