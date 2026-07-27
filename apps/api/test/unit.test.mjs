@@ -10,11 +10,14 @@ import {
   buildLodgingCandidates,
   clearDirectionsCache,
   compareLegTransport,
+  defaultStayMinutes,
   directionsCacheKey,
+  enrichPlacesWithTransport,
   estimateOutboundLegHaversine,
   haversineKm,
   lodgingScoreBreakdown,
   normalizeOutboundTransportMode,
+  pickDefaultTransportMode,
 } from "../lib/transport.mjs";
 import {
   buildFallbackItinerary,
@@ -28,11 +31,58 @@ import {
 } from "../lib/itinerary.mjs";
 import { clearFestivalCache, listFestivals } from "../lib/festivals.mjs";
 import {
+  cleanTourText,
   clearTourApiCache,
   formatTourPoolForPrompt,
+  parseTourDetailFields,
   suggestViaTourApi,
+  tourPlacesToSuggestItems,
   tourStaysToLodgingCandidates,
 } from "../lib/tourapi.mjs";
+import {
+  clearTourCourseCache,
+  formatCourseSeedForPrompt,
+  formatCourseWaypointSummary,
+  injectCourseWaypointsIntoPool,
+  normalizeTourCourseListItem,
+  normalizeTourCourseSeed,
+  normalizeTourCourseWaypoint,
+  resolveTourAreaCode,
+} from "../lib/tour-courses.mjs";
+import {
+  ensureDailyMealSlots,
+  MEAL_WINDOWS,
+} from "../lib/meal-slots.mjs";
+import {
+  neighborDayContext,
+  regenerateDayItinerary,
+} from "../lib/regenerate-day.mjs";
+import {
+  addMinutesToHhmm,
+  shiftPlannedTimesAfter,
+} from "../lib/shift-planned-times.mjs";
+
+describe("shiftPlannedTimesAfter", () => {
+  it("adds 60 minutes to places after insert, including hotel", () => {
+    assert.equal(addMinutesToHhmm("10:30", 60), "11:30");
+    assert.equal(addMinutesToHhmm("23:45", 60), "00:45");
+    assert.equal(addMinutesToHhmm(undefined, 60), null);
+
+    const day = [
+      { id: "a", plannedTime: "09:00" },
+      { id: "new", plannedTime: undefined },
+      { id: "b", plannedTime: "11:00" },
+      { id: "h", category: "hotel", plannedTime: "21:00" },
+      { id: "c", plannedTime: undefined },
+    ];
+    const shifted = shiftPlannedTimesAfter(day, 1, 60);
+    assert.equal(shifted[0].plannedTime, "09:00");
+    assert.equal(shifted[1].plannedTime, undefined);
+    assert.equal(shifted[2].plannedTime, "12:00");
+    assert.equal(shifted[3].plannedTime, "22:00");
+    assert.equal(shifted[4].plannedTime, undefined);
+  });
+});
 
 describe("festivals", () => {
   it("uses the catalog when TourAPI key is absent", async () => {
@@ -272,6 +322,178 @@ describe("haversine + transport compare", () => {
     assert.equal(flight.costKind, "fare");
     assert.ok(flight.minutes > 100);
     assert.ok(flight.estimatedCost >= 70000);
+  });
+
+  it("pickDefaultTransportMode prefers taxi (car/driving) over walk/transit", () => {
+    assert.equal(pickDefaultTransportMode([]), "taxi");
+    assert.equal(
+      pickDefaultTransportMode([
+        { mode: "walking", minutes: 8, estimatedCost: 0, engine: "t" },
+        { mode: "transit", minutes: 15, estimatedCost: 1400, engine: "t" },
+        { mode: "taxi", minutes: 6, estimatedCost: 6000, engine: "t" },
+      ]),
+      "taxi",
+    );
+  });
+
+  it("defaultStayMinutes: food/attraction 60, hotel excluded from 1h visit", () => {
+    assert.equal(defaultStayMinutes("food"), 60);
+    assert.equal(defaultStayMinutes("attraction"), 60);
+    assert.equal(defaultStayMinutes("hotel"), 15);
+    assert.notEqual(defaultStayMinutes("hotel"), 60);
+  });
+});
+
+describe("plannedTime sequential", () => {
+  it("does not set last hotel earlier than previous place", async () => {
+    const places = await enrichPlacesWithTransport(
+      [
+        {
+          id: "attr-1",
+          name: "관광",
+          category: "attraction",
+          lat: 36.3,
+          lng: 126.5,
+          dayIndex: 0,
+          order: 0,
+          plannedTime: "09:00",
+          travelFromPrevMinutes: 0,
+          travelFromPrevCost: 0,
+        },
+        {
+          id: "food-1",
+          name: "늦은 식당",
+          category: "food",
+          lat: 36.305,
+          lng: 126.505,
+          dayIndex: 0,
+          order: 1,
+          plannedTime: "22:26",
+          travelFromPrevMinutes: 15,
+          travelFromPrevCost: 0,
+          transportOptions: [
+            { mode: "taxi", minutes: 15, estimatedCost: 5000, engine: "test" },
+          ],
+        },
+        {
+          id: "hotel-1",
+          name: "숙소",
+          category: "hotel",
+          lat: 36.31,
+          lng: 126.51,
+          dayIndex: 0,
+          order: 2,
+          plannedTime: "21:00",
+          travelFromPrevMinutes: 10,
+          travelFromPrevCost: 0,
+          transportOptions: [
+            { mode: "taxi", minutes: 10, estimatedCost: 5000, engine: "test" },
+          ],
+        },
+      ],
+      {
+        startHour: 9,
+        forceRecalc: false,
+        lodgingReturnTime: "21:00",
+        cityId: "boryeong",
+      },
+    );
+    const food = places.find((p) => p.id === "food-1");
+    const hotel = places.find((p) => p.id === "hotel-1");
+    assert.equal(food.plannedTime, "22:26");
+    assert.ok(
+      hotel.plannedTime >= food.plannedTime,
+      `hotel=${hotel.plannedTime} food=${food.plannedTime}`,
+    );
+  });
+
+  it("enrich: car default mode + 60m stay for attraction/food (hotel not 60)", async () => {
+    const places = await enrichPlacesWithTransport(
+      [
+        {
+          id: "a1",
+          name: "관광A",
+          category: "attraction",
+          lat: 37.5665,
+          lng: 126.978,
+          dayIndex: 0,
+          order: 0,
+          estimatedCost: 0,
+        },
+        {
+          id: "f1",
+          name: "맛집",
+          category: "food",
+          lat: 37.57,
+          lng: 126.982,
+          dayIndex: 0,
+          order: 1,
+          estimatedCost: 15000,
+        },
+        {
+          id: "a2",
+          name: "관광B",
+          category: "attraction",
+          lat: 37.575,
+          lng: 126.985,
+          dayIndex: 0,
+          order: 2,
+          estimatedCost: 0,
+        },
+        {
+          id: "h1",
+          name: "숙소",
+          category: "hotel",
+          lat: 37.58,
+          lng: 126.99,
+          dayIndex: 0,
+          order: 3,
+          estimatedCost: 120000,
+        },
+      ],
+      {
+        startHour: 9,
+        forceRecalc: true,
+        lodgingReturnTime: "21:00",
+        cityId: "seoul",
+      },
+    );
+
+    const a1 = places.find((p) => p.id === "a1");
+    const f1 = places.find((p) => p.id === "f1");
+    const a2 = places.find((p) => p.id === "a2");
+    const h1 = places.find((p) => p.id === "h1");
+
+    assert.equal(a1.plannedTime, "09:00");
+    assert.equal(f1.preferredTransportMode, "taxi");
+    assert.equal(a2.preferredTransportMode, "taxi");
+    assert.ok(Number(f1.travelFromPrevMinutes) > 0);
+    assert.ok(
+      f1.transportOptions?.some((o) => o.mode === "taxi"),
+      "taxi option present for car-based time",
+    );
+
+    const toMin = (hhmm) => {
+      const [h, m] = String(hhmm).split(":").map(Number);
+      return h * 60 + m;
+    };
+    // attraction 체류 60 + 이동 → food 도착
+    assert.equal(
+      toMin(f1.plannedTime),
+      toMin(a1.plannedTime) +
+        defaultStayMinutes("attraction") +
+        Number(f1.travelFromPrevMinutes),
+    );
+    // food 체류 60 + 이동 → 다음 attraction
+    assert.equal(
+      toMin(a2.plannedTime),
+      toMin(f1.plannedTime) +
+        defaultStayMinutes("food") +
+        Number(a2.travelFromPrevMinutes),
+    );
+    // hotel은 1시간 체류 규칙 제외 — 복귀 시각 이상
+    assert.ok(toMin(h1.plannedTime) >= 21 * 60);
+    assert.notEqual(defaultStayMinutes("hotel"), 60);
   });
 });
 
@@ -703,7 +925,412 @@ describe("crowd hint heuristic", () => {
   });
 });
 
+describe("ensureDailyMealSlots", () => {
+  const baseDay = [
+    {
+      id: "a1",
+      name: "명소A",
+      category: "attraction",
+      lat: 37.57,
+      lng: 126.98,
+      cityId: "seoul",
+      dayIndex: 0,
+      order: 0,
+      plannedTime: "10:00",
+      estimatedCost: 0,
+    },
+    {
+      id: "a2",
+      name: "명소B",
+      category: "attraction",
+      lat: 37.58,
+      lng: 126.99,
+      cityId: "seoul",
+      dayIndex: 0,
+      order: 1,
+      plannedTime: "15:00",
+      estimatedCost: 0,
+    },
+    {
+      id: "h1",
+      name: "호텔",
+      category: "hotel",
+      lat: 37.56,
+      lng: 126.98,
+      cityId: "seoul",
+      dayIndex: 0,
+      order: 2,
+      plannedTime: "21:00",
+      estimatedCost: 120000,
+    },
+  ];
+
+  const tourPool = {
+    food: [
+      {
+        id: "f-lunch",
+        name: "서울 점심식당",
+        lat: 37.571,
+        lng: 126.981,
+        cityId: "seoul",
+        estimatedCost: 12000,
+      },
+      {
+        id: "f-dinner",
+        name: "서울 저녁식당",
+        lat: 37.572,
+        lng: 126.982,
+        cityId: "seoul",
+        estimatedCost: 18000,
+      },
+    ],
+  };
+
+  it("inserts lunch and dinner food in meal windows when missing", () => {
+    const result = ensureDailyMealSlots(baseDay, {
+      days: 1,
+      startHour: 9,
+      tourPool,
+      partySize: 2,
+      cityId: "seoul",
+    });
+    const foods = result.filter((p) => p.category === "food");
+    assert.equal(foods.length, 2);
+
+    const lunch = foods.find((p) => {
+      const m = String(p.plannedTime).match(/^(\d+):(\d+)$/);
+      const mins = Number(m[1]) * 60 + Number(m[2]);
+      return mins >= MEAL_WINDOWS.lunch.startMin && mins <= MEAL_WINDOWS.lunch.endMin;
+    });
+    const dinner = foods.find((p) => {
+      const m = String(p.plannedTime).match(/^(\d+):(\d+)$/);
+      const mins = Number(m[1]) * 60 + Number(m[2]);
+      return (
+        mins >= MEAL_WINDOWS.dinner.startMin && mins <= MEAL_WINDOWS.dinner.endMin
+      );
+    });
+    assert.ok(lunch, "lunch food in 11:00–14:00");
+    assert.ok(dinner, "dinner food in 18:00–20:00");
+    assert.equal(lunch.plannedTime, "12:00");
+    assert.equal(dinner.plannedTime, "18:30");
+    assert.equal(lunch.name, "서울 점심식당");
+    assert.equal(dinner.name, "서울 저녁식당");
+    assert.equal(lunch.estimatedCost, 12000);
+  });
+
+  it("does not duplicate lunch when day already has food in 11–14", () => {
+    const withLunch = [
+      baseDay[0],
+      {
+        id: "food-existing",
+        name: "기존 점심",
+        category: "food",
+        lat: 37.57,
+        lng: 126.98,
+        cityId: "seoul",
+        dayIndex: 0,
+        order: 1,
+        plannedTime: "12:30",
+        estimatedCost: 15000,
+        notes: "점심 식사",
+      },
+      { ...baseDay[1], order: 2 },
+      { ...baseDay[2], order: 3 },
+    ];
+    const result = ensureDailyMealSlots(withLunch, {
+      days: 1,
+      startHour: 9,
+      tourPool,
+      partySize: 2,
+      cityId: "seoul",
+    });
+    const lunchFoods = result.filter((p) => {
+      if (p.category !== "food") return false;
+      const m = String(p.plannedTime).match(/^(\d+):(\d+)$/);
+      if (!m) return false;
+      const mins = Number(m[1]) * 60 + Number(m[2]);
+      return mins >= MEAL_WINDOWS.lunch.startMin && mins <= MEAL_WINDOWS.lunch.endMin;
+    });
+    assert.equal(lunchFoods.length, 1);
+    assert.equal(lunchFoods[0].name, "기존 점심");
+    const dinnerFoods = result.filter((p) => {
+      if (p.category !== "food") return false;
+      const m = String(p.plannedTime).match(/^(\d+):(\d+)$/);
+      if (!m) return false;
+      const mins = Number(m[1]) * 60 + Number(m[2]);
+      return (
+        mins >= MEAL_WINDOWS.dinner.startMin && mins <= MEAL_WINDOWS.dinner.endMin
+      );
+    });
+    assert.equal(dinnerFoods.length, 1);
+  });
+
+  it("skips lunch for late startHour but still adds dinner before 20:00", () => {
+    const result = ensureDailyMealSlots(baseDay, {
+      days: 1,
+      startHour: 15,
+      tourPool,
+      partySize: 2,
+      cityId: "seoul",
+    });
+    const foods = result.filter((p) => p.category === "food");
+    assert.equal(foods.length, 1);
+    const mins = (() => {
+      const m = String(foods[0].plannedTime).match(/^(\d+):(\d+)$/);
+      return Number(m[1]) * 60 + Number(m[2]);
+    })();
+    assert.ok(
+      mins >= MEAL_WINDOWS.dinner.startMin && mins <= MEAL_WINDOWS.dinner.endMin,
+    );
+    assert.equal(foods[0].plannedTime, "18:30");
+  });
+
+  it("returns the same array reference when meals already satisfied", () => {
+    const full = [
+      baseDay[0],
+      {
+        id: "l",
+        name: "점심",
+        category: "food",
+        lat: 37.57,
+        lng: 126.98,
+        cityId: "seoul",
+        dayIndex: 0,
+        order: 1,
+        plannedTime: "12:00",
+        estimatedCost: 15000,
+      },
+      { ...baseDay[1], order: 2 },
+      {
+        id: "d",
+        name: "저녁",
+        category: "food",
+        lat: 37.57,
+        lng: 126.98,
+        cityId: "seoul",
+        dayIndex: 0,
+        order: 3,
+        plannedTime: "18:30",
+        estimatedCost: 15000,
+      },
+      { ...baseDay[2], order: 4 },
+    ];
+    const result = ensureDailyMealSlots(full, {
+      days: 1,
+      startHour: 9,
+      tourPool,
+      cityId: "seoul",
+    });
+    assert.equal(result, full);
+  });
+});
+
+describe("neighborDayContext / regenerate-day", () => {
+  const samplePlaces = [
+    {
+      id: "d0-a",
+      name: "남산타워",
+      category: "attraction",
+      dayIndex: 0,
+      order: 0,
+      cityId: "seoul",
+      lat: 37.55,
+      lng: 126.98,
+      plannedTime: "10:00",
+    },
+    {
+      id: "d0-f",
+      name: "명동 점심",
+      category: "food",
+      dayIndex: 0,
+      order: 1,
+      cityId: "seoul",
+      lat: 37.56,
+      lng: 126.98,
+      plannedTime: "12:00",
+    },
+    {
+      id: "d1-a",
+      name: "해운대",
+      category: "attraction",
+      dayIndex: 1,
+      order: 0,
+      cityId: "busan",
+      lat: 35.16,
+      lng: 129.16,
+      plannedTime: "11:00",
+    },
+    {
+      id: "d2-a",
+      name: "감천문화마을",
+      category: "attraction",
+      dayIndex: 2,
+      order: 0,
+      cityId: "busan",
+      lat: 35.1,
+      lng: 129.01,
+      plannedTime: "10:30",
+    },
+  ];
+
+  it("summarizes previous and next day places for context", () => {
+    const ctx = neighborDayContext(samplePlaces, 1);
+    assert.equal(ctx.previousDay.length, 2);
+    assert.equal(ctx.previousDay[0].name, "남산타워");
+    assert.equal(ctx.nextDay.length, 1);
+    assert.equal(ctx.nextDay[0].name, "감천문화마을");
+  });
+
+  it("returns empty previousDay for the first day", () => {
+    const ctx = neighborDayContext(samplePlaces, 0);
+    assert.deepEqual(ctx.previousDay, []);
+    assert.equal(ctx.nextDay.length, 1);
+    assert.equal(ctx.nextDay[0].name, "해운대");
+  });
+
+  it("regenerates only the target day with fallback engine", async () => {
+    const trip = {
+      cityId: "seoul",
+      days: 3,
+      nights: 2,
+      partySize: 2,
+      startTime: "09:00",
+      lodgingReturnTime: "21:00",
+      outboundTransportMode: "car",
+      cities: [
+        { cityId: "seoul", cityName: "서울", dayIndexes: [0] },
+        { cityId: "busan", cityName: "부산", dayIndexes: [1, 2] },
+      ],
+      places: samplePlaces,
+    };
+    const res = await regenerateDayItinerary(
+      { trip, dayIndex: 1, targetCityId: "jeju" },
+      {},
+    );
+    assert.equal(res.dayIndex, 1);
+    assert.equal(res.cityId, "jeju");
+    assert.equal(res.engine, "fallback");
+    assert.ok(res.replacedCount > 0);
+    const day1 = res.places.filter((p) => p.dayIndex === 1);
+    const other = res.places.filter((p) => p.dayIndex !== 1);
+    assert.ok(day1.length > 0);
+    // 전날 연결 출발 호텔은 이전 도시일 수 있음 — 신규 본일정은 제주
+    const core = day1.filter(
+      (p) => !String(p.notes || "").includes("전날") && !String(p.notes || "").includes("출발"),
+    );
+    assert.ok(core.length > 0);
+    assert.ok(core.every((p) => p.cityId === "jeju"));
+    assert.ok(other.some((p) => p.id === "d0-a"));
+    assert.ok(other.some((p) => p.id === "d2-a"));
+    assert.ok(!res.places.some((p) => p.id === "d1-a"));
+    assert.equal(res.neighborContext.previousDay[0].name, "남산타워");
+    assert.equal(res.neighborContext.nextDay[0].name, "감천문화마을");
+  });
+});
+
+describe("place grounding", () => {
+  it("scores similar names and rejects unrelated ones", async () => {
+    const { placeNameSimilarity, groundDomesticPlaces } = await import(
+      "../lib/place-ground.mjs"
+    );
+    assert.ok(placeNameSimilarity("대한다원", "대한다원 보성녹차밭") >= 0.55);
+    assert.ok(
+      placeNameSimilarity("보성녹차떡갈비명가", "대한다원") < 0.45,
+    );
+
+    const grounded = await groundDomesticPlaces(
+      [
+        {
+          id: "fake",
+          name: "보성녹차떡갈비명가",
+          category: "food",
+          lat: 34.7,
+          lng: 127.0,
+          cityId: "boseong",
+          dayIndex: 0,
+          order: 0,
+          estimatedCost: 20000,
+        },
+      ],
+      {
+        tourPool: {
+          attraction: [],
+          food: [
+            {
+              id: "tour-food-1",
+              name: "보성녹차밭근처식당",
+              category: "food",
+              lat: 34.71,
+              lng: 127.08,
+              cityId: "boseong",
+            },
+          ],
+          hotel: [],
+        },
+        mapsApiKey: "",
+      },
+    );
+    assert.equal(grounded.length, 1);
+    assert.equal(grounded[0].id, "tour-food-1");
+    assert.equal(grounded[0].grounded, "tourapi");
+  });
+});
+
 describe("tourapi places", () => {
+  it("parses TourAPI detailIntro/common fields without inventing hotel price", () => {
+    assert.equal(cleanTourText("오전 09:00<br />~18:00"), "오전 09:00 ~18:00");
+
+    const food = parseTourDetailFields(
+      "food",
+      {
+        opentimefood: "11:00~21:00",
+        restdatefood: "매주 월요일",
+        firstmenu: "비빔밥",
+        treatmenu: "된장찌개",
+        infocenterfood: "02-111-2222",
+      },
+      { addr1: "서울 종로구", tel: "02-000-0000" },
+    );
+    assert.equal(food.openingHours, "11:00~21:00");
+    assert.equal(food.restDate, "매주 월요일");
+    assert.equal(food.phone, "02-111-2222");
+    assert.equal(food.address, "서울 종로구");
+    assert.equal(food.officialMenu, "비빔밥 · 된장찌개");
+    assert.equal(food.signatureFood, "비빔밥");
+
+    const attraction = parseTourDetailFields(
+      "attraction",
+      {
+        usetime: "09:00~18:00",
+        restdate: "화요일",
+        usefee: "성인 3,000원",
+        infocenter: "02-333-4444",
+      },
+      { addr1: "서울 중구" },
+    );
+    assert.equal(attraction.openingHours, "09:00~18:00");
+    assert.equal(attraction.restDate, "화요일");
+    assert.equal(attraction.admissionFee, "성인 3,000원");
+    assert.equal(attraction.phone, "02-333-4444");
+
+    const hotel = parseTourDetailFields(
+      "hotel",
+      {
+        checkintime: "15:00",
+        checkouttime: "11:00",
+        infocenterlodging: "02-555-6666",
+        reservationurl: "https://example.com/book",
+      },
+      { addr1: "서울 강남구", tel: "02-999-0000" },
+    );
+    assert.equal(hotel.checkInTime, "15:00");
+    assert.equal(hotel.checkOutTime, "11:00");
+    assert.equal(hotel.phone, "02-555-6666");
+    assert.equal(hotel.address, "서울 강남구");
+    assert.equal(hotel.reservationUrl, "https://example.com/book");
+    assert.equal(hotel.estimatedCost, undefined);
+  });
+
   it("formats prompt pool and lodging candidates from TourAPI stays", () => {
     const pool = {
       attraction: [
@@ -730,6 +1357,7 @@ describe("tourapi places", () => {
     const prompt = formatTourPoolForPrompt(pool);
     assert.match(prompt, /남산타워/);
     assert.match(prompt, /TourAPI/);
+    assert.match(prompt, /1박 가격을 추측/);
     const lodging = tourStaysToLodgingCandidates(pool.hotel, {
       nights: 2,
       partySize: 2,
@@ -738,7 +1366,31 @@ describe("tourapi places", () => {
     });
     assert.equal(lodging.length, 1);
     assert.equal(lodging[0].category, "hotel");
-    assert.ok(lodging[0].estimatedCost > 0);
+    // TourAPI 숙소는 공식 요금 없음 — 가짜 120000 금지
+    assert.equal(lodging[0].estimatedCost, 0);
+    assert.equal(lodging[0].pricePerPerson, undefined);
+
+    const suggestHotels = tourPlacesToSuggestItems(
+      [
+        {
+          id: "tour-h1",
+          name: "서울호텔",
+          category: "hotel",
+          lat: 37.56,
+          lng: 126.98,
+          cityId: "seoul",
+        },
+      ],
+      { partySize: 2 },
+    );
+    assert.equal(suggestHotels[0].estimatedCost, 0);
+    assert.equal(suggestHotels[0].pricePerPerson, undefined);
+
+    const score = lodgingScoreBreakdown(
+      { lat: 37.56, lng: 126.98, estimatedCost: 0, notes: "테스트" },
+      { nights: 2, cityId: "seoul" },
+    );
+    assert.equal(score.scoreBreakdown.priceEstimate, 50);
   });
 
   it("suggestViaTourApi maps locationBasedList2 items", async () => {
@@ -784,9 +1436,165 @@ describe("tourapi places", () => {
       });
       assert.equal(suggested.source, "tourapi");
       assert.equal(suggested.places[0].name, "경복궁");
+
+      clearTourApiCache();
+      let usedMapY = "";
+      let usedMapX = "";
+      let listCalls = 0;
+      let detailCalls = 0;
+      globalThis.fetch = async (input) => {
+        const u = new URL(String(input));
+        const isList = u.pathname.includes("locationBasedList2");
+        const isDetail =
+          u.pathname.includes("detailIntro2") ||
+          u.pathname.includes("detailCommon2");
+        if (isList) {
+          listCalls += 1;
+          usedMapY = u.searchParams.get("mapY") || "";
+          usedMapX = u.searchParams.get("mapX") || "";
+        }
+        if (isDetail) detailCalls += 1;
+        const item = isDetail
+          ? {
+              contentid: "attr-2",
+              usetime: "09:00~18:00",
+              restdate: "월요일",
+              usefee: "무료",
+              infocenter: "02-123-4567",
+              addr1: "서울",
+              tel: "02-123-4567",
+            }
+          : {
+              contentid: "attr-2",
+              title: "근처명소",
+              mapx: "126.99",
+              mapy: "37.5",
+              addr1: "서울",
+            };
+        return new Response(
+          JSON.stringify({
+            response: {
+              header: { resultCode: "0000", resultMsg: "OK" },
+              body: {
+                items: {
+                  item: [item],
+                },
+              },
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      };
+      const near = await suggestViaTourApi({
+        cityId: "seoul",
+        category: "attraction",
+        serviceKey: "test-key",
+        lat: 37.5,
+        lng: 127.0,
+      });
+      assert.equal(usedMapY, "37.5");
+      assert.equal(usedMapX, "127");
+      assert.equal(listCalls, 1);
+      assert.ok(detailCalls >= 1);
+      assert.equal(near[0].name, "근처명소");
+      assert.equal(near[0].openingHours, "09:00~18:00");
+      assert.equal(near[0].admissionFee, "무료");
+      assert.equal(near[0].phone, "02-123-4567");
     } finally {
       globalThis.fetch = originalFetch;
       clearTourApiCache();
     }
+  });
+});
+
+describe("tour courses (contentTypeId=25)", () => {
+  it("maps cityId to TourAPI areaCode", () => {
+    assert.equal(resolveTourAreaCode("seoul"), "1");
+    assert.equal(resolveTourAreaCode("busan"), "6");
+    assert.equal(resolveTourAreaCode("jeju"), "39");
+    assert.equal(resolveTourAreaCode("suwon"), "31");
+    assert.equal(resolveTourAreaCode("gyeongju"), "35");
+    assert.equal(resolveTourAreaCode("tokyo"), null);
+  });
+
+  it("normalizes course list items and waypoints without inventing coords", () => {
+    const listed = normalizeTourCourseListItem(
+      {
+        contentid: "12345",
+        title: "한강 산책 코스",
+        addr1: "서울 영등포구",
+        mapy: "37.52",
+        mapx: "126.93",
+      },
+      "seoul",
+    );
+    assert.equal(listed.contentId, "12345");
+    assert.equal(listed.title, "한강 산책 코스");
+    assert.equal(listed.badge, "관광공사");
+    assert.equal(listed.lat, 37.52);
+    assert.equal(listed.lng, 126.93);
+
+    const withCoords = normalizeTourCourseWaypoint(
+      {
+        subnum: 1,
+        subname: "여의도공원",
+        subcontentid: "111",
+        mapy: "37.528",
+        mapx: "126.932",
+        subdetailoverview: "한강 뷰",
+      },
+      0,
+    );
+    assert.equal(withCoords.order, 1);
+    assert.equal(withCoords.name, "여의도공원");
+    assert.equal(withCoords.contentId, "111");
+    assert.equal(withCoords.lat, 37.528);
+
+    const noCoords = normalizeTourCourseWaypoint(
+      { subnum: 2, subname: "좌표없음명소", subcontentid: "222" },
+      1,
+    );
+    assert.equal(noCoords.name, "좌표없음명소");
+    assert.equal(noCoords.lat, undefined);
+    assert.equal(noCoords.lng, undefined);
+
+    assert.equal(
+      formatCourseWaypointSummary([withCoords, noCoords]),
+      "여의도공원 → 좌표없음명소",
+    );
+  });
+
+  it("injects seeded waypoints into tour pool and formats prompt", () => {
+    clearTourCourseCache();
+    const seed = normalizeTourCourseSeed({
+      tourCourse: {
+        contentId: "c1",
+        title: "서울 핵심 코스",
+        cityId: "seoul",
+        waypoints: [
+          { order: 1, name: "경복궁", contentId: "a1", lat: 37.5796, lng: 126.977 },
+          { order: 2, name: "좌표없음", contentId: "a2" },
+          { order: 3, name: "북촌", lat: 37.5826, lng: 126.983 },
+        ],
+      },
+    });
+    assert.equal(seed.contentId, "c1");
+    assert.equal(seed.waypoints.length, 3);
+
+    const { pool, seeded } = injectCourseWaypointsIntoPool(
+      { attraction: [{ id: "tour-x", name: "기존", cityId: "seoul", lat: 1, lng: 2 }], food: [], hotel: [] },
+      seed.waypoints,
+      "seoul",
+    );
+    assert.equal(seeded.length, 2);
+    assert.equal(pool.attraction[0].name, "경복궁");
+    assert.equal(pool.attraction[0].mustVisit, true);
+    assert.ok(!pool.attraction.some((p) => p.name === "좌표없음"));
+
+    const prompt = formatCourseSeedForPrompt(seed);
+    assert.match(prompt, /한국관광공사 추천 코스 시드/);
+    assert.match(prompt, /경복궁/);
+    assert.match(prompt, /북촌/);
+    assert.ok(!prompt.includes("좌표없음"));
   });
 });

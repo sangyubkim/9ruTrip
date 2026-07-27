@@ -89,6 +89,22 @@ export function BriefingScreen({ trip, onContinue, onBack }: Props) {
         ) : null}
       </View>
 
+      {trip.seedCourse?.title ? (
+        <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
+          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+            기반 코스
+          </Text>
+          <Text style={[styles.body, { color: colors.text }]}>
+            {trip.seedCourse.title} (한국관광공사)
+          </Text>
+          {trip.seedCourse.routeSummary ? (
+            <Text style={[styles.meta, { color: colors.textMuted }]}>
+              {trip.seedCourse.routeSummary}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
           여행지 Day 배정

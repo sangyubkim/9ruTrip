@@ -56,23 +56,23 @@ export function formatPlaceMoney(
   return formatMoney(amount, currency);
 }
 
-/** 숙소 조식 라벨 */
+/** 숙소 1박가 — 알려진 경우만 (0/미상은 null, 가짜 기본가 표시 안 함) */
+export function formatHotelNightlyMoney(
+  estimatedCost: number | undefined,
+  currency: "JPY" | "KRW" = "KRW",
+): string | null {
+  const amount = Number(estimatedCost);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return formatMoney(amount, currency);
+}
+
+/** 숙소 조식 라벨 (포함 여부만 — 식비 금액은 표시하지 않음) */
 export function formatHotelBreakfastLabel(
   breakfastIncluded: boolean | undefined,
 ): string {
   if (breakfastIncluded === true) return "조식 · 포함";
   if (breakfastIncluded === false) return "조식 · 불포함";
   return "조식 · 정보없음";
-}
-
-/** 조식 별도 인당가 (있을 때만) */
-export function formatHotelBreakfastPrice(
-  breakfastPricePerPerson: number | undefined,
-  currency: "JPY" | "KRW" = "KRW",
-): string | null {
-  const n = Number(breakfastPricePerPerson);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return `조식 인당 · ${formatMoney(n, currency)}`;
 }
 
 /** 총예산 합산: 맛집·관광은 1인×인원 */

@@ -70,10 +70,14 @@ export type LodgingCandidate = {
   scoreBreakdown: LodgingScoreBreakdown;
   /** 조식 제공 여부 (없으면 정보없음) */
   breakfastIncluded?: boolean;
-  /** 조식 별도 시 인당 가격 */
-  breakfastPricePerPerson?: number;
-  /** 숙박 인당 가격 (없으면 estimatedCost / partySize) */
+  /** 숙박 인당 가격 (알려진 경우만) */
   pricePerPerson?: number;
+  address?: string;
+  phone?: string;
+  checkInTime?: string;
+  checkOutTime?: string;
+  reservationUrl?: string;
+  reservationInfo?: string;
 };
 
 /** 등록된 도시 id (destinations 카탈로그). 하위 호환을 위해 별칭 유지 */
@@ -110,10 +114,30 @@ export type ItineraryPlace = {
   aiReason?: string;
   /** 숙소 조식 제공 여부 (없으면 정보없음) */
   breakfastIncluded?: boolean;
-  /** 조식 별도 시 인당 가격 */
-  breakfastPricePerPerson?: number;
-  /** 숙박 인당 가격 (없으면 estimatedCost / partySize) */
+  /** 숙박 인당 가격 (알려진 경우만; 없으면 생략) */
   pricePerPerson?: number;
+  /** 주소 */
+  address?: string;
+  /** 전화·문의처 */
+  phone?: string;
+  /** 영업시간(맛집) / 이용시간(관광) */
+  openingHours?: string;
+  /** 휴무일 */
+  restDate?: string;
+  /** 공식 메뉴(맛집 TourAPI firstmenu/treatmenu) */
+  officialMenu?: string;
+  /** 입장료(관광) */
+  admissionFee?: string;
+  /** 체크인 시각(숙소) */
+  checkInTime?: string;
+  /** 체크아웃 시각(숙소) */
+  checkOutTime?: string;
+  /** 예약 URL */
+  reservationUrl?: string;
+  /** 예약 안내(전화·문구 등) */
+  reservationInfo?: string;
+  contentId?: string;
+  googlePlaceId?: string;
 };
 
 export type TripCityLeg = {
@@ -154,6 +178,8 @@ export type TravelDiaryEntry = {
   title: string;
   cityIds: string[];
   cityNames: string[];
+  /** 지도 중심용 대표 도시 (없으면 cityIds[0]) */
+  cityId?: MvpCityId;
   startDate?: string;
   endDate?: string;
   nights: number;
@@ -165,6 +191,15 @@ export type TravelDiaryEntry = {
   notes?: string;
   coverPlaceName?: string;
   placeCount: number;
+  /** 완료 시점 일정 스냅샷 — 상세(지도·경로 요약)용 */
+  places?: ItineraryPlace[];
+  cities?: TripCityLeg[];
+  origin?: PlaceRef | null;
+  endPoint?: PlaceRef | null;
+  /** AI 여행 브리핑 스냅샷 */
+  briefing?: string;
+  /** 경로 한 줄 요약 */
+  routeOutline?: string;
   updatedAt: string;
   syncStatus?: "local" | "synced" | "pending";
 };
@@ -218,6 +253,14 @@ export type Trip = {
   briefing?: string;
   /** 경로 한 줄 요약 (출발→여행지→경유→도착) */
   routeOutline?: string;
+  /** 한국관광공사 추천 코스 시드 메타 (브리핑 표시용) */
+  seedCourse?: {
+    contentId: string;
+    title: string;
+    source?: string;
+    stopCount?: number;
+    routeSummary?: string;
+  };
   nights: number;
   days: number;
   /** 여행 출발일 YYYY-MM-DD */

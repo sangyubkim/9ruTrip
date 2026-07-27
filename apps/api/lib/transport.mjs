@@ -273,8 +273,7 @@ export function estimateLegByModeHaversine(from, to, mode, opts = {}) {
 }
 
 /**
- * 도쿄 기준 간이 교통 추정 (지하철/도보 혼합) — 키 없을 때 폴백
- * 레거시: transit 우선 휴리스틱 단일 값
+ * 장소 간 이동 레거시 단일 값 — 차로(taxi→driving) 기준
  */
 export function estimateLegHaversine(from, to) {
   if (!from || !to) {
@@ -284,14 +283,7 @@ export function estimateLegHaversine(from, to) {
       transportEngine: "none",
     };
   }
-  const opt = estimateLegByModeHaversine(from, to, "transit");
-  const walk = estimateLegByModeHaversine(from, to, "walking");
-  // 짧으면 도보, 길면 대중교통 (기존 동작에 가깝게)
-  const km = haversineKm(
-    { lat: Number(from.lat), lng: Number(from.lng) },
-    { lat: Number(to.lat), lng: Number(to.lng) },
-  );
-  const pick = Number.isFinite(km) && km < 1.2 ? walk : opt;
+  const pick = estimateLegByModeHaversine(from, to, "taxi");
   return {
     travelFromPrevMinutes: pick.minutes,
     travelFromPrevCost: pick.estimatedCost,
@@ -516,13 +508,13 @@ export async function estimateLegByModeDirections(from, to, mode, apiKey) {
 }
 
 /**
- * Google Directions API (transit 우선, 실패 시 walking → haversine)
+ * Google Directions API (차로/driving 우선, 실패 시 transit → walking → haversine)
  * 레거시 단일 값 경로 — 비교 UI는 compareLegTransport 사용
  */
 export async function estimateLegDirections(from, to, apiKey) {
   if (!apiKey || !from || !to) return estimateLegHaversine(from, to);
 
-  for (const mode of ["transit", "walking"]) {
+  for (const mode of ["taxi", "transit", "walking"]) {
     const opt = await estimateLegByModeDirections(from, to, mode, apiKey);
     if (opt.engine.startsWith("directions:")) {
       return {
@@ -541,20 +533,26 @@ export async function estimateLegSmart(from, to, apiKey) {
   return estimateLegHaversine(from, to);
 }
 
-/** 기본 추천 모드: 짧은 도보 우선, 그 외 대중교통 (택시는 수동 선택) */
+/**
+ * 기본 추천 모드: 차로 이동(taxi→Directions driving) 기준.
+ * 비교 UI의 walking/transit은 사용자가 수동 선택 가능.
+ */
 export function pickDefaultTransportMode(options) {
-  if (!Array.isArray(options) || options.length === 0) return "transit";
-  const transit = options.find((o) => o.mode === "transit");
-  const walking = options.find((o) => o.mode === "walking");
-  if (
-    walking &&
-    walking.minutes <= 25 &&
-    (!transit || walking.minutes <= transit.minutes + 5)
-  ) {
-    return "walking";
-  }
-  if (transit) return "transit";
-  return options[0]?.mode || "transit";
+  if (!Array.isArray(options) || options.length === 0) return "taxi";
+  const taxi = options.find((o) => o.mode === "taxi");
+  if (taxi) return "taxi";
+  return options[0]?.mode || "taxi";
+}
+
+/**
+ * 카테고리별 기본 체류(분).
+ * food·attraction = 60분. hotel은 방문 체류 1시간 규칙 제외(짧은 버퍼만).
+ */
+export function defaultStayMinutes(category) {
+  const c = String(category || "");
+  if (c === "hotel") return 15;
+  if (c === "food" || c === "attraction") return 60;
+  return 75;
 }
 
 /**
@@ -618,7 +616,7 @@ export function applyTransportOption(place, options, preferredMode) {
   const opt =
     options.find((o) => o.mode === mode) ||
     options[0] || {
-      mode: "transit",
+      mode: "taxi",
       minutes: 0,
       estimatedCost: 0,
       engine: "none",
@@ -747,27 +745,32 @@ export function lodgingScoreBreakdown(
     if (score > centrality) centrality = score;
   }
 
-  const defaultPerNight = domestic ? 120000 : 18000;
-  const perNight =
-    nights > 0
-      ? Math.max(1, Number(place.estimatedCost) || defaultPerNight) / nights
-      : Number(place.estimatedCost) || defaultPerNight;
+  // 가격 미상(0)이면 중간 점수 — 120000 등 가짜 1박가로 채우지 않음
+  const rawCost = Number(place.estimatedCost);
+  const hasCost = Number.isFinite(rawCost) && rawCost > 0;
+  const perNight = hasCost
+    ? nights > 0
+      ? rawCost / nights
+      : rawCost
+    : null;
   // 저렴할수록 높은 점수 (국내 KRW 8만~18만 / 해외 JPY 8k~35k)
   const priceLo = domestic ? 80000 : 8000;
   const priceHi = domestic ? 180000 : 35000;
   const priceSpan = priceHi - priceLo;
-  const priceEstimate = Math.round(
-    Math.max(
-      20,
-      Math.min(
-        95,
-        95 -
-          ((Math.min(Math.max(perNight, priceLo), priceHi) - priceLo) /
-            priceSpan) *
-            75,
-      ),
-    ),
-  );
+  const priceEstimate = hasCost
+    ? Math.round(
+        Math.max(
+          20,
+          Math.min(
+            95,
+            95 -
+              ((Math.min(Math.max(perNight, priceLo), priceHi) - priceLo) /
+                priceSpan) *
+                75,
+          ),
+        ),
+      )
+    : 50;
 
   // Google 평점 우선, 없으면 허브 근접 + 노트 키워드 프록시
   const notes = String(place.notes || place.name || "").toLowerCase();
@@ -841,7 +844,6 @@ const TOKYO_LODGING_CATALOG = [
     basePerNight: 18000,
     notes: "신주쿠역 도보권 · 추천",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 1800,
   },
   {
     name: "시부야 엑셀 호텔 도큐",
@@ -850,7 +852,6 @@ const TOKYO_LODGING_CATALOG = [
     basePerNight: 26000,
     notes: "시부야역 직결 · 쇼핑·야경",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 2500,
   },
   {
     name: "호텔 메츠 도쿄역 야에스",
@@ -859,7 +860,6 @@ const TOKYO_LODGING_CATALOG = [
     basePerNight: 24000,
     notes: "도쿄역·신칸센 접근",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 2000,
   },
   {
     name: "미츠이 가든 호텔 우에노",
@@ -868,7 +868,6 @@ const TOKYO_LODGING_CATALOG = [
     basePerNight: 16000,
     notes: "우에노 공원·박물관 인근",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 1800,
   },
   {
     name: "리치몬드 호텔 아사쿠사",
@@ -877,7 +876,6 @@ const TOKYO_LODGING_CATALOG = [
     basePerNight: 15000,
     notes: "센소지·스카이트리 접근",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 1600,
   },
   {
     name: "호텔 메츠 이케부쿠로",
@@ -886,7 +884,6 @@ const TOKYO_LODGING_CATALOG = [
     basePerNight: 13000,
     notes: "JR 이케부쿠로 · 가성비",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 1500,
   },
   {
     name: "세라톤 미야코 호텔 도쿄",
@@ -906,7 +903,6 @@ const OSAKA_LODGING_CATALOG = [
     basePerNight: 22000,
     notes: "오사카/우메다역 · JR 허브",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 2200,
   },
   {
     name: "스위소텔 난카이 오사카",
@@ -923,7 +919,6 @@ const OSAKA_LODGING_CATALOG = [
     basePerNight: 24000,
     notes: "신사이바시 · 쇼핑 중심",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 2800,
   },
   {
     name: "크로스 호텔 오사카",
@@ -932,7 +927,6 @@ const OSAKA_LODGING_CATALOG = [
     basePerNight: 20000,
     notes: "도톤보리 도보 · 야경",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 2000,
   },
   {
     name: "신오사카 워싱턴 호텔 플라자",
@@ -941,7 +935,6 @@ const OSAKA_LODGING_CATALOG = [
     basePerNight: 14000,
     notes: "신오사카 · 신칸센",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 1200,
   },
   {
     name: "호텔 아가라 신세카이",
@@ -950,7 +943,6 @@ const OSAKA_LODGING_CATALOG = [
     basePerNight: 12000,
     notes: "츠텐카쿠·신세카이 · 가성비",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 1000,
   },
 ];
 
@@ -986,7 +978,6 @@ const SEOUL_LODGING_CATALOG = [
     basePerNight: 110000,
     notes: "여의도 · 한강 접근",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 25000,
   },
   {
     name: "호텔 더블유 홍대",
@@ -995,7 +986,6 @@ const SEOUL_LODGING_CATALOG = [
     basePerNight: 90000,
     notes: "홍대입구 · 가성비",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 15000,
   },
 ];
 
@@ -1023,7 +1013,6 @@ const BUSAN_LODGING_CATALOG = [
     basePerNight: 120000,
     notes: "해운대 · 스파",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 28000,
   },
   {
     name: "아바니 센트럴 부산",
@@ -1032,7 +1021,6 @@ const BUSAN_LODGING_CATALOG = [
     basePerNight: 100000,
     notes: "서면 허브",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 22000,
   },
   {
     name: "토요코인 부산역",
@@ -1052,7 +1040,6 @@ const JEJU_LODGING_CATALOG = [
     basePerNight: 150000,
     notes: "제주공항 · 도심 접근",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 30000,
   },
   {
     name: "롯데호텔 제주",
@@ -1077,7 +1064,6 @@ const JEJU_LODGING_CATALOG = [
     basePerNight: 110000,
     notes: "제주 시내 · 바다",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 20000,
   },
   {
     name: "벤티모 호텔 앤 레지던스 제주",
@@ -1086,7 +1072,6 @@ const JEJU_LODGING_CATALOG = [
     basePerNight: 90000,
     notes: "연동 · 가성비",
     breakfastIncluded: false,
-    breakfastPricePerPerson: 15000,
   },
 ];
 
@@ -1119,7 +1104,6 @@ function lodgingCatalogForCity(cityId) {
           basePerNight: 110000,
           notes: `${nameKo} 중심 · 추천`,
           breakfastIncluded: false,
-          breakfastPricePerPerson: 20000,
         },
         {
           name: `${nameKo} 비즈니스 호텔`,
@@ -1128,7 +1112,6 @@ function lodgingCatalogForCity(cityId) {
           basePerNight: 90000,
           notes: `${nameKo} · 가성비`,
           breakfastIncluded: false,
-          breakfastPricePerPerson: 15000,
         },
         {
           name: `${nameKo} 리조트·스테이`,
@@ -1195,10 +1178,6 @@ export function buildLodgingCandidates({
         typeof c.breakfastIncluded === "boolean"
           ? c.breakfastIncluded
           : undefined,
-      breakfastPricePerPerson:
-        Number(c.breakfastPricePerPerson) > 0
-          ? Number(c.breakfastPricePerPerson)
-          : undefined,
       pricePerPerson,
     };
     const { lodgingScore, scoreBreakdown } = lodgingScoreBreakdown(place, {
@@ -1216,6 +1195,22 @@ function isChainDeparturePlaceForEnrich(p) {
   if (!p || p.category !== "hotel") return false;
   const notes = String(p.notes || "");
   return /전날|연결\s*출발|출발$/.test(notes) && !(Number(p.estimatedCost) > 0);
+}
+
+function minutesToHhmm(totalMinutes) {
+  const normalized = ((Math.floor(totalMinutes) % (24 * 60)) + 24 * 60) % (24 * 60);
+  const hh = Math.floor(normalized / 60);
+  const mm = normalized % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+function hhmmToMinutes(value) {
+  const m = String(value ?? "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null;
+  return h * 60 + min;
 }
 
 function normalizeLodgingReturnHhmm(value, fallback = "21:00") {
@@ -1347,32 +1342,32 @@ export async function enrichPlacesWithTransport(
         !p.plannedTime ||
         !/^\d{1,2}:\d{2}$/.test(String(p.plannedTime))
       ) {
-        const hh = Math.floor(minutesFromStart / 60) % 24;
-        const mm = minutesFromStart % 60;
-        p.plannedTime = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+        p.plannedTime = minutesToHhmm(minutesFromStart);
       } else {
-        const [h, m] = String(p.plannedTime).split(":").map(Number);
-        if (Number.isFinite(h) && Number.isFinite(m)) {
-          minutesFromStart = h * 60 + m;
+        const existingMins = hhmmToMinutes(p.plannedTime);
+        // 직전 도착+이동보다 이르면 역전 — 순차로 보정
+        if (existingMins == null || existingMins < minutesFromStart) {
+          p.plannedTime = minutesToHhmm(minutesFromStart);
+        } else {
+          minutesFromStart = existingMins;
         }
       }
 
-      // 저녁 숙소 복귀: 그날 마지막 stay hotel은 lodgingReturnTime으로 고정
+      // 저녁 숙소 복귀: 목표 시각과 실제 도착(순차) 중 늦은 쪽 사용
       const isLastStayHotel =
         returnHhmm &&
         i === dayList.length - 1 &&
         p.category === "hotel" &&
         !isChainDeparturePlaceForEnrich(p);
       if (isLastStayHotel) {
-        p.plannedTime = returnHhmm;
-        const [rh, rm] = returnHhmm.split(":").map(Number);
-        if (Number.isFinite(rh) && Number.isFinite(rm)) {
-          minutesFromStart = rh * 60 + rm;
+        const returnMins = hhmmToMinutes(returnHhmm);
+        if (returnMins != null) {
+          minutesFromStart = Math.max(minutesFromStart, returnMins);
+          p.plannedTime = minutesToHhmm(minutesFromStart);
         }
       }
 
-      minutesFromStart +=
-        p.category === "food" ? 60 : p.category === "hotel" ? 15 : 75;
+      minutesFromStart += defaultStayMinutes(p.category);
 
       if (p.category === "hotel") {
         const bd = lodgingScoreBreakdown(p, { cityId });

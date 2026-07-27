@@ -1,11 +1,15 @@
+import { useMemo, useState } from "react";
 import { Alert, ScrollView, Pressable, Share, StyleSheet, Text, View } from "react-native";
-import type { TravelDiaryEntry } from "../types";
-import { groupDiaryByYear } from "../utils/diary";
+import type { TravelDiaryEntry, Trip } from "../types";
+import { enrichDiaryEntry, groupDiaryByYear } from "../utils/diary";
 import { useTheme } from "../theme/ThemeContext";
 import { radius, space } from "../theme/tokens";
+import { DiaryDetailScreen } from "./DiaryDetailScreen";
 
 type Props = {
   entries: TravelDiaryEntry[];
+  /** 장소·브리핑 미저장 구버전 엔트리 보강용 */
+  trips?: Trip[];
   onBack: () => void;
   onDelete: (entry: TravelDiaryEntry) => Promise<void>;
 };
@@ -23,10 +27,16 @@ function dateRange(entry: TravelDiaryEntry) {
   return `${entry.startDate} ~ ${entry.endDate} · ${entry.nights}박 ${entry.days}일`;
 }
 
-export function DiaryScreen({ entries, onBack, onDelete }: Props) {
+export function DiaryScreen({ entries, trips = [], onBack, onDelete }: Props) {
   const { colors } = useTheme();
+  const [selected, setSelected] = useState<TravelDiaryEntry | null>(null);
   const groups = groupDiaryByYear(entries);
   const years = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+
+  const detailEntry = useMemo(
+    () => (selected ? enrichDiaryEntry(selected, trips) : null),
+    [selected, trips],
+  );
 
   const share = async () => {
     await Share.share({
@@ -41,6 +51,15 @@ export function DiaryScreen({ entries, onBack, onDelete }: Props) {
       { text: "삭제", style: "destructive", onPress: () => void onDelete(entry) },
     ]);
   };
+
+  if (detailEntry) {
+    return (
+      <DiaryDetailScreen
+        entry={detailEntry}
+        onBack={() => setSelected(null)}
+      />
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -72,14 +91,22 @@ export function DiaryScreen({ entries, onBack, onDelete }: Props) {
                   key={entry.id}
                   style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}
                 >
-                  <Text style={[styles.cardTitle, { color: colors.text }]}>{entry.title}</Text>
-                  <Text style={[styles.meta, { color: colors.textMuted }]}>{dateRange(entry)}</Text>
-                  <Text style={[styles.meta, { color: colors.textMuted }]}>
-                    {entry.coverPlaceName ? `${entry.coverPlaceName} · ` : ""}
-                    장소 {entry.placeCount}곳
-                    {entry.plannedBudget ? ` · ${entry.currency ?? ""} ${entry.plannedBudget.toLocaleString()}` : ""}
-                  </Text>
-                  {entry.notes ? <Text style={[styles.notes, { color: colors.textSecondary }]}>{entry.notes}</Text> : null}
+                  <Pressable
+                    onPress={() => setSelected(entry)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${entry.title} 다이어리 상세 보기`}
+                  >
+                    <Text style={[styles.cardTitle, { color: colors.text }]}>{entry.title}</Text>
+                    <Text style={[styles.meta, { color: colors.textMuted }]}>{dateRange(entry)}</Text>
+                    <Text style={[styles.meta, { color: colors.textMuted }]}>
+                      {entry.coverPlaceName ? `${entry.coverPlaceName} · ` : ""}
+                      장소 {entry.placeCount}곳
+                      {entry.plannedBudget ? ` · ${entry.currency ?? ""} ${entry.plannedBudget.toLocaleString()}` : ""}
+                    </Text>
+                    {entry.notes ? (
+                      <Text style={[styles.notes, { color: colors.textSecondary }]}>{entry.notes}</Text>
+                    ) : null}
+                  </Pressable>
                   <Pressable
                     onPress={() => confirmDelete(entry)}
                     style={styles.deleteButton}

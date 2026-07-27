@@ -23,13 +23,21 @@ function cellAt(row: number, col: number): ProvinceMeta | undefined {
   return KOREA_PROVINCES.find((p) => p.row === row && p.col === col);
 }
 
-function provincesForCities(cityIds: string[]): ProvinceId[] {
+function provincesForCities(cityIds: string[]): Set<ProvinceId> {
   const set = new Set<ProvinceId>();
   for (const cityId of cityIds) {
     const prov = KOREA_PROVINCES.find((p) => p.cityIds.includes(cityId));
     if (prov) set.add(prov.id);
   }
-  return [...set];
+  return set;
+}
+
+function selectedCountInProvince(
+  provinceId: ProvinceId,
+  selectedCityIds: string[],
+): number {
+  const cityIds = KOREA_PROVINCES.find((p) => p.id === provinceId)?.cityIds ?? [];
+  return cityIds.filter((id) => selectedCityIds.includes(id)).length;
 }
 
 export function ProvinceCityPicker({
@@ -39,11 +47,12 @@ export function ProvinceCityPicker({
   disabled = false,
 }: Props) {
   const { colors } = useTheme();
-  const initialProvinces = provincesForCities(selectedCityIds);
-  const [selectedProvinces, setSelectedProvinces] =
-    useState<ProvinceId[]>(initialProvinces);
-  const [focusedProvince, setFocusedProvince] = useState<ProvinceId | null>(
-    initialProvinces[0] ?? "seoul",
+  /** 도시 목록을 열어 둔 도 (단일 포커스, 처음엔 없음) */
+  const [focusedProvince, setFocusedProvince] = useState<ProvinceId | null>(null);
+
+  const provincesWithCities = useMemo(
+    () => provincesForCities(selectedCityIds),
+    [selectedCityIds],
   );
 
   const focused = useMemo(
@@ -52,22 +61,13 @@ export function ProvinceCityPicker({
   );
 
   const onProvincePress = (id: ProvinceId) => {
-    // 같은 도를 다시 누르면 선택 해제, 다른 도면 포커스 + 선택
-    if (focusedProvince === id && selectedProvinces.includes(id)) {
-      const next = selectedProvinces.filter((p) => p !== id);
-      setSelectedProvinces(next);
-      const keepCities = new Set(
-        next.flatMap(
-          (pid) => KOREA_PROVINCES.find((p) => p.id === pid)?.cityIds ?? [],
-        ),
-      );
-      onChangeCityIds(selectedCityIds.filter((c) => keepCities.has(c)));
+    // 같은 도 재탭 → 포커스 해제(테두리/활성 표시 off)
+    if (focusedProvince === id) {
+      setFocusedProvince(null);
       return;
     }
+    // 다른 도 → 이전 포커스는 끄고 해당 도만 활성
     setFocusedProvince(id);
-    if (!selectedProvinces.includes(id)) {
-      setSelectedProvinces((prev) => [...prev, id]);
-    }
   };
 
   const toggleCity = (cityId: string) => {
@@ -77,9 +77,11 @@ export function ProvinceCityPicker({
     }
     if (selectedCityIds.length >= maxCities) return;
     onChangeCityIds([...selectedCityIds, cityId]);
-    if (focusedProvince && !selectedProvinces.includes(focusedProvince)) {
-      setSelectedProvinces((prev) => [...prev, focusedProvince]);
-    }
+  };
+
+  const clearAll = () => {
+    onChangeCityIds([]);
+    setFocusedProvince(null);
   };
 
   const selectedLabel = selectedCityIds
@@ -108,7 +110,7 @@ export function ProvinceCityPicker({
               { color: disabled ? colors.textMuted : colors.textSecondary },
             ]}
           >
-            도 (다중 선택)
+            도
           </Text>
           <View style={styles.mapGrid}>
             {Array.from({ length: ROWS }, (_, row) => (
@@ -118,8 +120,12 @@ export function ProvinceCityPicker({
                   if (!prov) {
                     return <View key={`e-${row}-${col}`} style={styles.mapCellEmpty} />;
                   }
-                  const on = selectedProvinces.includes(prov.id);
                   const focusedOn = focusedProvince === prov.id;
+                  const hasCities = provincesWithCities.has(prov.id);
+                  const pickedCount = selectedCountInProvince(
+                    prov.id,
+                    selectedCityIds,
+                  );
                   return (
                     <Pressable
                       key={prov.id}
@@ -128,25 +134,30 @@ export function ProvinceCityPicker({
                         {
                           backgroundColor: disabled
                             ? colors.chipBg
-                            : on
-                            ? colors.chipOnBg
-                            : colors.chipBg,
+                            : focusedOn
+                              ? colors.chipOnBg
+                              : hasCities
+                                ? colors.accentMuted
+                                : colors.chipBg,
                           borderColor: disabled
                             ? colors.textMuted
                             : focusedOn
-                            ? colors.primary
-                            : on
                               ? colors.primary
-                              : colors.border,
-                          borderWidth: focusedOn ? 2 : 1,
+                              : hasCities
+                                ? colors.accent
+                                : colors.border,
+                          borderWidth: focusedOn || hasCities ? 2 : 1,
                         },
                         prov.colSpan === 2 ? styles.mapCellWide : null,
                       ]}
                       onPress={() => onProvincePress(prov.id)}
                       disabled={disabled}
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: on, disabled }}
-                      accessibilityLabel={`${prov.nameKo} 선택`}
+                      accessibilityRole="button"
+                      accessibilityState={{
+                        selected: focusedOn,
+                        disabled,
+                      }}
+                      accessibilityLabel={`${prov.nameKo}${hasCities ? `, 도시 ${pickedCount}곳 선택됨` : ""}${focusedOn ? ", 목록 열림" : ""}`}
                     >
                       <Text
                         style={[
@@ -154,15 +165,42 @@ export function ProvinceCityPicker({
                           {
                             color: disabled
                               ? colors.textMuted
-                              : on
+                              : focusedOn
                                 ? colors.chipOnFg
-                                : colors.chipFg,
+                                : hasCities
+                                  ? colors.accent
+                                  : colors.chipFg,
                           },
                         ]}
                         numberOfLines={1}
                       >
                         {prov.shortKo}
                       </Text>
+                      {hasCities ? (
+                        <View
+                          style={[
+                            styles.pickedBadge,
+                            {
+                              backgroundColor: focusedOn
+                                ? colors.primaryFg
+                                : colors.accent,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.pickedBadgeText,
+                              {
+                                color: focusedOn
+                                  ? colors.primary
+                                  : colors.primaryFg,
+                              },
+                            ]}
+                          >
+                            {pickedCount}
+                          </Text>
+                        </View>
+                      ) : null}
                     </Pressable>
                   );
                 })}
@@ -186,7 +224,7 @@ export function ProvinceCityPicker({
               { color: disabled ? colors.textMuted : colors.textSecondary },
             ]}
           >
-            {focused ? `${focused.shortKo} 도시` : "도시"} (다중)
+            {focused ? `${focused.shortKo} 도시` : "도시"}
           </Text>
           <ScrollView
             style={styles.cityScroll}
@@ -227,13 +265,13 @@ export function ProvinceCityPicker({
                   <Text
                     style={[
                       styles.cityChipText,
-                    {
-                      color: disabled
-                        ? colors.textMuted
-                        : on
-                          ? colors.chipOnFg
-                          : colors.chipFg,
-                    },
+                      {
+                        color: disabled
+                          ? colors.textMuted
+                          : on
+                            ? colors.chipOnFg
+                            : colors.chipFg,
+                      },
                     ]}
                   >
                     {meta.nameKo}
@@ -256,19 +294,45 @@ export function ProvinceCityPicker({
           { backgroundColor: disabled ? colors.chipBg : colors.accentMuted },
         ]}
       >
-        <Text
-          style={[
-            styles.summaryText,
-            { color: disabled ? colors.textMuted : colors.accent },
-          ]}
-        >
-          {selectedLabel
-            ? `${selectedLabel}${selectedCityIds.length > 1 ? " · Day 균등 분할" : ""}`
-            : "여행 도시를 하나 이상 선택하세요"}
-        </Text>
-        <Text style={[styles.summaryMeta, { color: colors.textMuted }]}>
-          {selectedCityIds.length}/{maxCities}
-        </Text>
+        <View style={styles.summaryMain}>
+          <Text
+            style={[
+              styles.summaryText,
+              { color: disabled ? colors.textMuted : colors.accent },
+            ]}
+          >
+            {selectedLabel
+              ? `${selectedLabel}${selectedCityIds.length > 1 ? " · Day 균등 분할" : ""}`
+              : "여행 도시를 하나 이상 선택하세요"}
+          </Text>
+          <Text style={[styles.summaryMeta, { color: colors.textMuted }]}>
+            {selectedCityIds.length}/{maxCities}
+          </Text>
+        </View>
+        {selectedCityIds.length > 0 ? (
+          <Pressable
+            style={[
+              styles.clearBtn,
+              {
+                borderColor: disabled ? colors.textMuted : colors.border,
+                backgroundColor: colors.bgElevated,
+              },
+            ]}
+            onPress={clearAll}
+            disabled={disabled}
+            accessibilityRole="button"
+            accessibilityLabel="선택한 여행지 모두 지우기"
+          >
+            <Text
+              style={[
+                styles.clearBtnText,
+                { color: disabled ? colors.textMuted : colors.text },
+              ]}
+            >
+              전체 지우기
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -300,10 +364,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 2,
+    position: "relative",
   },
   mapCellWide: { flex: 2 },
   mapCellEmpty: { flex: 1, minHeight: 28 },
   mapCellText: { fontSize: 11, fontWeight: "800" },
+  pickedBadge: {
+    position: "absolute",
+    top: 2,
+    right: 2,
+    minWidth: 14,
+    height: 14,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  pickedBadgeText: { fontSize: 9, fontWeight: "800", lineHeight: 11 },
   cityScroll: { maxHeight: 180 },
   cityList: { gap: 6 },
   cityChip: {
@@ -320,10 +397,23 @@ const styles = StyleSheet.create({
     marginTop: space.md,
     borderRadius: radius.md,
     padding: space.md,
+    gap: space.sm,
+  },
+  summaryMain: {
     flexDirection: "row",
     alignItems: "center",
     gap: space.sm,
   },
   summaryText: { flex: 1, fontWeight: "700", fontSize: 13 },
   summaryMeta: { fontSize: 12, fontWeight: "600" },
+  clearBtn: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    minHeight: 36,
+    justifyContent: "center",
+  },
+  clearBtnText: { fontSize: 12, fontWeight: "800" },
 });

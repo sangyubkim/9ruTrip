@@ -53,8 +53,8 @@ export function ProvinceCityPickerModal({
         >
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.sub}>
-            왼쪽에서 도를 고른 뒤, 오른쪽에서 도시를 다중 선택하세요 (최대{" "}
-            {maxCities}곳)
+            도를 고르면 도시 목록이 열립니다. 같은 도를 다시 누르면 닫힙니다.
+            도시를 고른 도에는 개수가 표시됩니다 (최대 {maxCities}곳).
           </Text>
           <ScrollView
             style={styles.body}

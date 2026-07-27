@@ -249,6 +249,7 @@ function AppInner() {
           userRequest: input.userRequest,
           mainRequest: input.userRequest,
           preferredFestivals: input.preferredFestivals,
+          tourCourse: input.tourCourse,
         });
         const inputCityIds =
           input.cityIds?.length > 0 ? input.cityIds : [input.cityId];
@@ -290,6 +291,7 @@ function AppInner() {
           mainRequest: input.userRequest,
           briefing,
           routeOutline,
+          seedCourse: result.seedCourse,
         });
         // 구 API/AI가 숙소를 빠뜨려도 마지막 날 제외 Day에 hotel 보정
         const placesWithHotels = ensureOvernightHotelsInPlaces(
@@ -316,6 +318,7 @@ function AppInner() {
           cities,
           briefing,
           routeOutline,
+          seedCourse: result.seedCourse,
           startAddress: input.startAddress,
           startLat: input.startLat,
           startLng: input.startLng,
@@ -397,6 +400,7 @@ function AppInner() {
       {screen === "diary" && (
         <DiaryScreen
           entries={diaryEntries}
+          trips={trips}
           onBack={() => setScreen("home")}
           onDelete={handleDeleteDiaryEntry}
         />

@@ -7,18 +7,50 @@ import {
   buildLodgingCandidates,
   enrichPlacesWithTransport,
   findLodgingCatalogEntry,
+  haversineKm,
   lodgingRecommendTip,
   lodgingScoreBreakdown,
   normalizeOutboundTransportMode,
   OUTBOUND_MODE_LABEL,
 } from "./transport.mjs";
 import {
+  enrichTourPlacesWithDetails,
   fetchTourPlacePool,
   formatTourPoolForPrompt,
   suggestViaTourApi,
   tourPlacesToSuggestItems,
   tourStaysToLodgingCandidates,
 } from "./tourapi.mjs";
+import { groundDomesticPlaces } from "./place-ground.mjs";
+import { ensureDailyMealSlots } from "./meal-slots.mjs";
+import {
+  formatCourseSeedForPrompt,
+  injectCourseWaypointsIntoPool,
+  normalizeTourCourseSeed,
+} from "./tour-courses.mjs";
+
+const PLACE_DETAIL_KEYS = [
+  "address",
+  "phone",
+  "openingHours",
+  "restDate",
+  "officialMenu",
+  "admissionFee",
+  "checkInTime",
+  "checkOutTime",
+  "reservationUrl",
+  "reservationInfo",
+  "contentId",
+  "googlePlaceId",
+];
+
+function pickPlaceDetails(source) {
+  const out = {};
+  for (const key of PLACE_DETAIL_KEYS) {
+    if (source?.[key] != null && source[key] !== "") out[key] = source[key];
+  }
+  return out;
+}
 
 function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -592,10 +624,6 @@ export function ensureOvernightHotels(
         typeof preferred.breakfastIncluded === "boolean"
           ? preferred.breakfastIncluded
           : undefined,
-      breakfastPricePerPerson:
-        Number(preferred.breakfastPricePerPerson) > 0
-          ? Number(preferred.breakfastPricePerPerson)
-          : undefined,
       pricePerPerson:
         Number(preferred.pricePerPerson) > 0
           ? Math.round(Number(preferred.pricePerPerson))
@@ -962,13 +990,15 @@ function normalizePlaces(rawPlaces, { days, partySize, center }) {
       Math.max(0, Number(p.dayIndex ?? 0)),
       Math.max(0, days - 1),
     );
+    const category = normalizePlaceCategory(p.category);
+    const estimatedCost = Math.max(0, Number(p.estimatedCost) || 0);
     return {
       id: String(p.id || uid("place")),
       name: String(p.name || `장소 ${i + 1}`),
-      category: normalizePlaceCategory(p.category),
+      category,
       lat: Number(p.lat) || center.lat,
       lng: Number(p.lng) || center.lng,
-      estimatedCost: Math.max(0, Number(p.estimatedCost) || 0),
+      estimatedCost,
       notes: p.notes ? String(p.notes) : undefined,
       dayIndex,
       order: Number.isFinite(Number(p.order)) ? Number(p.order) : i,
@@ -994,12 +1024,19 @@ function normalizePlaces(rawPlaces, { days, partySize, center }) {
         typeof p.breakfastIncluded === "boolean"
           ? p.breakfastIncluded
           : undefined,
-      breakfastPricePerPerson:
-        Number(p.breakfastPricePerPerson) > 0
-          ? Number(p.breakfastPricePerPerson)
-          : undefined,
       pricePerPerson:
-        Number(p.pricePerPerson) > 0 ? Number(p.pricePerPerson) : undefined,
+        category === "hotel" && !(estimatedCost > 0)
+          ? undefined
+          : Number(p.pricePerPerson) > 0
+            ? Number(p.pricePerPerson)
+            : undefined,
+      signatureFood: p.signatureFood
+        ? String(p.signatureFood).slice(0, 80)
+        : undefined,
+      reviewSummary: p.reviewSummary
+        ? String(p.reviewSummary).slice(0, 120)
+        : undefined,
+      ...pickPlaceDetails(p),
     };
   });
 }
@@ -1032,10 +1069,34 @@ export async function generateItinerary(body, env) {
         serviceKey: tourApiServiceKey,
         perCategory: 12,
       });
+      // 숙소 후보 상세(체크인/전화/주소) — 상위만 보강
+      if (tourPool.hotel?.length) {
+        tourPool = {
+          ...tourPool,
+          hotel: await enrichTourPlacesWithDetails(
+            tourPool.hotel.slice(0, 8),
+            tourApiServiceKey,
+          ),
+        };
+      }
     } catch {
       tourPool = { attraction: [], food: [], hotel: [] };
     }
   }
+  const seedCourse = domestic
+    ? normalizeTourCourseSeed(body, cityIds)
+    : null;
+  if (seedCourse?.waypoints?.length) {
+    const injected = injectCourseWaypointsIntoPool(
+      tourPool,
+      seedCourse.waypoints,
+      seedCourse.cityId || cityId,
+    );
+    tourPool = injected.pool;
+  }
+  const coursePromptBlock = seedCourse
+    ? formatCourseSeedForPrompt(seedCourse)
+    : "";
   const tourLodgingCandidates = tourStaysToLodgingCandidates(tourPool.hotel, {
     nights: Math.max(1, nights),
     partySize,
@@ -1162,13 +1223,22 @@ export async function generateItinerary(body, env) {
       cityId: base.cityId || city.id,
       partySize,
     });
+    const withMeals = ensureDailyMealSlots(withBreakfast, {
+      days,
+      startHour,
+      tourPool,
+      partySize,
+      cities,
+      cityId: base.cityId || city.id,
+    });
+    const mealsInserted = withMeals !== withBreakfast;
     const originPoint =
       Number.isFinite(startLat) && Number.isFinite(startLng)
         ? { lat: startLat, lng: startLng }
         : null;
-    const enriched = await enrichPlacesWithTransport(withBreakfast, {
+    const enriched = await enrichPlacesWithTransport(withMeals, {
       mapsApiKey,
-      forceRecalc: false,
+      forceRecalc: mealsInserted,
       cityId,
       startHour,
       startMinutes,
@@ -1204,6 +1274,17 @@ export async function generateItinerary(body, env) {
       cities,
       mapProvider: city.mapProvider,
       transportEngine: mapsApiKey ? "directions+haversine" : "haversine",
+      ...(seedCourse
+        ? {
+            seedCourse: {
+              contentId: seedCourse.contentId,
+              title: seedCourse.title,
+              source: "한국관광공사",
+              stopCount: seedCourse.stopCount,
+              routeSummary: seedCourse.routeSummary,
+            },
+          }
+        : {}),
     };
   };
 
@@ -1233,6 +1314,7 @@ export async function generateItinerary(body, env) {
     preferredFestivals.length
       ? `- 선택 축제(반드시 해당 개최 도시 일정에 실제 축제 방문 장소로 포함): ${JSON.stringify(preferredFestivals)}`
       : "",
+    coursePromptBlock ? `- ${coursePromptBlock.split("\n")[0]}` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -1253,6 +1335,8 @@ export async function generateItinerary(body, env) {
 - 통화: ${currency}
 - 하루 3~5개 장소, 이동 동선이 합리적이게
 - 음식/관광/숙소 균형
+- 장소 간 이동(travelFromPrevMinutes)은 차로 이동 시간 기준으로 추정
+- food·attraction 체류는 기본 약 60분. hotel은 저녁 숙박이며 1시간 방문 체류 규칙을 적용하지 마세요
 - 숙소 규칙: ${
     days <= 1 || nights <= 0
       ? "당일치기이므로 hotel을 넣지 마세요"
@@ -1260,6 +1344,7 @@ export async function generateItinerary(body, env) {
   }
 - Day 체인: 각 Day의 마지막 장소가 다음날 첫 장소와 같아야 합니다(보통 숙소). dayIndex N 마지막 → dayIndex N+1 첫 슬롯.
 - 하루 시작 시각 기준 약 ${startHour}시, 숙소 복귀는 저녁에 배치
+- 식사 일정: 하루 시작 시각이 허용하면 점심 food 1곳(11:00–14:00, 가급적 12:00) + 저녁 food 1곳(18:00–20:00, 가급적 18:30). startHour가 14시 이후면 점심 생략, 20시 이후면 저녁도 생략
 - lat/lng는 해당 도시 실제 좌표${multiHint}${startHints ? `\n${startHints}` : ""}
 
 반드시 이 JSON 스키마만 반환:
@@ -1280,7 +1365,6 @@ export async function generateItinerary(body, env) {
       "lodgingScore": number,
       "scoreBreakdown": { "centrality": number, "priceEstimate": number, "ratingProxy": number },
       "breakfastIncluded": true,
-      "breakfastPricePerPerson": number,
       "pricePerPerson": number
     }
   ],
@@ -1301,27 +1385,34 @@ export async function generateItinerary(body, env) {
       "travelFromPrevCost": number,
       "lodgingScore": number,
       "breakfastIncluded": true,
-      "breakfastPricePerPerson": number,
       "pricePerPerson": number
     }
   ]
 }
 
 dayIndex는 0부터 ${days - 1}까지.
-food·attraction의 estimatedCost는 1인 가격. hotel estimatedCost는 1박 기준.
-lodgingCandidates의 estimatedCost는 ${nights}박 총액. lodgingCandidates는 Top 3~5, scoreBreakdown 포함.
-hotel·lodgingCandidates: breakfastIncluded는 조식 포함 여부(불확실하면 필드 생략). 조식 별도면 breakfastPricePerPerson(${costUnit}). pricePerPerson은 1박 숙박 인당(${partySize}명 기준).
+food·attraction의 estimatedCost는 1인 가격. hotel estimatedCost는 알려진 1박 요금만(모르면 0).
+lodgingCandidates의 estimatedCost는 ${nights}박 총액(모르면 0). lodgingCandidates는 Top 3~5, scoreBreakdown 포함.
+hotel·lodgingCandidates: breakfastIncluded는 조식 포함 여부(불확실하면 필드 생략). 조식 식비·1박 가격은 추측하지 마세요. pricePerPerson은 알려진 1박 숙박 인당만(${partySize}명 기준).
+금지: 영업시간·휴무·입장료·숙소 1박 가격·조식 식비를 추측·발명하지 마세요. 모르면 estimatedCost=0, 시간 필드는 생략.
 plannedBudget는 인원(${partySize}명) 기준 총액(맛집·관광은 1인×인원).
 plannedTime은 하루 일정 순서에 맞는 도착/시작 시각. hotel은 가능하면 저녁(숙소 복귀) 시각.
+점심 food plannedTime은 11:00–14:00(선호 12:00), 저녁 food는 18:00–20:00(선호 18:30).
 travelFromPrev*는 직전 장소→현재 이동 분/${costUnit}(첫 장소는 0).
-${tourPromptBlock ? `\n${tourPromptBlock}\n` : ""}`;
+${
+  coursePromptBlock ? `\n${coursePromptBlock}\n` : ""
+}${
+  tourPromptBlock
+    ? `\n${tourPromptBlock}\n중요: places의 name·lat·lng는 위 TourAPI 목록에서만 그대로 복사하세요. 목록에 없는 상호·관광지를 만들지 마세요.`
+    : "\n중요: 실제로 존재하는 상호·관광지만 사용하세요. 추측으로 상호명을 만들지 마세요."
+}`;
 
   try {
     const { text, engine } = await geminiComplete({
       apiKey: env.geminiApiKey,
       model: env.geminiModel,
       prompt,
-      systemHint: `You are a ${city.nameKo} travel planner. Return valid JSON only.`,
+      systemHint: `You are a ${city.nameKo} travel planner. Return valid JSON only. Never invent place names, opening hours, or hotel nightly prices.`,
       timeoutMs: env.llmTimeoutMs,
     });
 
@@ -1348,6 +1439,27 @@ ${tourPromptBlock ? `\n${tourPromptBlock}\n` : ""}`;
       );
     }
 
+    if (domestic) {
+      places = await groundDomesticPlaces(places, {
+        tourPool,
+        mapsApiKey,
+        partySize,
+      });
+      if (places.length === 0) {
+        console.warn(
+          "[itinerary] No verified domestic places after grounding — using fallback",
+        );
+        return finish(
+          isMulti
+            ? buildMultiCityFallbackItinerary(multiFallbackOpts)
+            : buildFallbackItinerary(fallbackOpts),
+        );
+      }
+      if (tourApiServiceKey) {
+        places = await enrichTourPlacesWithDetails(places, tourApiServiceKey);
+      }
+    }
+
     places.sort((a, b) => a.dayIndex - b.dayIndex || a.order - b.order);
     places.forEach((p, i) => {
       p.order = i;
@@ -1367,18 +1479,14 @@ ${tourPromptBlock ? `\n${tourPromptBlock}\n` : ""}`;
                 : typeof catalogHit?.breakfastIncluded === "boolean"
                   ? catalogHit.breakfastIncluded
                   : undefined;
-            const breakfastPricePerPerson =
-              Number(c.breakfastPricePerPerson) > 0
-                ? Number(c.breakfastPricePerPerson)
-                : Number(catalogHit?.breakfastPricePerPerson) > 0
-                  ? Number(catalogHit.breakfastPricePerPerson)
-                  : undefined;
             const perNight =
               nights > 0 ? Math.round(estimatedCost / nights) : estimatedCost;
             const pricePerPerson =
               Number(c.pricePerPerson) > 0
                 ? Math.round(Number(c.pricePerPerson))
-                : Math.round(perNight / party);
+                : perNight > 0
+                  ? Math.round(perNight / party)
+                  : undefined;
             return {
               id: String(c.id || `lodging-cand-${i + 1}`),
               name: String(c.name),
@@ -1396,7 +1504,6 @@ ${tourPromptBlock ? `\n${tourPromptBlock}\n` : ""}`;
                 ratingProxy: 70,
               },
               breakfastIncluded,
-              breakfastPricePerPerson,
               pricePerPerson,
             };
           })
@@ -1482,35 +1589,150 @@ const PLACES_CATEGORY_TYPE = {
   hotel: "lodging",
 };
 
+const GOOGLE_DETAILS_CACHE = new Map();
+const GOOGLE_DETAILS_TTL_MS = 12 * 60 * 60 * 1000;
+
+function googleDetailsCacheGet(placeId) {
+  const hit = GOOGLE_DETAILS_CACHE.get(placeId);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    GOOGLE_DETAILS_CACHE.delete(placeId);
+    return null;
+  }
+  return hit.value;
+}
+
+function googleDetailsCacheSet(placeId, value) {
+  GOOGLE_DETAILS_CACHE.set(placeId, {
+    value,
+    expiresAt: Date.now() + GOOGLE_DETAILS_TTL_MS,
+  });
+}
+
+/** Google Place Details → 영업시간·전화·주소 (가격은 채우지 않음) */
+async function fetchGooglePlaceDetails(placeId, apiKey) {
+  const id = String(placeId || "").trim();
+  const key = String(apiKey || "").trim();
+  if (!id || !key) return {};
+  const cached = googleDetailsCacheGet(id);
+  if (cached) return cached;
+
+  const url = new URL(
+    "https://maps.googleapis.com/maps/api/place/details/json",
+  );
+  url.searchParams.set("place_id", id);
+  url.searchParams.set(
+    "fields",
+    "formatted_address,formatted_phone_number,international_phone_number,opening_hours,website",
+  );
+  url.searchParams.set("language", "ko");
+  url.searchParams.set("key", key);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url.toString(), { signal: controller.signal });
+    if (!res.ok) return {};
+    const data = await res.json();
+    if (data.status !== "OK" || !data.result) return {};
+    const r = data.result;
+    const weekday = Array.isArray(r.opening_hours?.weekday_text)
+      ? r.opening_hours.weekday_text.join(" / ").slice(0, 160)
+      : undefined;
+    const details = pickPlaceDetails({
+      address: r.formatted_address
+        ? String(r.formatted_address).slice(0, 160)
+        : undefined,
+      phone: String(
+        r.formatted_phone_number || r.international_phone_number || "",
+      )
+        .trim()
+        .slice(0, 40) || undefined,
+      openingHours: weekday || undefined,
+      reservationUrl: r.website
+        ? String(r.website).slice(0, 200)
+        : undefined,
+      googlePlaceId: id,
+    });
+    googleDetailsCacheSet(id, details);
+    return details;
+  } catch {
+    return {};
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function enrichGooglePlacesWithDetails(places, apiKey) {
+  if (!apiKey || !Array.isArray(places) || !places.length) return places || [];
+  const out = new Array(places.length);
+  const concurrency = 4;
+  let cursor = 0;
+  async function worker() {
+    while (cursor < places.length) {
+      const index = cursor;
+      cursor += 1;
+      const place = places[index];
+      const placeId = place?.googlePlaceId || place?.placeId;
+      if (!placeId) {
+        out[index] = place;
+        continue;
+      }
+      const details = await fetchGooglePlaceDetails(placeId, apiKey);
+      out[index] = { ...place, ...details };
+    }
+  }
+  await Promise.all(
+    Array.from(
+      { length: Math.min(concurrency, places.length) },
+      () => worker(),
+    ),
+  );
+  return out;
+}
+
 /**
  * Google Places Text Search (선택) — 키·쿼터 허용 시.
  * 실패하면 null → 정적 POI 폴백.
+ * 숙소: price_level 있을 때만 추정, 없으면 estimatedCost=0 (가짜 기본가 금지).
  */
 async function suggestViaGooglePlaces({
   city,
   category,
   partySize = 2,
   apiKey,
+  lat,
+  lng,
+  nearQuery = "",
 }) {
   if (!apiKey || !category) return null;
   const type = PLACES_CATEGORY_TYPE[category];
   if (!type) return null;
+  void partySize;
 
-  const query =
-    category === "food"
-      ? `${city.nameKo} 맛집`
-      : category === "hotel"
-        ? `${city.nameKo} 호텔`
-        : `${city.nameKo} 관광명소`;
+  const near = String(nearQuery || "").trim();
+  const catLabel =
+    category === "food" ? "맛집" : category === "hotel" ? "호텔" : "관광명소";
+  const query = near
+    ? `${near} ${catLabel}`
+    : Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+      ? catLabel
+      : `${city.nameKo} ${catLabel}`;
 
   const region = isDomesticCity(city.id) ? "kr" : "jp";
   const domestic = isDomesticCity(city.id);
+  const centerLat = Number.isFinite(Number(lat))
+    ? Number(lat)
+    : city.center.lat;
+  const centerLng = Number.isFinite(Number(lng))
+    ? Number(lng)
+    : city.center.lng;
 
   const url = new URL(
     "https://maps.googleapis.com/maps/api/place/textsearch/json",
   );
   url.searchParams.set("query", query);
-  url.searchParams.set("location", `${city.center.lat},${city.center.lng}`);
+  url.searchParams.set("location", `${centerLat},${centerLng}`);
   url.searchParams.set("radius", "10000");
   url.searchParams.set("type", type);
   url.searchParams.set("language", "ko");
@@ -1524,34 +1746,34 @@ async function suggestViaGooglePlaces({
   const results = Array.isArray(data.results) ? data.results : [];
   if (results.length === 0) return null;
 
-  return results.slice(0, 8).map((r, i) => {
+  const mapped = results.slice(0, 8).map((r, i) => {
     const loc = r.geometry?.location;
-    let estimatedCost =
-      category === "hotel"
-        ? domestic
-          ? 120000
-          : 18000
-        : category === "food"
-          ? domestic
-            ? 15000
-            : 2000
-          : domestic
-            ? 5000
-            : 1000;
-    if (r.price_level != null && Number.isFinite(Number(r.price_level))) {
-      const lvl = Number(r.price_level);
+    const hasPriceLevel =
+      r.price_level != null && Number.isFinite(Number(r.price_level));
+    const lvl = hasPriceLevel ? Number(r.price_level) : null;
+    let estimatedCost = 0;
+    if (category === "hotel") {
+      // 숙소: price_level 없으면 0 — 120000/18000 기본가 금지
       estimatedCost =
-        category === "hotel"
+        lvl != null
           ? domestic
             ? 80000 + lvl * 25000
             : 10000 + lvl * 8000
-          : category === "food"
-            ? Math.round(
-                (domestic ? 8000 + lvl * 7000 : 800 + lvl * 1200),
-              )
-            : Math.round(
-                (domestic ? 2000 + lvl * 3000 : 500 + lvl * 700),
-              );
+          : 0;
+    } else if (category === "food") {
+      estimatedCost =
+        lvl != null
+          ? Math.round(domestic ? 8000 + lvl * 7000 : 800 + lvl * 1200)
+          : domestic
+            ? 15000
+            : 2000;
+    } else {
+      estimatedCost =
+        lvl != null
+          ? Math.round(domestic ? 2000 + lvl * 3000 : 500 + lvl * 700)
+          : domestic
+            ? 5000
+            : 1000;
     }
     const rating = Number(r.rating);
     const ratingsTotal = Number(r.user_ratings_total);
@@ -1559,33 +1781,36 @@ async function suggestViaGooglePlaces({
     const reviewSummary = hasRating
       ? `평점 ${rating}${Number.isFinite(ratingsTotal) ? ` (${ratingsTotal}명)` : ""}`
       : undefined;
+    const address = r.formatted_address
+      ? String(r.formatted_address).slice(0, 160)
+      : undefined;
     // 숙소 notes는 주소가 아니라 추천 tip으로 채움 (모달 중복 방지)
     const notes =
       category === "hotel"
         ? `${city.nameKo} 숙소`
-        : r.formatted_address
-          ? String(r.formatted_address).slice(0, 80)
+        : address
+          ? address.slice(0, 80)
           : "Places";
     return {
       id: uid(`places-${i}`),
       name: String(r.name || "장소"),
       category,
-      lat: Number(loc?.lat) || city.center.lat,
-      lng: Number(loc?.lng) || city.center.lng,
+      lat: Number(loc?.lat) || centerLat,
+      lng: Number(loc?.lng) || centerLng,
       estimatedCost,
       notes,
+      address,
       rating: hasRating ? rating : undefined,
       reviewSummary,
       mustVisit: hasRating && rating >= 4.5,
-      // signatureFood는 enrichFoodMenus에서 대표 메뉴로 채움
       dayIndex: 0,
       order: 0,
-      priceLevel:
-        r.price_level != null && Number.isFinite(Number(r.price_level))
-          ? Number(r.price_level)
-          : undefined,
+      googlePlaceId: r.place_id || undefined,
+      priceLevel: lvl != null ? lvl : undefined,
     };
   });
+
+  return enrichGooglePlacesWithDetails(mapped, apiKey);
 }
 
 /** 이름·노트에서 조식 힌트 (확실할 때만) */
@@ -1604,7 +1829,7 @@ function inferBreakfastFromText(name, notes) {
   return {};
 }
 
-/** 일정 hotel 장소에 조식·인당가 메타 보강 (카탈로그·힌트, 거짓 발명 금지) */
+/** 일정 hotel 장소에 조식 포함 여부 보강 (카탈로그·힌트). 조식 식비는 발명하지 않음. */
 function applyHotelBreakfastMeta(places, { cityId, partySize = 2 } = {}) {
   const party = Math.max(1, Number(partySize) || 1);
   return (places || []).map((p) => {
@@ -1620,29 +1845,26 @@ function applyHotelBreakfastMeta(places, { cityId, partySize = 2 } = {}) {
           : typeof catalogHit?.breakfastIncluded === "boolean"
             ? catalogHit.breakfastIncluded
             : undefined;
-    const breakfastPricePerPerson =
-      Number(p.breakfastPricePerPerson) > 0
-        ? Number(p.breakfastPricePerPerson)
-        : Number(catalogHit?.breakfastPricePerPerson) > 0
-          ? Number(catalogHit.breakfastPricePerPerson)
-          : undefined;
     const estimatedCost = Math.max(0, Number(p.estimatedCost) || 0);
     const pricePerPerson =
       Number(p.pricePerPerson) > 0
         ? Math.round(Number(p.pricePerPerson))
-        : Math.round(estimatedCost / party);
-    return {
+        : estimatedCost > 0
+          ? Math.round(estimatedCost / party)
+          : undefined;
+    const next = {
       ...p,
       breakfastIncluded,
-      breakfastPricePerPerson,
-      pricePerPerson,
+      ...(pricePerPerson != null ? { pricePerPerson } : {}),
     };
+    delete next.breakfastPricePerPerson;
+    return next;
   });
 }
 
 /**
- * 숙소 후보에 lodgingScore / tip + 조식·인당가 보강.
- * Gemini 키가 있으면 breakfastIncluded / breakfastPricePerPerson / roomPricePerPerson 추정.
+ * 숙소 후보에 lodgingScore / tip + 조식 보강.
+ * Gemini는 조식만 추정 — 1박 가격(roomPrice)은 발명하지 않음.
  */
 async function enrichHotelSuggests(
   places,
@@ -1658,10 +1880,6 @@ async function enrichHotelSuggests(
   } = {},
 ) {
   const party = Math.max(1, Number(partySize) || 1);
-  const domestic = city
-    ? isDomesticCity(city.id)
-    : isDomesticCity(cityId);
-  const currency = domestic ? "KRW" : "JPY";
   const year = new Date().getFullYear();
 
   const scored = (places || []).map((p) => {
@@ -1684,27 +1902,25 @@ async function enrichHotelSuggests(
           : typeof catalogHit?.breakfastIncluded === "boolean"
             ? catalogHit.breakfastIncluded
             : undefined;
-    const breakfastPricePerPerson =
-      Number(p.breakfastPricePerPerson) > 0
-        ? Number(p.breakfastPricePerPerson)
-        : Number(catalogHit?.breakfastPricePerPerson) > 0
-          ? Number(catalogHit.breakfastPricePerPerson)
-          : undefined;
     const estimatedCost = Math.max(0, Number(p.estimatedCost) || 0);
     const pricePerPerson =
       Number(p.pricePerPerson) > 0
         ? Math.round(Number(p.pricePerPerson))
-        : Math.round(estimatedCost / party);
-    return {
+        : estimatedCost > 0
+          ? Math.round(estimatedCost / party)
+          : undefined;
+    const next = {
       ...p,
       lodgingScore,
       scoreBreakdown,
       notes: tip,
       aiReason: tip,
       breakfastIncluded,
-      breakfastPricePerPerson,
-      pricePerPerson,
+      estimatedCost,
+      ...(pricePerPerson != null ? { pricePerPerson } : {}),
     };
+    delete next.breakfastPricePerPerson;
+    return next;
   });
 
   const hotels = scored.filter((p) => p.category === "hotel");
@@ -1712,10 +1928,9 @@ async function enrichHotelSuggests(
 
   try {
     const prompt = `당신은 ${cityNameKo || city?.nameKo || ""} 호텔 가이드입니다. ${year}년 현재 기준입니다.
-아래 숙소 각각에 대해 조식 제공 여부와 가격을 알려주세요. 확실하지 않으면 breakfastIncluded를 null로 두세요. 추측으로 true/false를 만들지 마세요.
+아래 숙소 각각에 대해 조식 제공 여부만 알려주세요. 확실하지 않으면 breakfastIncluded를 null로 두세요.
+숙박 1박 가격·조식 식비·객실요금은 절대 추측하지 마세요(가격 필드를 만들지 마세요).
 
-통화: ${currency} (${currency === "KRW" ? "원" : "엔"})
-인원: ${party}명
 숙소: ${JSON.stringify(
       hotels.map((p) => ({ id: p.id, name: p.name })),
     )}
@@ -1725,22 +1940,19 @@ async function enrichHotelSuggests(
   "items": [
     {
       "id": "문자열",
-      "breakfastIncluded": true,
-      "breakfastPricePerPerson": number,
-      "roomPricePerPerson": number
+      "breakfastIncluded": true
     }
   ]
 }
 - breakfastIncluded: 요금에 조식 포함이면 true, 불포함이면 false, 모르면 null
-- breakfastPricePerPerson: 조식 별도일 때 인당 ${currency} 숫자. 포함이거나 모르면 생략
-- roomPricePerPerson: 1박 숙박 인당(${party}명 기준) ${currency} 숫자`;
+- 조식 식비·1박 가격 필드는 넣지 마세요`;
 
     const { text } = await geminiComplete({
       apiKey: geminiApiKey,
       model: geminiModel,
       prompt,
       systemHint:
-        "Hotel breakfast and per-person price estimator. Return valid JSON only. Do not invent breakfastIncluded when unsure.",
+        "Hotel breakfastIncluded only. Return valid JSON. Never invent breakfast prices, room prices, or nightly rates.",
       timeoutMs: llmTimeoutMs || 25000,
     });
     const parsed = parseJsonLoose(text);
@@ -1759,24 +1971,12 @@ async function enrichHotelSuggests(
         hit.breakfastIncluded === true || hit.breakfastIncluded === false
           ? hit.breakfastIncluded
           : p.breakfastIncluded;
-      const breakfastPricePerPerson =
-        Number(hit.breakfastPricePerPerson) > 0
-          ? Number(hit.breakfastPricePerPerson)
-          : p.breakfastPricePerPerson;
-      const roomPrice =
-        Number(hit.roomPricePerPerson) > 0
-          ? Math.round(Number(hit.roomPricePerPerson))
-          : null;
-      return {
+      const next = {
         ...p,
         breakfastIncluded,
-        breakfastPricePerPerson,
-        pricePerPerson: roomPrice ?? p.pricePerPerson,
-        estimatedCost:
-          roomPrice != null && !(Number(p.estimatedCost) > 0)
-            ? Math.round(roomPrice * party)
-            : p.estimatedCost,
       };
+      delete next.breakfastPricePerPerson;
+      return next;
     });
   } catch (err) {
     console.warn(
@@ -2398,10 +2598,16 @@ export async function suggestPlacesByCategory({
   geminiApiKey = "",
   geminiModel,
   llmTimeoutMs,
+  lat,
+  lng,
+  nearQuery = "",
 } = {}) {
   const city = resolveCity(cityId);
   const domestic = isDomesticCity(city.id);
   const tourKey = String(tourApiServiceKey || "").trim();
+  const centerLat = Number.isFinite(Number(lat)) ? Number(lat) : undefined;
+  const centerLng = Number.isFinite(Number(lng)) ? Number(lng) : undefined;
+  const near = String(nearQuery || "").trim();
 
   if (domestic && tourKey) {
     try {
@@ -2411,6 +2617,8 @@ export async function suggestPlacesByCategory({
         partySize,
         serviceKey: tourKey,
         limit: 12,
+        lat: centerLat,
+        lng: centerLng,
       });
       if (fromTour?.length) {
         if (category === "food") {
@@ -2448,6 +2656,9 @@ export async function suggestPlacesByCategory({
         category,
         partySize,
         apiKey: mapsApiKey,
+        lat: centerLat,
+        lng: centerLng,
+        nearQuery: near,
       });
       if (fromPlaces?.length) {
         if (category === "food") {
@@ -2479,9 +2690,26 @@ export async function suggestPlacesByCategory({
   }
 
   const pool = staticSuggestPool(city.id, partySize);
-  const filtered = category
+  let filtered = category
     ? pool.filter((p) => p.category === category)
     : pool;
+  if (
+    centerLat != null &&
+    centerLng != null &&
+    filtered.some((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+  ) {
+    filtered = [...filtered].sort(
+      (a, b) =>
+        haversineKm(
+          { lat: centerLat, lng: centerLng },
+          { lat: a.lat, lng: a.lng },
+        ) -
+        haversineKm(
+          { lat: centerLat, lng: centerLng },
+          { lat: b.lat, lng: b.lng },
+        ),
+    );
+  }
   let places = filtered.map((p) => ({
     id: uid("suggest"),
     ...p,

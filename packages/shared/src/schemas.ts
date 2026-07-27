@@ -118,8 +118,19 @@ export const itineraryPlaceSchema = z.object({
   reviewSummary: z.string().optional(),
   aiReason: z.string().optional(),
   breakfastIncluded: z.boolean().optional(),
-  breakfastPricePerPerson: z.number().optional(),
   pricePerPerson: z.number().optional(),
+  address: z.string().optional(),
+  phone: z.string().optional(),
+  openingHours: z.string().optional(),
+  restDate: z.string().optional(),
+  officialMenu: z.string().optional(),
+  admissionFee: z.string().optional(),
+  checkInTime: z.string().optional(),
+  checkOutTime: z.string().optional(),
+  reservationUrl: z.string().optional(),
+  reservationInfo: z.string().optional(),
+  contentId: z.string().optional(),
+  googlePlaceId: z.string().optional(),
 });
 
 export const tripCityLegSchema = z.object({
@@ -145,8 +156,14 @@ export const lodgingCandidateSchema = z.object({
   lodgingScore: z.number(),
   scoreBreakdown: lodgingScoreBreakdownSchema,
   breakfastIncluded: z.boolean().optional(),
-  breakfastPricePerPerson: z.number().optional(),
   pricePerPerson: z.number().optional(),
+  address: z.string().optional(),
+  phone: z.string().optional(),
+  checkInTime: z.string().optional(),
+  checkOutTime: z.string().optional(),
+  reservationUrl: z.string().optional(),
+  reservationInfo: z.string().optional(),
+  contentId: z.string().optional(),
 });
 
 export const itineraryResponseSchema = z.object({

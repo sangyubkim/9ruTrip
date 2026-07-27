@@ -15,6 +15,7 @@ import {
   type FocusEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CoursePreviewMap } from "../components/CoursePreviewMap";
 import { DateRangeCalendar } from "../components/DateRangeCalendar";
 import { ProvinceCityPicker } from "../components/ProvinceCityPicker";
 import {
@@ -23,14 +24,26 @@ import {
   MAX_SELECTED_CITIES,
 } from "../data/destinations";
 import type { MvpCityId, OutboundTransportMode } from "../types";
+import { isDomesticCityId } from "../types";
 import { useTheme } from "../theme/ThemeContext";
 import { radius, space } from "../theme/tokens";
 import {
   fetchFestivals,
+  fetchTourCourseDetail,
+  fetchTourCourses,
   type Festival,
   type PreferredFestival,
+  type TourCourseDetail,
+  type TourCourseListItem,
+  type TourCourseSeed,
 } from "../api/trip";
 import { formatDistanceKm, haversineKm } from "../utils/geo";
+import {
+  getDeviceCoords,
+  isDeviceLocationAvailable,
+  reverseGeocodeLabel,
+} from "../utils/deviceLocation";
+import { openNaverSearch } from "../utils/naverSearch";
 
 const OUTBOUND_TRANSPORT_OPTIONS: {
   id: OutboundTransportMode;
@@ -41,14 +54,6 @@ const OUTBOUND_TRANSPORT_OPTIONS: {
   { id: "bus", label: "버스" },
   { id: "flight", label: "비행기" },
 ];
-
-let Location: typeof import("expo-location") | null = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  Location = require("expo-location");
-} catch {
-  Location = null;
-}
 
 export type DepartureCityId = (typeof DEPARTURE_CITY_IDS)[number];
 
@@ -69,6 +74,7 @@ export type CreateTripInput = {
   outboundTransportMode: OutboundTransportMode;
   userRequest?: string;
   preferredFestivals?: PreferredFestival[];
+  tourCourse?: TourCourseSeed;
 };
 
 type Props = {
@@ -213,6 +219,13 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const [selectedFestivals, setSelectedFestivals] = useState<Festival[]>([]);
   const [festivalVisible, setFestivalVisible] = useState(false);
   const [festivalLoading, setFestivalLoading] = useState(false);
+  const [courseOpen, setCourseOpen] = useState(false);
+  const [courses, setCourses] = useState<TourCourseListItem[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+  const [courseDetailLoading, setCourseDetailLoading] = useState(false);
+  const [selectedCourse, setSelectedCourse] = useState<TourCourseDetail | null>(
+    null,
+  );
 
   useEffect(() => {
     const showEvt =
@@ -276,6 +289,64 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
     departureCityId || startAddress.trim() || (startLat != null && startLng != null),
   );
   const datesReady = Boolean(startDate && endDate);
+  const travelCityId = selected[0];
+  const canLoadCourses =
+    datesReady && Boolean(travelCityId) && isDomesticCityId(travelCityId);
+
+  const loadCourses = async () => {
+    if (!canLoadCourses || !travelCityId) return;
+    setCoursesLoading(true);
+    try {
+      const list = await fetchTourCourses({
+        cityId: travelCityId,
+        limit: 8,
+        lat: CITIES[travelCityId]?.center.lat,
+        lng: CITIES[travelCityId]?.center.lng,
+      });
+      setCourses(list);
+      if (!list.length) {
+        Alert.alert(
+          "추천 코스",
+          "이 지역에서 불러올 한국관광공사 추천 코스가 없습니다.",
+        );
+      }
+    } catch (e) {
+      Alert.alert(
+        "추천 코스",
+        e instanceof Error ? e.message : "코스 목록을 불러오지 못했습니다.",
+      );
+    } finally {
+      setCoursesLoading(false);
+    }
+  };
+
+  const selectCourse = async (item: TourCourseListItem) => {
+    if (!travelCityId) return;
+    if (selectedCourse?.contentId === item.contentId) {
+      setSelectedCourse(null);
+      return;
+    }
+    setCourseDetailLoading(true);
+    try {
+      const detail = await fetchTourCourseDetail({
+        contentId: item.contentId,
+        cityId: travelCityId,
+      });
+      setSelectedCourse(detail);
+    } catch (e) {
+      Alert.alert(
+        "코스 상세",
+        e instanceof Error ? e.message : "경유지를 불러오지 못했습니다.",
+      );
+    } finally {
+      setCourseDetailLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setSelectedCourse(null);
+    setCourses([]);
+  }, [travelCityId]);
 
   const applyCitySelection = (nextIds: MvpCityId[], onCancel?: () => void) => {
     const added = nextIds.find((id) => !selected.includes(id));
@@ -348,48 +419,19 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   };
 
   const useCurrentLocation = async () => {
-    if (!Location || Platform.OS === "web") {
+    if (!isDeviceLocationAvailable()) {
       Alert.alert("위치 불가", "이 환경에서는 GPS를 사용할 수 없습니다.");
       return;
     }
     setLocating(true);
     try {
-      const existing = await Location.getForegroundPermissionsAsync();
-      if (existing.status !== "granted") {
-        const req = await Location.requestForegroundPermissionsAsync();
-        if (req.status !== "granted") {
-          Alert.alert("권한 필요", "현재 위치를 쓰려면 위치 권한이 필요합니다.");
-          return;
-        }
-      }
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy?.Balanced ?? 3,
-      });
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      setStartLat(lat);
-      setStartLng(lng);
+      const pos = await getDeviceCoords({ timeoutMs: 10_000 });
+      setStartLat(pos.lat);
+      setStartLng(pos.lng);
 
-      let label = `현재 위치 (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
-      try {
-        const geos = await Location.reverseGeocodeAsync({
-          latitude: lat,
-          longitude: lng,
-        });
-        const g = geos?.[0];
-        if (g) {
-          const parts = [
-            g.region,
-            g.city || g.subregion,
-            g.district,
-            g.street,
-            g.name,
-          ].filter(Boolean);
-          if (parts.length) label = parts.join(" ");
-        }
-      } catch {
-        /* keep coord label */
-      }
+      let label = `현재 위치 (${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)})`;
+      const geoLabel = await reverseGeocodeLabel(pos.lat, pos.lng);
+      if (geoLabel) label = geoLabel;
       setStartAddress(label);
     } catch (e) {
       Alert.alert(
@@ -443,6 +485,18 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
           endDate: festivalEndDate || endDate,
         }),
       ),
+      tourCourse: selectedCourse
+        ? {
+            contentId: selectedCourse.contentId,
+            title: selectedCourse.title,
+            cityId: selectedCourse.cityId || cityIds[0],
+            overview: selectedCourse.overview,
+            distance: selectedCourse.distance,
+            takeTime: selectedCourse.takeTime,
+            waypoints: selectedCourse.waypoints || [],
+            routeSummary: selectedCourse.routeSummary,
+          }
+        : undefined,
     });
   };
 
@@ -638,6 +692,153 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
           </Text>
         ) : null}
 
+        <Pressable
+          style={[
+            styles.courseToggle,
+            {
+              borderColor: colors.border,
+              backgroundColor: colors.bgElevated,
+            },
+            !canLoadCourses && { opacity: 0.5 },
+          ]}
+          onPress={() => {
+            if (!canLoadCourses) {
+              Alert.alert(
+                "추천 코스",
+                "국내 여행지를 선택한 뒤 열 수 있습니다. (선택 사항)",
+              );
+              return;
+            }
+            const next = !courseOpen;
+            setCourseOpen(next);
+            if (next && courses.length === 0 && !coursesLoading) {
+              void loadCourses();
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="한국관광공사 추천 코스 선택"
+        >
+          <Text style={[styles.courseToggleTitle, { color: colors.text }]}>
+            {courseOpen ? "▾" : "▸"} 한국관광공사 추천 코스 (선택)
+          </Text>
+          <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+            AI 일정의 경유지 시드 · 최종 스케줄은 AI가 구성합니다
+          </Text>
+        </Pressable>
+
+        {courseOpen && canLoadCourses ? (
+          <View style={styles.coursePanel}>
+            {coursesLoading ? (
+              <ActivityIndicator color={colors.accent} />
+            ) : (
+              courses.map((course) => {
+                const on = selectedCourse?.contentId === course.contentId;
+                return (
+                  <Pressable
+                    key={course.contentId}
+                    style={[
+                      styles.courseCard,
+                      {
+                        borderColor: on ? colors.primary : colors.border,
+                        backgroundColor: on ? colors.accentMuted : colors.bgElevated,
+                      },
+                    ]}
+                    onPress={() => void selectCourse(course)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${course.title} 코스 선택`}
+                  >
+                    <View style={styles.courseCardHeader}>
+                      <Text
+                        style={[styles.courseCardTitle, { color: colors.text }]}
+                        numberOfLines={2}
+                      >
+                        {course.title}
+                      </Text>
+                      <View
+                        style={[
+                          styles.courseBadge,
+                          { backgroundColor: colors.chipBg },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.courseBadgeText, { color: colors.chipFg }]}
+                        >
+                          관광공사
+                        </Text>
+                      </View>
+                    </View>
+                    {course.overview ? (
+                      <Text
+                        style={[styles.courseOverview, { color: colors.textMuted }]}
+                        numberOfLines={2}
+                      >
+                        {course.overview}
+                      </Text>
+                    ) : null}
+                    <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+                      {course.address || CITIES[travelCityId]?.nameKo || ""}
+                      {typeof course.stopCount === "number"
+                        ? ` · 경유 ${course.stopCount}곳`
+                        : ""}
+                    </Text>
+                  </Pressable>
+                );
+              })
+            )}
+
+            {courseDetailLoading ? (
+              <ActivityIndicator color={colors.accent} style={{ marginTop: space.sm }} />
+            ) : null}
+
+            {selectedCourse ? (
+              <View
+                style={[
+                  styles.coursePreview,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.bgElevated,
+                  },
+                ]}
+              >
+                <Text style={[styles.courseCardTitle, { color: colors.text }]}>
+                  선택 코스 미리보기
+                </Text>
+                <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+                  {selectedCourse.routeSummary ||
+                    (selectedCourse.waypoints || [])
+                      .map((w) => w.name)
+                      .filter(Boolean)
+                      .join(" → ") ||
+                    "경유지 정보 없음"}
+                </Text>
+                {(selectedCourse.distance || selectedCourse.takeTime) && (
+                  <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+                    {[selectedCourse.distance, selectedCourse.takeTime]
+                      .filter(Boolean)
+                      .join(" · ")}
+                    {selectedCourse.stopCount
+                      ? ` · 경유 ${selectedCourse.stopCount}곳`
+                      : ""}
+                  </Text>
+                )}
+                <CoursePreviewMap
+                  cityId={travelCityId ?? selected[0] ?? "seoul"}
+                  waypoints={selectedCourse.waypoints || []}
+                />
+                <Pressable
+                  onPress={() => setSelectedCourse(null)}
+                  accessibilityRole="button"
+                  accessibilityLabel="코스 선택 해제"
+                >
+                  <Text style={{ color: colors.accent, fontWeight: "700" }}>
+                    선택 해제
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         <View style={styles.fieldGrid}>
           <NumberStepper
             label="인원"
@@ -773,7 +974,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
               {festivals.length ? festivals.map((festival) => {
                 const on = selectedFestivals.some((item) => item.id === festival.id);
                 return (
-                  <Pressable
+                  <View
                     key={festival.id}
                     style={[
                       styles.festivalItem,
@@ -782,21 +983,47 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
                         backgroundColor: on ? colors.chipOnBg : colors.chipBg,
                       },
                     ]}
-                    onPress={() => toggleFestival(festival)}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: on }}
-                    accessibilityLabel={`${festival.name} 선택`}
                   >
-                    <Text style={[styles.festivalName, { color: on ? colors.chipOnFg : colors.text }]}>
-                      {festival.name}
-                    </Text>
-                    <Text style={[styles.festivalMeta, { color: on ? colors.chipOnFg : colors.textMuted }]}>
-                      {formatFestivalPeriod(festival.startDate, festival.endDate)}
-                      {" · "}
-                      {festival.cityName}
-                      {festival.distanceKm != null ? ` · ${formatDistanceKm(festival.distanceKm)}` : ""}
-                    </Text>
-                  </Pressable>
+                    <Pressable
+                      style={styles.festivalSelect}
+                      onPress={() => toggleFestival(festival)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on }}
+                      accessibilityLabel={`${festival.name} 선택`}
+                    >
+                      <Text style={[styles.festivalName, { color: on ? colors.chipOnFg : colors.text }]}>
+                        {festival.name}
+                      </Text>
+                      <Text style={[styles.festivalMeta, { color: on ? colors.chipOnFg : colors.textMuted }]}>
+                        {formatFestivalPeriod(festival.startDate, festival.endDate)}
+                        {" · "}
+                        {festival.cityName}
+                        {festival.distanceKm != null ? ` · ${formatDistanceKm(festival.distanceKm)}` : ""}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.festivalSearchBtn,
+                        {
+                          borderColor: on ? colors.primaryFg : colors.border,
+                          backgroundColor: on ? colors.primary : colors.bgElevated,
+                        },
+                      ]}
+                      onPress={() => void openNaverSearch(festival.name)}
+                      accessibilityRole="link"
+                      accessibilityLabel={`${festival.name} 네이버 검색`}
+                      hitSlop={6}
+                    >
+                      <Text
+                        style={[
+                          styles.festivalSearchText,
+                          { color: on ? colors.primaryFg : colors.accent },
+                        ]}
+                      >
+                        검색
+                      </Text>
+                    </Pressable>
+                  </View>
                 );
               }) : (
                 <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
@@ -935,10 +1162,59 @@ const styles = StyleSheet.create({
   closeText: { fontSize: 14, fontWeight: "800" },
   festivalList: { gap: space.sm, paddingBottom: space.md },
   festivalItem: {
+    borderWidth: 1.5,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: space.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+  },
+  festivalSelect: { flex: 1, minWidth: 0 },
+  festivalName: { fontSize: 15, fontWeight: "800" },
+  festivalMeta: { marginTop: 4, fontSize: 13, fontWeight: "600" },
+  festivalSearchBtn: {
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    minHeight: 36,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  festivalSearchText: { fontSize: 13, fontWeight: "800" },
+  courseToggle: {
+    marginTop: space.md,
     borderWidth: 1,
     borderRadius: radius.md,
     padding: space.md,
+    gap: 4,
   },
-  festivalName: { fontSize: 15, fontWeight: "800" },
-  festivalMeta: { marginTop: 4, fontSize: 13, fontWeight: "600" },
+  courseToggleTitle: { fontSize: 15, fontWeight: "800" },
+  coursePanel: { marginTop: space.sm, gap: space.sm },
+  courseCard: {
+    borderWidth: 1.5,
+    borderRadius: radius.md,
+    padding: space.md,
+    gap: 4,
+  },
+  courseCardHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: space.sm,
+  },
+  courseCardTitle: { flex: 1, fontSize: 15, fontWeight: "800" },
+  courseBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+  },
+  courseBadgeText: { fontSize: 11, fontWeight: "800" },
+  courseOverview: { fontSize: 13, lineHeight: 18, fontWeight: "500" },
+  coursePreview: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: space.md,
+    gap: space.sm,
+  },
 });

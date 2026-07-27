@@ -170,6 +170,7 @@ export function createEmptyTrip(input: {
   extraRequest?: string;
   briefing?: string;
   routeOutline?: string;
+  seedCourse?: Trip["seedCourse"];
   startAddress?: string;
   startLat?: number;
   startLng?: number;
@@ -203,6 +204,7 @@ export function createEmptyTrip(input: {
     extraRequest: input.extraRequest,
     briefing: input.briefing,
     routeOutline: input.routeOutline,
+    seedCourse: input.seedCourse,
     nights: input.nights,
     days: input.days,
     startDate: input.startDate,

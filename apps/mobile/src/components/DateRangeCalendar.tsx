@@ -155,22 +155,28 @@ export function DateRangeCalendar({
                 {day}
               </Text>
               {isToday ? (
-                <View
-                  style={[
-                    styles.todayMarker,
-                    { backgroundColor: isBoundary ? colors.primaryFg : colors.primary },
-                  ]}
-                />
-              ) : null}
-              {isToday ? (
-                <Text
-                  style={[
-                    styles.todayLabel,
-                    { color: isBoundary ? colors.primaryFg : colors.primary },
-                  ]}
-                >
-                  오늘
-                </Text>
+                <View style={styles.todayFooter} pointerEvents="none">
+                  <View
+                    style={[
+                      styles.todayMarker,
+                      {
+                        backgroundColor: isBoundary
+                          ? colors.primaryFg
+                          : colors.primary,
+                      },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.todayLabel,
+                      {
+                        color: isBoundary ? colors.primaryFg : colors.primary,
+                      },
+                    ]}
+                  >
+                    오늘
+                  </Text>
+                </View>
               ) : null}
             </Pressable>
           );
@@ -213,13 +219,29 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: "transparent",
+    position: "relative",
+    overflow: "hidden",
   },
   dayDisabled: { backgroundColor: "transparent" },
-  dayText: { fontSize: 14, fontWeight: "700", lineHeight: 17 },
+  dayText: {
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 16,
+    textAlign: "center",
+    textAlignVertical: "center",
+    includeFontPadding: false,
+  },
+  todayFooter: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   todayMarker: {
     width: 4,
     height: 4,
-    marginTop: 1,
     borderRadius: 2,
   },
   todayLabel: { marginTop: 1, fontSize: 8, fontWeight: "800", lineHeight: 9 },

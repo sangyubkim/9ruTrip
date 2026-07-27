@@ -10,7 +10,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   UIManager,
   View,
 } from "react-native";
@@ -25,6 +24,7 @@ import {
   type EnrichedPlace,
   enrichTransport,
   optimizeDay,
+  regenerateDay,
   rerouteTrip,
   suggestPlaces,
 } from "../api/trip";
@@ -41,6 +41,7 @@ import { PlanDayMap } from "../components/PlanDayMap";
 import { ProvinceCityPickerModal } from "../components/ProvinceCityPickerModal";
 import { TransportCompareSheet } from "../components/TransportCompareSheet";
 import { WeatherCrowdChip } from "../components/WeatherCrowdChip";
+import { AddPlaceScreen } from "./AddPlaceScreen";
 import { useGpsDeviation } from "../hooks/useGpsDeviation";
 import { useGuideAlarms } from "../hooks/useGuideAlarms";
 import { useReduceMotion } from "../hooks/useReduceMotion";
@@ -86,24 +87,30 @@ import {
   CATEGORY_LABEL,
   currencyForCity,
   formatHotelBreakfastLabel,
-  formatHotelBreakfastPrice,
+  formatHotelNightlyMoney,
   formatMoney,
   formatPlaceMoney,
   placeBudgetAmount,
   STATUS_LABEL,
 } from "../utils/cost";
+import { placeDetailLines } from "../utils/placeDetails";
 import {
   naverModeFromTransport,
   openMapsDirections,
   openNaverMapsDirections,
   openTransitDeepLink,
 } from "../utils/mapsNavigation";
+import { openNaverSearch } from "../utils/naverSearch";
 import { formatTravelGlance, getNextAction } from "../utils/nextAction";
 import {
   ensureOvernightHotelsInPlaces,
   overnightDayIndexes,
 } from "../utils/overnightHotels";
 import { summarizeRerouteChanges } from "../utils/reroutePreview";
+import {
+  lockedShiftedPlannedTimes,
+  shiftPlannedTimesAfter,
+} from "../utils/shiftPlannedTimes";
 
 type Props = {
   trip: Trip;
@@ -181,6 +188,10 @@ export function PlanScreen({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [suggestVisible, setSuggestVisible] = useState(false);
   const [manualPlaceVisible, setManualPlaceVisible] = useState(false);
+  /** null afterPlaceId = Day 맨 앞 삽입, id = 해당 장소 뒤 삽입 */
+  const [addPlaceCtx, setAddPlaceCtx] = useState<{
+    afterPlaceId: string | null;
+  } | null>(null);
   const [suggestCategory, setSuggestCategory] =
     useState<PlaceCategory>("food");
   const [suggestList, setSuggestList] = useState<ItineraryPlace[]>([]);
@@ -195,8 +206,6 @@ export function PlanScreen({
   const [cityPickerOpen, setCityPickerOpen] = useState(false);
   const [returnTimeEditOpen, setReturnTimeEditOpen] = useState(false);
   const [startTimeEditOpen, setStartTimeEditOpen] = useState(false);
-  const [reflectRequest, setReflectRequest] = useState("");
-  const [reflectRequestOpen, setReflectRequestOpen] = useState(false);
   const [completionBriefingVisible, setCompletionBriefingVisible] =
     useState(false);
   const [domesticNavPlace, setDomesticNavPlace] =
@@ -354,10 +363,15 @@ export function PlanScreen({
     resetUndoTimer();
   };
 
-  /** 로컬 순서를 즉시 반영한 뒤 enrich (낙관적 업데이트). */
+  /**
+   * 로컬 순서를 즉시 반영한 뒤 enrich (낙관적 업데이트).
+   * lockPlannedTimesById: enrich(forceRecalc) 후에도 지정 id의 plannedTime 유지
+   * (+ 삽입 시 이후 장소 +1h 명시 시프트용).
+   */
   const applyPlaces = async (
     places: ItineraryPlace[],
     extra: Partial<Trip> = {},
+    opts?: { lockPlannedTimesById?: ReadonlyMap<string, string> },
   ) => {
     const localTrip: Trip = {
       ...trip,
@@ -385,10 +399,18 @@ export function PlanScreen({
         startLng: trip.startLng,
         outboundTransportMode: trip.outboundTransportMode || "car",
       });
+      const lock = opts?.lockPlannedTimesById;
+      const nextPlaces =
+        lock && lock.size > 0
+          ? res.places.map((p) => {
+              const locked = lock.get(p.id);
+              return locked ? { ...p, plannedTime: locked } : p;
+            })
+          : res.places;
       onChangeTrip({
         ...localTrip,
-        places: res.places,
-        plannedBudget: budgetOf(res.places, trip.partySize),
+        places: nextPlaces,
+        plannedBudget: budgetOf(nextPlaces, trip.partySize),
         updatedAt: new Date().toISOString(),
       });
     } catch {
@@ -544,19 +566,69 @@ export function PlanScreen({
 
   const promptAssignDayCity = (targetCity: MvpCityId) => {
     if (cityIdForDay(trip, day) === targetCity) return;
-    const apply = () => {
-      const next = assignDayToCity(trip, day, targetCity, true);
+    const cityName = CITIES[targetCity].nameKo;
+
+    const applyCityOnly = () => {
+      // 도시 배정(dayIndexes)만 갱신 — 기존 장소·스케줄은 유지
+      const next = assignDayToCity(trip, day, targetCity, false);
       onChangeTrip(next);
-      flashInline(`Day ${day + 1} → ${CITIES[targetCity].nameKo}`);
+      flashInline(`Day ${day + 1} → ${cityName} (일정 유지)`);
     };
+
+    const applyCityAndRegenerate = async () => {
+      const assigned = assignDayToCity(trip, day, targetCity, true);
+      onChangeTrip(assigned);
+      setRerouting(true);
+      try {
+        const res = await regenerateDay({
+          trip: assigned,
+          dayIndex: day,
+          targetCityId: targetCity,
+        });
+        const places = ensureOvernightHotelsInPlaces(res.places, {
+          days: assigned.days,
+          nights: assigned.nights,
+          lodgingCandidates: assigned.lodgingCandidates,
+          preferredLodgingId: assigned.preferredLodgingId,
+          cityId: assigned.cityId,
+          lodgingReturnTime:
+            assigned.lodgingReturnTime || DEFAULT_LODGING_RETURN_TIME,
+        });
+        onChangeTrip({
+          ...assigned,
+          places,
+          plannedBudget: res.plannedBudget,
+          updatedAt: new Date().toISOString(),
+        });
+        flashInline(
+          `Day ${day + 1} · ${cityName} 일정 재생성 · ${res.replacedCount}곳`,
+        );
+      } catch (e) {
+        Alert.alert(
+          "일정 재생성 실패",
+          e instanceof Error
+            ? e.message
+            : "도시만 배정했습니다. API를 확인해 주세요.",
+        );
+      } finally {
+        setRerouting(false);
+      }
+    };
+
     Alert.alert(
       "Day 도시 배정",
-      `Day ${day + 1}을 ${CITIES[targetCity].nameKo}로 배정할까요?\n이 Day 장소도 같이 맞춰집니다.`,
+      `Day ${day + 1}을 ${cityName}로 배정합니다.\n현재 Day의 스케줄을 변경하시겠습니까?`,
       [
-        { text: "취소", style: "cancel" },
         {
-          text: "확인",
-          onPress: apply,
+          text: "아니오",
+          style: "cancel",
+          onPress: applyCityOnly,
+        },
+        {
+          text: "예",
+          onPress: () => {
+            void applyCityAndRegenerate();
+          },
         },
       ],
     );
@@ -700,26 +772,36 @@ export function PlanScreen({
     });
   };
 
-  const insertSuggested = async (category: PlaceCategory) => {
+  /** 모달만 열고, 기준 위치 선택 후 loadSuggestAround에서 조회 */
+  const insertSuggested = (category: PlaceCategory) => {
     setSuggestCategory(category);
-    setSuggestVisible(true);
     setSuggestList([]);
     setSuggestSource("");
+    setSuggestVisible(true);
+  };
+
+  const loadSuggestAround = async (center: {
+    lat: number;
+    lng: number;
+    nearQuery?: string;
+  }) => {
     setSuggesting(true);
+    setSuggestList([]);
     try {
       const res = await suggestPlaces({
         cityId: dayCityId,
-        category,
+        category: suggestCategory,
         partySize: trip.partySize,
+        lat: center.lat,
+        lng: center.lng,
+        nearQuery: center.nearQuery,
       });
       setSuggestList(res.places ?? []);
       setSuggestSource(res.source ?? "static");
       if (!res.places?.length) {
         flashInline("이 카테고리 제안이 없습니다.");
-        setSuggestVisible(false);
       }
     } catch (e) {
-      setSuggestVisible(false);
       Alert.alert(
         "제안 실패",
         e instanceof Error ? e.message : "API를 확인해 주세요.",
@@ -759,6 +841,7 @@ export function PlanScreen({
       await applyPlaces(renumberGlobal(next), {
         preferredLodgingId: pick.id,
       });
+      setAddPlaceCtx(null);
       flashInline(
         daysToSet.length > 1
           ? `숙소 선택 · ${pick.name} (Day 1~${trip.days - 1})`
@@ -767,22 +850,23 @@ export function PlanScreen({
       return;
     }
 
-    const dayList = trip.places.filter((p) => p.dayIndex === day);
+    const dayList = trip.places
+      .filter((p) => p.dayIndex === day)
+      .sort((a, b) => a.order - b.order);
+    const others = trip.places.filter((p) => p.dayIndex !== day);
     const existingNames = new Set(
       dayList.map((p) => p.name.trim().toLowerCase().replace(/\s+/g, "")),
     );
-    let maxOrder = dayList.reduce((m, p) => Math.max(m, p.order), -1);
     const added: ItineraryPlace[] = [];
     for (const pick of picks) {
       const key = pick.name.trim().toLowerCase().replace(/\s+/g, "");
       if (existingNames.has(key)) continue;
-      maxOrder += 1;
       existingNames.add(key);
       added.push({
         ...pick,
         id: `place-${Date.now()}-${added.length}`,
         dayIndex: day,
-        order: maxOrder,
+        order: 0,
         cityId: dayCityId,
       });
     }
@@ -790,13 +874,36 @@ export function PlanScreen({
       flashInline("이미 일정에 있는 장소입니다.");
       return;
     }
-    await applyPlaces(renumberGlobal([...trip.places, ...added]));
+    const afterId = addPlaceCtx?.afterPlaceId ?? null;
+    let insertAt = dayList.length;
+    if (addPlaceCtx) {
+      if (afterId == null) {
+        insertAt = 0;
+      } else {
+        const idx = dayList.findIndex((p) => p.id === afterId);
+        insertAt = idx >= 0 ? idx + 1 : dayList.length;
+      }
+    }
+    // + 삽입: 같은 Day에서 새 장소(들) 뒤의 plannedTime 을 각 +1h (숙소 포함)
+    const subsequent = dayList.slice(insertAt);
+    const lockPlannedTimesById = lockedShiftedPlannedTimes(subsequent, 60);
+    const merged = shiftPlannedTimesAfter(
+      [...dayList.slice(0, insertAt), ...added, ...subsequent],
+      insertAt + added.length - 1,
+      60,
+    );
+    await applyPlaces(renumberGlobal([...others, ...merged]), {}, {
+      lockPlannedTimesById,
+    });
+    setAddPlaceCtx(null);
     flashInline(`추가됨 · ${added.length}곳 (Day ${day + 1})`);
   };
 
   const confirmManualPlace = async (place: EnrichedPlace) => {
-    const dayList = trip.places.filter((item) => item.dayIndex === day);
-    const maxOrder = dayList.reduce((max, item) => Math.max(max, item.order), -1);
+    const dayList = trip.places
+      .filter((item) => item.dayIndex === day)
+      .sort((a, b) => a.order - b.order);
+    const others = trip.places.filter((item) => item.dayIndex !== day);
     const cityCenter = CITIES[dayCityId]?.center;
     const lat = Number.isFinite(place.lat) ? place.lat! : cityCenter?.lat ?? 0;
     const lng = Number.isFinite(place.lng) ? place.lng! : cityCenter?.lng ?? 0;
@@ -811,12 +918,33 @@ export function PlanScreen({
       estimatedCost: place.estimatedCost,
       ...(notes ? { notes } : {}),
       dayIndex: day,
-      order: maxOrder + 1,
+      order: 0,
       cityId: dayCityId,
     };
+    const afterId = addPlaceCtx?.afterPlaceId ?? null;
+    let insertAt = dayList.length;
+    if (addPlaceCtx) {
+      if (afterId == null) {
+        insertAt = 0;
+      } else {
+        const idx = dayList.findIndex((p) => p.id === afterId);
+        insertAt = idx >= 0 ? idx + 1 : dayList.length;
+      }
+    }
+    // + 삽입: 같은 Day에서 새 장소 뒤의 plannedTime 을 각 +1h (숙소 포함)
+    const subsequent = dayList.slice(insertAt);
+    const lockPlannedTimesById = lockedShiftedPlannedTimes(subsequent, 60);
+    const merged = shiftPlannedTimesAfter(
+      [...dayList.slice(0, insertAt), added, ...subsequent],
+      insertAt,
+      60,
+    );
     pushUndoSnapshot();
     setManualPlaceVisible(false);
-    await applyPlaces(renumberGlobal([...trip.places, added]));
+    setAddPlaceCtx(null);
+    await applyPlaces(renumberGlobal([...others, ...merged]), {}, {
+      lockPlannedTimesById,
+    });
     flashInline(`직접 추가됨 · Day ${day + 1}`);
   };
 
@@ -831,6 +959,21 @@ export function PlanScreen({
       ),
       updatedAt: new Date().toISOString(),
     });
+  };
+
+  const applyCurrentTime = (place: ItineraryPlace) => {
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(
+      now.getMinutes(),
+    ).padStart(2, "0")}`;
+    onChangeTrip({
+      ...trip,
+      places: trip.places.map((p) =>
+        p.id === place.id ? { ...p, plannedTime: hhmm } : p,
+      ),
+      updatedAt: new Date().toISOString(),
+    });
+    flashInline(`시각 ${hhmm}으로 맞춤`);
   };
 
   const runReroute = async (reason: string) => {
@@ -932,77 +1075,6 @@ export function PlanScreen({
       );
     } finally {
       setOptimizing(false);
-    }
-  };
-
-  const runReflectRequest = async () => {
-    const reason = reflectRequest.trim();
-    if (!reason) {
-      Alert.alert(
-        "요청 필요",
-        "예: 오후에 카페 추가, 너무 빡빡하니 일정 줄여줘",
-      );
-      return;
-    }
-    setRerouting(true);
-    try {
-      const res = await rerouteTrip({
-        trip: {
-          ...trip,
-          lodgingReturnTime:
-            trip.lodgingReturnTime || DEFAULT_LODGING_RETURN_TIME,
-        },
-        dayIndex: day,
-        reason,
-        mode: "reflect",
-        lodgingReturnTime:
-          trip.lodgingReturnTime || DEFAULT_LODGING_RETURN_TIME,
-        completedPlaceIds: trip.completedPlaceIds ?? [],
-      });
-      const preview = summarizeRerouteChanges(
-        trip.places,
-        res.places,
-        day,
-        trip.completedPlaceIds ?? [],
-      );
-      Alert.alert(
-        "일정 반영 미리보기",
-        `${preview.text}\n\n${res.summary}\n엔진: ${res.engine} · 교체 ${res.replacedCount}곳`,
-        [
-          { text: "취소", style: "cancel" },
-          {
-            text: "적용",
-            onPress: () => {
-              pushUndoSnapshot();
-              const places = ensureOvernightHotelsInPlaces(res.places, {
-                days: trip.days,
-                nights: trip.nights,
-                lodgingCandidates: trip.lodgingCandidates,
-                preferredLodgingId: trip.preferredLodgingId,
-                cityId: trip.cityId,
-                lodgingReturnTime:
-                  trip.lodgingReturnTime || DEFAULT_LODGING_RETURN_TIME,
-              });
-              onChangeTrip({
-                ...trip,
-                places,
-                plannedBudget: res.plannedBudget,
-                extraRequest: reason,
-                updatedAt: new Date().toISOString(),
-              });
-              setReflectRequest("");
-              flashInline(`Day ${day + 1} 일정 반영 완료`);
-            },
-          },
-        ],
-      );
-    } catch (e) {
-      Alert.alert(
-        "일정 반영 실패",
-        e instanceof Error ? e.message : "API를 확인해 주세요.",
-      );
-    } finally {
-      setRerouting(false);
     }
   };
 
@@ -1212,10 +1284,11 @@ export function PlanScreen({
     const routeNo = mapNo >= 0 ? mapNo + 1 : null;
     const hasPreviousPlace =
       mapPlaces.findIndex((place) => place.id === item.id) > 0;
-    const hotelBreakfastPrice =
+    const hotelNightly =
       item.category === "hotel"
-        ? formatHotelBreakfastPrice(item.breakfastPricePerPerson, currency)
+        ? formatHotelNightlyMoney(item.estimatedCost, currency)
         : null;
+    const detailLines = placeDetailLines(item, { maxLines: 2 });
     return (
       <ScaleDecorator>
         <Swipeable
@@ -1292,6 +1365,48 @@ export function PlanScreen({
                 ≡
               </Text>
             </Pressable>
+            <View
+              style={[
+                styles.categoryBadge,
+                {
+                  backgroundColor:
+                    item.category === "food"
+                      ? "#fff7ed"
+                      : item.category === "hotel"
+                        ? "#f5f3ff"
+                        : item.category === "attraction"
+                          ? "#ecfdf5"
+                          : colors.chipBg,
+                  borderColor:
+                    item.category === "food"
+                      ? "#fb923c"
+                      : item.category === "hotel"
+                        ? "#a78bfa"
+                        : item.category === "attraction"
+                          ? "#34d399"
+                          : colors.border,
+                },
+              ]}
+              accessibilityLabel={CATEGORY_LABEL[item.category] || item.category}
+            >
+              <Text
+                style={[
+                  styles.categoryBadgeText,
+                  {
+                    color:
+                      item.category === "food"
+                        ? "#c2410c"
+                        : item.category === "hotel"
+                          ? "#6d28d9"
+                          : item.category === "attraction"
+                            ? "#047857"
+                            : colors.textMutedOnCard,
+                  },
+                ]}
+              >
+                {CATEGORY_LABEL[item.category] || item.category}
+              </Text>
+            </View>
             {routeNo != null ? (
               <View
                 style={[
@@ -1326,6 +1441,7 @@ export function PlanScreen({
                   ]}
                   accessibilityRole="button"
                   accessibilityLabel="예정 시각 편집"
+                  accessibilityHint="탭하면 시각을 수정합니다"
                 >
                   <Text
                     style={[styles.timeText, { color: colors.chipOnFg }]}
@@ -1333,31 +1449,62 @@ export function PlanScreen({
                     {item.plannedTime ? `🕒 ${item.plannedTime}` : "🕒 --:--"}
                   </Text>
                 </Pressable>
+                <Pressable
+                  onPress={() => applyCurrentTime(item)}
+                  style={styles.nowTimeBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="현재 시각으로 맞춤"
+                  hitSlop={4}
+                >
+                  <Text style={styles.nowTimeBtnText}>지금</Text>
+                </Pressable>
                 <Text
                   style={[styles.name, { color: colors.textOnCard }]}
                   numberOfLines={2}
                 >
                   {item.name}
                 </Text>
+                <Pressable
+                  onPress={() => void openNaverSearch(item.name)}
+                  style={styles.searchBtn}
+                  accessibilityRole="link"
+                  accessibilityLabel={`${item.name} 네이버 검색`}
+                  hitSlop={6}
+                >
+                  <Text style={styles.searchBtnText}>검색</Text>
+                </Pressable>
               </View>
               {item.category === "hotel" ? (
                 <>
                   <Text
                     style={[styles.meta, { color: colors.textMutedOnCard }]}
+                    numberOfLines={2}
                   >
                     숙소 · {formatHotelBreakfastLabel(item.breakfastIncluded)}
-                    {" · "}
-                    1박 · {formatMoney(item.estimatedCost, currency)}
-                    {hotelBreakfastPrice ? ` · ${hotelBreakfastPrice}` : ""}
+                    {hotelNightly ? ` · 1박 · ${hotelNightly}` : ""}
                     {item.lodgingScore
                       ? ` · 숙소점수 ${item.lodgingScore}`
                       : ""}
                   </Text>
-                  <Text
-                    style={[styles.estimateHint, { color: colors.textMutedOnCard }]}
-                  >
-                    추정가 · 확정 아님
-                  </Text>
+                  {hotelNightly ? (
+                    <Text
+                      style={[
+                        styles.estimateHint,
+                        { color: colors.textMutedOnCard },
+                      ]}
+                    >
+                      추정가 · 확정 아님
+                    </Text>
+                  ) : null}
+                  {detailLines.map((line) => (
+                    <Text
+                      key={line}
+                      style={[styles.meta, { color: colors.textMutedOnCard }]}
+                      numberOfLines={1}
+                    >
+                      {line}
+                    </Text>
+                  ))}
                   {item.notes ? (
                     <Text
                       style={[styles.meta, { color: colors.textMutedOnCard }]}
@@ -1368,15 +1515,31 @@ export function PlanScreen({
                   ) : null}
                 </>
               ) : (
-                <Text style={[styles.meta, { color: colors.textMutedOnCard }]}>
-                  {CATEGORY_LABEL[item.category] || item.category} ·{" "}
-                  {formatPlaceMoney(
-                    item.estimatedCost,
-                    item.category,
-                    currency,
-                  )}
-                  {item.notes ? ` · ${item.notes}` : ""}
-                </Text>
+                <>
+                  <Text
+                    style={[styles.meta, { color: colors.textMutedOnCard }]}
+                    numberOfLines={2}
+                  >
+                    {CATEGORY_LABEL[item.category] || item.category}
+                    {Number(item.estimatedCost) > 0
+                      ? ` · ${formatPlaceMoney(
+                          item.estimatedCost,
+                          item.category,
+                          currency,
+                        )}`
+                      : ""}
+                    {item.notes ? ` · ${item.notes}` : ""}
+                  </Text>
+                  {detailLines.map((line) => (
+                    <Text
+                      key={line}
+                      style={[styles.meta, { color: colors.textMutedOnCard }]}
+                      numberOfLines={1}
+                    >
+                      {line}
+                    </Text>
+                  ))}
+                </>
               )}
               <View style={styles.actionRow}>
                 <Pressable
@@ -1426,18 +1589,6 @@ export function PlanScreen({
 
   const filterAndInsertBlock = (
     <>
-      <View style={styles.insertRow}>
-        {(["food", "attraction", "hotel"] as PlaceCategory[]).map((c) => (
-          <Pressable
-            key={c}
-            style={[styles.insertBtn, suggesting && { opacity: 0.6 }]}
-            disabled={suggesting}
-            onPress={() => void insertSuggested(c)}
-          >
-            <Text style={styles.insertText}>+{CATEGORY_LABEL[c] || c}</Text>
-          </Pressable>
-        ))}
-      </View>
       <Pressable
         style={[styles.optimizeBtn, optimizing && { opacity: 0.6 }]}
         disabled={optimizing}
@@ -1449,59 +1600,6 @@ export function PlanScreen({
           <Text style={styles.optimizeBtnText}>동선 최적화</Text>
         )}
       </Pressable>
-      <Pressable
-        style={styles.reflectToggle}
-        onPress={() => setReflectRequestOpen((open) => !open)}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: reflectRequestOpen }}
-        accessibilityLabel="재일정 반영 요청"
-        accessibilityHint="선택하면 요청 입력과 여행 재계획 버튼이 표시됩니다"
-      >
-        <View
-          style={[
-            styles.reflectCheckbox,
-            reflectRequestOpen && styles.reflectCheckboxOn,
-          ]}
-        >
-          {reflectRequestOpen ? (
-            <Text style={styles.reflectCheckmark}>✓</Text>
-          ) : null}
-        </View>
-        <Text style={[styles.sectionLabel, { color: colors.text, marginBottom: 0 }]}>
-          재일정 반영 요청
-        </Text>
-      </Pressable>
-      {reflectRequestOpen ? (
-        <>
-          <Text style={[styles.settingsHint, { color: colors.textMuted }]}>
-            Day {day + 1} 일정에 반영할 요청을 적고 AI로 경로를 다시 받을 수 있습니다.
-          </Text>
-          <TextInput
-            style={styles.reflectInput}
-            value={reflectRequest}
-            onChangeText={setReflectRequest}
-            placeholder="예: 점심은 비빔밥, 오후는 여유롭게, 비 오면 실내 위주"
-            placeholderTextColor="#94a3b8"
-            multiline
-            maxLength={800}
-            editable={!rerouting}
-            textAlignVertical="top"
-          />
-          <Pressable
-            style={[styles.reflectBtn, rerouting && { opacity: 0.6 }]}
-            disabled={rerouting}
-            onPress={() => void runReflectRequest()}
-            accessibilityRole="button"
-            accessibilityLabel="여행 재계획"
-          >
-            {rerouting ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.reflectBtnText}>여행 재계획</Text>
-            )}
-          </Pressable>
-        </>
-      ) : null}
       <Text style={[styles.sectionLabel, { color: colors.text }]}>필터</Text>
       <View style={styles.tabs}>
         {FILTERS.map((f) => (
@@ -1658,27 +1756,6 @@ export function PlanScreen({
             <Text style={styles.addCityBtnText}>
               복귀 {lodgingReturnTime}
             </Text>
-          </Pressable>
-          <Text
-            style={[
-              styles.sectionLabel,
-              { color: colors.textOnCard, marginTop: 10 },
-            ]}
-          >
-            일정 장소
-          </Text>
-          <Text
-            style={[styles.settingsHint, { color: colors.textMutedOnCard }]}
-          >
-            AI 추천에 없는 장소도 현재 선택한 Day에 추가할 수 있습니다.
-          </Text>
-          <Pressable
-            style={styles.addCityBtn}
-            onPress={() => setManualPlaceVisible(true)}
-            accessibilityRole="button"
-            accessibilityLabel="장소 직접 추가"
-          >
-            <Text style={styles.addCityBtnText}>장소 직접 추가</Text>
           </Pressable>
           {canPickDomesticCities ? (
             <View style={styles.easyExtras}>
@@ -1966,7 +2043,15 @@ export function PlanScreen({
 
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }]}>
-      {isFieldMode ? (
+      {addPlaceCtx ? (
+        <AddPlaceScreen
+          dayIndex={day}
+          suggesting={suggesting}
+          onBack={() => setAddPlaceCtx(null)}
+          onSuggestCategory={(c) => void insertSuggested(c)}
+          onOpenManualPlace={() => setManualPlaceVisible(true)}
+        />
+      ) : isFieldMode ? (
         <View
           style={[
             styles.fieldRoot,
@@ -2088,6 +2173,38 @@ export function PlanScreen({
             }}
             renderItem={renderItem}
             ListHeaderComponent={listHeader}
+            ItemSeparatorComponent={({ leadingItem }) =>
+              leadingItem && !listDragging ? (
+                <Pressable
+                  style={styles.betweenPlus}
+                  onPress={() =>
+                    setAddPlaceCtx({ afterPlaceId: leadingItem.id })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="이 위치 사이에 장소 추가"
+                >
+                  <Text style={styles.betweenPlusText}>+</Text>
+                </Pressable>
+              ) : (
+                <View style={{ height: 8 }} />
+              )
+            }
+            ListFooterComponent={
+              dayPlaces.length > 0 && !listDragging ? (
+                <Pressable
+                  style={styles.betweenPlus}
+                  onPress={() =>
+                    setAddPlaceCtx({
+                      afterPlaceId: dayPlaces[dayPlaces.length - 1]!.id,
+                    })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="일정 끝에 장소 추가"
+                >
+                  <Text style={styles.betweenPlusText}>+</Text>
+                </Pressable>
+              ) : null
+            }
             activationDistance={16}
             containerStyle={{ flex: 1 }}
             contentContainerStyle={{
@@ -2100,10 +2217,18 @@ export function PlanScreen({
                   title="이 날 일정이 비어 있습니다"
                   body={
                     isEasy
-                      ? "「자세히」로 전환한 뒤 +맛집 · +관광으로 장소를 추가하거나, 다른 Day에서 Day▶로 옮겨 오세요."
-                      : "위에서 +맛집 · +관광 · +숙소로 장소를 추가하거나, 다른 Day에서 Day▶로 옮겨 오세요."
+                      ? "「자세히」로 전환한 뒤 아래 + 버튼으로 장소를 추가하거나, 다른 Day에서 Day▶로 옮겨 오세요."
+                      : "아래 + 버튼으로 맛집·관광·숙소를 추가하거나, 다른 Day에서 Day▶로 옮겨 오세요."
                   }
                 />
+                <Pressable
+                  style={styles.betweenPlus}
+                  onPress={() => setAddPlaceCtx({ afterPlaceId: null })}
+                  accessibilityRole="button"
+                  accessibilityLabel="장소 추가"
+                >
+                  <Text style={styles.betweenPlusText}>+</Text>
+                </Pressable>
               </View>
             }
           />
@@ -2148,7 +2273,7 @@ export function PlanScreen({
         </Animated.View>
       ) : null}
 
-      {!isFieldMode ? (
+      {!isFieldMode && !addPlaceCtx ? (
         <View style={{ paddingBottom: Math.max(insets.bottom, space.sm) }}>
           {!isEasy ? (
             <>
@@ -2511,6 +2636,7 @@ export function PlanScreen({
         cityId={dayCityId}
         source={suggestSource}
         loading={suggesting}
+        onRequestSuggest={(center) => void loadSuggestAround(center)}
         onConfirm={(picks) => void confirmSuggested(picks)}
         onClose={() => setSuggestVisible(false)}
       />
@@ -2652,6 +2778,27 @@ const styles = StyleSheet.create({
   },
   settingsHint: { fontSize: 11, color: "#64748b", marginBottom: 8 },
   nameRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
+  searchBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minHeight: 36,
+    borderRadius: 8,
+    backgroundColor: "#e0f2fe",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  searchBtnText: { color: "#0369a1", fontWeight: "800", fontSize: 12 },
+  categoryBadge: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    minHeight: 28,
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "center",
+  },
+  categoryBadgeText: { fontSize: 11, fontWeight: "900" },
   timeBtn: {
     paddingHorizontal: 8,
     paddingVertical: 8,
@@ -2662,6 +2809,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   timeText: { fontSize: 13, fontWeight: "800" },
+  nowTimeBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    minHeight: 36,
+    borderRadius: 8,
+    backgroundColor: "#e0f2fe",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  nowTimeBtnText: { color: "#0369a1", fontWeight: "800", fontSize: 12 },
   enrichBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -2734,19 +2891,24 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: "#0c4a6e" },
   chipText: { color: "#334155", fontSize: 12, fontWeight: "600" },
   chipTextOn: { color: "#fff" },
-  insertRow: { flexDirection: "row", gap: 6, marginBottom: 8 },
-  insertBtn: {
-    flex: 1,
-    backgroundColor: "#f0f9ff",
-    paddingVertical: 12,
+  betweenPlus: {
+    alignSelf: "center",
+    marginVertical: 4,
+    minWidth: TOUCH_MIN,
     minHeight: TOUCH_MIN,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: "#bae6fd",
+    backgroundColor: "#f0f9ff",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  insertText: { color: "#0369a1", fontSize: 12, fontWeight: "800" },
+  betweenPlusText: {
+    color: "#0369a1",
+    fontSize: 22,
+    fontWeight: "700",
+    lineHeight: 26,
+  },
   optimizeBtn: {
     marginBottom: 10,
     paddingVertical: 12,
@@ -2759,53 +2921,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   optimizeBtnText: { color: "#0e7490", fontWeight: "800", fontSize: 13 },
-  reflectInput: {
-    minHeight: 72,
-    maxHeight: 120,
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    backgroundColor: "#fff",
-    fontSize: 13,
-    color: "#0f172a",
-    lineHeight: 18,
-  },
-  reflectToggle: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 8,
-    minHeight: TOUCH_MIN,
-    marginTop: 2,
-    marginBottom: 4,
-  },
-  reflectCheckbox: {
-    width: 20,
-    height: 20,
-    borderWidth: 1,
-    borderRadius: 5,
-    borderColor: "#94a3b8",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  reflectCheckboxOn: {
-    borderColor: "#0c4a6e",
-    backgroundColor: "#0c4a6e",
-  },
-  reflectCheckmark: { color: "#fff", fontSize: 14, fontWeight: "900" },
-  reflectBtn: {
-    marginBottom: 10,
-    paddingVertical: 12,
-    minHeight: TOUCH_MIN,
-    borderRadius: 12,
-    backgroundColor: "#0c4a6e",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  reflectBtnText: { color: "#fff", fontWeight: "800", fontSize: 13 },
   fieldRoot: { flex: 1, paddingHorizontal: 4 },
   fieldHeader: {
     flexDirection: "row",

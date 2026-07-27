@@ -7,6 +7,55 @@ function asStringArray(value) {
     : [];
 }
 
+function snapshotPlaces(places) {
+  if (!Array.isArray(places)) return [];
+  return places
+    .filter((place) => place && typeof place === "object")
+    .map((place) => ({
+      id: String(place.id || ""),
+      name: String(place.name || ""),
+      category: place.category || "other",
+      lat: Number(place.lat) || 0,
+      lng: Number(place.lng) || 0,
+      estimatedCost: Number(place.estimatedCost) || 0,
+      dayIndex: Number(place.dayIndex) || 0,
+      order: Number(place.order) || 0,
+      ...(place.cityId ? { cityId: String(place.cityId) } : {}),
+      ...(typeof place.plannedTime === "string"
+        ? { plannedTime: place.plannedTime }
+        : {}),
+      ...(Number.isFinite(Number(place.travelFromPrevMinutes))
+        ? { travelFromPrevMinutes: Number(place.travelFromPrevMinutes) }
+        : {}),
+      ...(Number.isFinite(Number(place.travelFromPrevCost))
+        ? { travelFromPrevCost: Number(place.travelFromPrevCost) }
+        : {}),
+      ...(typeof place.notes === "string" && place.notes.trim()
+        ? { notes: place.notes.trim() }
+        : {}),
+      ...(typeof place.aiReason === "string" && place.aiReason.trim()
+        ? { aiReason: place.aiReason.trim() }
+        : {}),
+      ...(typeof place.reviewSummary === "string" && place.reviewSummary.trim()
+        ? { reviewSummary: place.reviewSummary.trim() }
+        : {}),
+      ...(typeof place.signatureFood === "string" && place.signatureFood.trim()
+        ? { signatureFood: place.signatureFood.trim() }
+        : {}),
+    }))
+    .filter((place) => place.id && place.name);
+}
+
+function snapshotPlaceRef(ref) {
+  if (!ref || typeof ref !== "object" || !ref.name) return null;
+  return {
+    name: String(ref.name),
+    ...(typeof ref.address === "string" ? { address: ref.address } : {}),
+    ...(Number.isFinite(Number(ref.lat)) ? { lat: Number(ref.lat) } : {}),
+    ...(Number.isFinite(Number(ref.lng)) ? { lng: Number(ref.lng) } : {}),
+  };
+}
+
 export function entryFromTrip(trip) {
   if (!trip?.id || trip.status !== "done") {
     throw new Error("완료된 여행(trip.id, status=done)이 필요합니다.");
@@ -21,6 +70,15 @@ export function entryFromTrip(trip) {
   const completedAt = trip.updatedAt || new Date().toISOString();
   const currency =
     trip.cityId === "tokyo" || trip.cityId === "osaka" ? "JPY" : "KRW";
+  const places = snapshotPlaces(trip.places);
+  const briefing =
+    typeof trip.briefing === "string" && trip.briefing.trim()
+      ? trip.briefing.trim()
+      : undefined;
+  const routeOutline =
+    typeof trip.routeOutline === "string" && trip.routeOutline.trim()
+      ? trip.routeOutline.trim()
+      : undefined;
 
   return {
     id: `diary-${trip.id}`,
@@ -28,6 +86,7 @@ export function entryFromTrip(trip) {
     title: resolvedCityNames.join(" · ") || "여행",
     cityIds: resolvedCityIds,
     cityNames: resolvedCityNames,
+    ...(trip.cityId ? { cityId: String(trip.cityId) } : {}),
     ...(typeof trip.startDate === "string" ? { startDate: trip.startDate } : {}),
     ...(typeof trip.endDate === "string" ? { endDate: trip.endDate } : {}),
     nights: Number(trip.nights) || 0,
@@ -37,8 +96,26 @@ export function entryFromTrip(trip) {
     ...(Number(trip.plannedBudget) > 0
       ? { plannedBudget: Number(trip.plannedBudget), currency }
       : {}),
-    coverPlaceName: trip.places?.[0]?.name,
-    placeCount: Array.isArray(trip.places) ? trip.places.length : 0,
+    coverPlaceName: places[0]?.name || trip.places?.[0]?.name,
+    placeCount: places.length || (Array.isArray(trip.places) ? trip.places.length : 0),
+    places,
+    ...(cities.length
+      ? {
+          cities: cities
+            .filter((city) => city?.cityId)
+            .map((city) => ({
+              cityId: String(city.cityId),
+              cityName: String(city.cityName || city.cityId),
+              dayIndexes: Array.isArray(city.dayIndexes)
+                ? city.dayIndexes.map(Number).filter(Number.isFinite)
+                : [],
+            })),
+        }
+      : {}),
+    origin: snapshotPlaceRef(trip.origin),
+    endPoint: snapshotPlaceRef(trip.endPoint),
+    ...(briefing ? { briefing } : {}),
+    ...(routeOutline ? { routeOutline } : {}),
     updatedAt: completedAt,
     syncStatus: "synced",
   };

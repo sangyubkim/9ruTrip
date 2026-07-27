@@ -39,6 +39,8 @@ export type ItineraryRequest = {
   outboundTransportMode?: OutboundTransportMode;
   userRequest?: string;
   preferredFestivals?: PreferredFestival[];
+  /** 한국관광공사 추천 코스 시드 (선택) */
+  tourCourse?: TourCourseSeed;
 };
 
 export type PreferredFestival = {
@@ -57,6 +59,56 @@ export type Festival = PreferredFestival & {
   distanceKm?: number;
 };
 
+export type TourCourseWaypoint = {
+  order: number;
+  name: string;
+  contentId?: string;
+  overview?: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
+};
+
+export type TourCourseListItem = {
+  contentId: string;
+  title: string;
+  cityId?: MvpCityId;
+  overview?: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
+  stopCount?: number;
+  badge?: string;
+  source?: string;
+};
+
+export type TourCourseDetail = TourCourseListItem & {
+  distance?: string;
+  takeTime?: string;
+  theme?: string;
+  waypoints: TourCourseWaypoint[];
+  routeSummary?: string;
+};
+
+export type TourCourseSeed = {
+  contentId: string;
+  title: string;
+  cityId?: MvpCityId;
+  overview?: string;
+  distance?: string;
+  takeTime?: string;
+  waypoints: TourCourseWaypoint[];
+  routeSummary?: string;
+};
+
+export type SeedCourseMeta = {
+  contentId: string;
+  title: string;
+  source?: string;
+  stopCount?: number;
+  routeSummary?: string;
+};
+
 export type ItineraryResponse = {
   places: ItineraryPlace[];
   plannedBudget: number;
@@ -70,6 +122,7 @@ export type ItineraryResponse = {
   transportEngine?: string;
   briefing?: string;
   routeOutline?: string;
+  seedCourse?: SeedCourseMeta;
 };
 
 export async function generateItinerary(
@@ -104,14 +157,49 @@ export async function fetchFestivals(payload: {
   return json.festivals ?? [];
 }
 
+export async function fetchTourCourses(payload: {
+  cityId: MvpCityId;
+  limit?: number;
+  lat?: number;
+  lng?: number;
+}): Promise<TourCourseListItem[]> {
+  const res = await apiFetch("/trip/courses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = await readApiJson<{
+    courses?: TourCourseListItem[];
+    error?: string;
+  }>(res);
+  if (!res.ok) throw new Error(json.error ?? `Course list failed: ${res.status}`);
+  return json.courses ?? [];
+}
+
+export async function fetchTourCourseDetail(payload: {
+  contentId: string;
+  cityId?: MvpCityId;
+}): Promise<TourCourseDetail> {
+  const res = await apiFetch("/trip/course-detail", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = await readApiJson<{
+    course?: TourCourseDetail;
+    error?: string;
+  }>(res);
+  if (!res.ok || !json.course) {
+    throw new Error(json.error ?? `Course detail failed: ${res.status}`);
+  }
+  return json.course;
+}
+
 export type RerouteRequest = {
   trip: Trip;
   dayIndex: number;
   reason?: string;
   completedPlaceIds?: string[];
-  /** reflect: 사용자 일정 반영 요청으로 Day 재구성 */
-  mode?: "reroute" | "reflect";
-  lodgingReturnTime?: string;
 };
 
 export type RerouteResponse = {
@@ -132,6 +220,41 @@ export async function rerouteTrip(payload: RerouteRequest): Promise<RerouteRespo
   const json = await readApiJson<RerouteResponse & { error?: string }>(res);
   if (!res.ok) {
     throw new Error(json.error ?? `Reroute failed: ${res.status}`);
+  }
+  return json;
+}
+
+export type RegenerateDayRequest = {
+  trip: Trip;
+  dayIndex: number;
+  /** 배정할 도시 (없으면 trip.cities / trip.cityId) */
+  targetCityId?: MvpCityId;
+};
+
+export type RegenerateDayResponse = {
+  places: ItineraryPlace[];
+  plannedBudget: number;
+  summary: string;
+  engine: string;
+  dayIndex: number;
+  cityId: MvpCityId;
+  replacedCount: number;
+};
+
+/** 도시 배정 변경 후 해당 Day 일정 통째 재생성 (전·후 Day 참고) */
+export async function regenerateDay(
+  payload: RegenerateDayRequest,
+): Promise<RegenerateDayResponse> {
+  const res = await apiFetch("/trip/regenerate-day", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = await readApiJson<RegenerateDayResponse & { error?: string }>(
+    res,
+  );
+  if (!res.ok) {
+    throw new Error(json.error ?? `Regenerate day failed: ${res.status}`);
   }
   return json;
 }
@@ -339,6 +462,12 @@ export async function suggestPlaces(payload: {
   cityId: MvpCityId;
   category?: PlaceCategory;
   partySize?: number;
+  /** 검색 중심 위도 (현재 위치 또는 지정 장소) */
+  lat?: number;
+  /** 검색 중심 경도 */
+  lng?: number;
+  /** 지정 장소·주소명 (Google 텍스트 검색 보강) */
+  nearQuery?: string;
 }): Promise<{
   places: ItineraryPlace[];
   source?: string;

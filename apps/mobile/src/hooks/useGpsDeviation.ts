@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, type AppStateStatus, Platform } from "react-native";
+import { AppState, type AppStateStatus } from "react-native";
 import type { Trip } from "../types";
 import { getNextAction } from "../utils/nextAction";
 import { haversineKm } from "../utils/geo";
-
-let Location: typeof import("expo-location") | null = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  Location = require("expo-location");
-} catch {
-  Location = null;
-}
+import {
+  getDeviceCoords,
+  isDeviceLocationAvailable,
+} from "../utils/deviceLocation";
 
 export type GpsDeviationState = {
   /** 다음 장소에서 thresholdKm 이상 떨어짐 */
@@ -60,26 +56,14 @@ export function useGpsDeviation(
       setDistanceKm(null);
       return;
     }
-    if (!Location || Platform.OS === "web") {
+    if (!isDeviceLocationAvailable()) {
       setPermission("unavailable");
       return;
     }
 
     try {
-      const existing = await Location.getForegroundPermissionsAsync();
-      if (existing.status !== "granted") {
-        const req = await Location.requestForegroundPermissionsAsync();
-        if (req.status !== "granted") {
-          setPermission("denied");
-          setDeviant(false);
-          return;
-        }
-      }
+      const pos = await getDeviceCoords({ timeoutMs: 8_000 });
       setPermission("granted");
-
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy?.Balanced ?? 3,
-      });
       const next = getNextAction(trip);
       if (!next?.place) {
         setDeviant(false);
@@ -93,13 +77,16 @@ export function useGpsDeviation(
       }
 
       const km = haversineKm(
-        { lat: pos.coords.latitude, lng: pos.coords.longitude },
+        { lat: pos.lat, lng: pos.lng },
         { lat: next.place.lat, lng: next.place.lng },
       );
       setDistanceKm(km);
       setDeviant(Number.isFinite(km) && km > thresholdKm);
-    } catch {
-      // 권한/모듈 오류 — 배너 없이 종료
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      if (message.includes("권한")) {
+        setPermission("denied");
+      }
       setDeviant(false);
     }
   }, [trip, enabled, thresholdKm]);

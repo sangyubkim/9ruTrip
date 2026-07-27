@@ -102,10 +102,6 @@ export function ensureOvernightHotelsInPlaces(
         typeof preferred.breakfastIncluded === "boolean"
           ? preferred.breakfastIncluded
           : undefined,
-      breakfastPricePerPerson:
-        Number(preferred.breakfastPricePerPerson) > 0
-          ? Number(preferred.breakfastPricePerPerson)
-          : undefined,
       pricePerPerson:
         Number(preferred.pricePerPerson) > 0
           ? Math.round(Number(preferred.pricePerPerson))

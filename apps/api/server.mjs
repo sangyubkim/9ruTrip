@@ -9,6 +9,7 @@ import {
 } from "./lib/itinerary.mjs";
 import { buildExportDraft } from "./lib/export-draft.mjs";
 import { rerouteItinerary } from "./lib/reroute.mjs";
+import { regenerateDayItinerary } from "./lib/regenerate-day.mjs";
 import { optimizeDayRoute } from "./lib/optimize-day.mjs";
 import { publishToWordPress } from "./lib/wordpress.mjs";
 import { parseKoreanCardSms } from "./lib/sms-parse.mjs";
@@ -21,6 +22,10 @@ import { searchPlaces } from "./lib/places-search.mjs";
 import { enrichPlace } from "./lib/place-enrich.mjs";
 import { createDiaryStore } from "./lib/diary-store.mjs";
 import { listFestivals } from "./lib/festivals.mjs";
+import {
+  fetchTourCourseDetailForRequest,
+  listTourCoursesForRequest,
+} from "./lib/tour-courses.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const diaryStore = createDiaryStore(join(__dirname, "data", "diary.json"));
@@ -167,6 +172,7 @@ async function handle(req, res) {
           routes: [
             "POST /trip/itinerary",
             "POST /trip/reroute",
+            "POST /trip/regenerate-day",
             "POST /trip/export-draft",
             "POST /trip/parse-sms",
             "POST /trip/enrich-transport",
@@ -174,6 +180,8 @@ async function handle(req, res) {
             "POST /trip/suggest-places",
             "POST /trip/optimize-day",
             "POST /festivals",
+            "POST /trip/courses",
+            "POST /trip/course-detail",
             "GET /diary?year=2026",
             "POST /diary/from-trip",
             "PUT /diary/:id",
@@ -240,9 +248,47 @@ async function handle(req, res) {
       return;
     }
 
+    if (method === "POST" && matchRoute(url, "/trip/courses")) {
+      const body = await readBody(req);
+      if (!body?.cityId) {
+        send(res, 400, { error: "cityId가 필요합니다." }, origin);
+        return;
+      }
+      const result = await listTourCoursesForRequest(body, env);
+      send(res, 200, result, origin);
+      return;
+    }
+
+    if (method === "POST" && matchRoute(url, "/trip/course-detail")) {
+      const body = await readBody(req);
+      if (!body?.contentId && !body?.id) {
+        send(res, 400, { error: "contentId가 필요합니다." }, origin);
+        return;
+      }
+      const result = await fetchTourCourseDetailForRequest(body, env);
+      if (!result.course) {
+        send(
+          res,
+          result.error ? 400 : 404,
+          { error: result.error || "코스를 찾을 수 없습니다." },
+          origin,
+        );
+        return;
+      }
+      send(res, 200, result, origin);
+      return;
+    }
+
     if (method === "POST" && matchRoute(url, "/trip/reroute")) {
       const body = await readBody(req);
       const result = await rerouteItinerary(body, env);
+      send(res, 200, result, origin);
+      return;
+    }
+
+    if (method === "POST" && matchRoute(url, "/trip/regenerate-day")) {
+      const body = await readBody(req);
+      const result = await regenerateDayItinerary(body, env);
       send(res, 200, result, origin);
       return;
     }
@@ -404,6 +450,9 @@ async function handle(req, res) {
         geminiApiKey: env.geminiApiKey,
         geminiModel: env.geminiModel,
         llmTimeoutMs: env.llmTimeoutMs,
+        lat: Number.isFinite(Number(body?.lat)) ? Number(body.lat) : undefined,
+        lng: Number.isFinite(Number(body?.lng)) ? Number(body.lng) : undefined,
+        nearQuery: String(body?.nearQuery || "").trim() || undefined,
       });
       send(
         res,

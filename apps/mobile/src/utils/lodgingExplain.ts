@@ -48,26 +48,31 @@ export function estimateLodgingBreakdown(
     Math.max(35, Math.min(98, (1 - Math.min(km, 8) / 8) * 100)),
   );
 
-  const defaultPerNight = domestic ? 120000 : 18000;
-  const perNight =
-    nights > 0
-      ? Math.max(1, Number(place.estimatedCost) || defaultPerNight) / nights
-      : Number(place.estimatedCost) || defaultPerNight;
+  // 가격 미상이면 중간 점수 — 가짜 1박가(120000 등)로 채우지 않음
+  const rawCost = Number(place.estimatedCost);
+  const hasCost = Number.isFinite(rawCost) && rawCost > 0;
+  const perNight = hasCost
+    ? nights > 0
+      ? rawCost / nights
+      : rawCost
+    : null;
   const priceLo = domestic ? 80000 : 8000;
   const priceHi = domestic ? 180000 : 35000;
   const priceSpan = priceHi - priceLo;
-  const priceEstimate = Math.round(
-    Math.max(
-      20,
-      Math.min(
-        95,
-        95 -
-          ((Math.min(Math.max(perNight, priceLo), priceHi) - priceLo) /
-            priceSpan) *
-            75,
-      ),
-    ),
-  );
+  const priceEstimate = hasCost
+    ? Math.round(
+        Math.max(
+          20,
+          Math.min(
+            95,
+            95 -
+              ((Math.min(Math.max(perNight!, priceLo), priceHi) - priceLo) /
+                priceSpan) *
+                75,
+          ),
+        ),
+      )
+    : 50;
 
   const realRating = Number(place.rating);
   let ratingProxy: number;

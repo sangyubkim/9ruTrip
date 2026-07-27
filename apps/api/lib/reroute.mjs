@@ -2,12 +2,14 @@ import { geminiComplete, parseJsonLoose } from "./gemini.mjs";
 import { finalizePlaceChain } from "./itinerary.mjs";
 import { enrichPlacesWithTransport } from "./transport.mjs";
 import { isKnownCityId, resolveCity } from "./cities.mjs";
+import { fetchTourPlacePool } from "./tourapi.mjs";
+import { groundDomesticPlaces } from "./place-ground.mjs";
 
 function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function normalizePlace(p, i, days, center) {
+function normalizePlace(p, i, days, center, cityId) {
   const dayIndex = Math.min(
     Math.max(0, Number(p.dayIndex ?? 0)),
     Math.max(0, days - 1),
@@ -26,6 +28,7 @@ function normalizePlace(p, i, days, center) {
     notes: p.notes ? String(p.notes) : undefined,
     dayIndex,
     order: Number.isFinite(Number(p.order)) ? Number(p.order) : i,
+    cityId: isKnownCityId(p.cityId) ? p.cityId : cityId,
     plannedTime: p.plannedTime ? String(p.plannedTime) : undefined,
     travelFromPrevMinutes:
       Number(p.travelFromPrevMinutes) >= 0
@@ -56,12 +59,8 @@ export async function rerouteItinerary(body, env) {
     Math.max(0, Number(body?.dayIndex ?? 0)),
     days - 1,
   );
-  const mode = String(body?.mode || "reroute") === "reflect" ? "reflect" : "reroute";
   const reason = String(
-    body?.reason ||
-      (mode === "reflect"
-        ? "사용자 일정 반영 요청"
-        : "사용자가 동선을 벗어남"),
+    body?.reason || "사용자가 동선을 벗어남",
   ).slice(0, 800);
   const completedIds = new Set(
     Array.isArray(body?.completedPlaceIds)
@@ -97,16 +96,11 @@ export async function rerouteItinerary(body, env) {
   const completedToday = trip.places
     .filter((p) => p.dayIndex === dayIndex && completedIds.has(String(p.id)))
     .sort((a, b) => a.order - b.order);
-  const currentDayOpen = trip.places
-    .filter((p) => p.dayIndex === dayIndex && !completedIds.has(String(p.id)))
-    .sort((a, b) => a.order - b.order);
 
   const last = completedToday[completedToday.length - 1];
   const remainingSlots = Math.max(
     2,
-    mode === "reflect"
-      ? Math.max(currentDayOpen.length, 3)
-      : 4 - completedToday.filter((p) => p.category !== "hotel").length,
+    4 - completedToday.filter((p) => p.category !== "hotel").length,
   );
 
   const fallbackNew = buildFallbackRemaining({
@@ -121,80 +115,11 @@ export async function rerouteItinerary(body, env) {
 
   let newPlaces = fallbackNew;
   let engine = "fallback";
-  let summary =
-    mode === "reflect"
-      ? `Day ${dayIndex + 1} 일정 반영 (폴백) · ${reason.slice(0, 40)}`
-      : `Day ${dayIndex + 1} 재루트 (폴백) · ${reason.slice(0, 40)}`;
+  let summary = `Day ${dayIndex + 1} 재루트 (폴백) · ${reason.slice(0, 40)}`;
 
   if (env.geminiApiKey) {
     try {
-      const prompt =
-        mode === "reflect"
-          ? `당신은 ${regionLabel} 여행 일정 반영 플래너입니다.
-사용자가 입력한 요청을 최우선으로 Day ${dayIndex + 1} 일정을 다시 구성하세요.
-이미 방문 완료된 장소는 유지하고, 남은 일정만 교체합니다.
-
-조건:
-- 도시: ${city.nameKo} (${cityId})
-- 통화: ${currency}
-- partySize: ${partySize}, nights: ${nights}, days: ${days}
-- 숙소 복귀 시각: ${lodgingReturnTime} (이 시각까지 일정을 맞출 것)
-- 사용자 일정 반영 요청(최우선): ${reason}
-- 이미 완료된 장소(유지): ${JSON.stringify(
-              completedToday.map((p) => ({
-                name: p.name,
-                category: p.category,
-                lat: p.lat,
-                lng: p.lng,
-                plannedTime: p.plannedTime,
-              })),
-            )}
-- 현재 Day 남은 일정(참고·요청에 맞게 수정/교체/추가/삭제): ${JSON.stringify(
-              currentDayOpen.map((p) => ({
-                name: p.name,
-                category: p.category,
-                lat: p.lat,
-                lng: p.lng,
-                plannedTime: p.plannedTime,
-                notes: p.notes,
-              })),
-            )}
-- 시작 좌표: ${JSON.stringify(
-              last
-                ? { lat: last.lat, lng: last.lng, name: last.name }
-                : { lat: city.center.lat, lng: city.center.lng, name: hubName },
-            )}
-- 제안 장소 수 약 ${remainingSlots}곳 (±2 가능)
-- 숙소 규칙: ${
-              days > 1 && nights > 0 && dayIndex < days - 1
-                ? `이 Day는 마지막 날이 아니므로 places에 hotel 1곳을 저녁(${lodgingReturnTime}) 복귀로 포함`
-                : "마지막 날 또는 당일치기이므로 hotel을 넣지 마세요"
-            }
-- 동선이 자연스럽고 이동 시간/비용도 현실적으로 (${currency})
-- 반드시 ${city.nameKo} 및 인근 명소만 제안
-- plannedTime은 ${lodgingReturnTime} 이전으로 배치
-
-반드시 JSON만:
-{
-  "summary": "한국어 한 줄 (요청을 어떻게 반영했는지)",
-  "places": [
-    {
-      "id": "string",
-      "name": "한국어",
-      "category": "attraction|food|hotel|transport|other",
-      "lat": number,
-      "lng": number,
-      "estimatedCost": number,
-      "notes": "짧은 팁",
-      "dayIndex": ${dayIndex},
-      "order": number,
-      "plannedTime": "HH:mm",
-      "travelFromPrevMinutes": number,
-      "travelFromPrevCost": number
-    }
-  ]
-}`
-          : `당신은 ${regionLabel} 여행 재루트 플래너입니다.
+      const prompt = `당신은 ${regionLabel} 여행 재루트 플래너입니다.
 이미 방문한 장소는 유지하고, Day ${dayIndex + 1}의 남은 일정만 새로 제안하세요.
 
 조건:
@@ -204,25 +129,26 @@ export async function rerouteItinerary(body, env) {
 - 숙소 복귀 시각: ${lodgingReturnTime}
 - 재루트 이유: ${reason}
 - 이미 완료된 장소: ${JSON.stringify(
-              completedToday.map((p) => ({
-                name: p.name,
-                lat: p.lat,
-                lng: p.lng,
-                plannedTime: p.plannedTime,
-              })),
-            )}
+        completedToday.map((p) => ({
+          name: p.name,
+          lat: p.lat,
+          lng: p.lng,
+          plannedTime: p.plannedTime,
+        })),
+      )}
 - 시작 좌표(마지막 완료지 또는 ${hubName}): ${JSON.stringify(
-              last
-                ? { lat: last.lat, lng: last.lng, name: last.name }
-                : { lat: city.center.lat, lng: city.center.lng, name: hubName },
-            )}
+        last
+          ? { lat: last.lat, lng: last.lng, name: last.name }
+          : { lat: city.center.lat, lng: city.center.lng, name: hubName },
+      )}
 - 남은 슬롯 약 ${remainingSlots}개
 - 숙소 규칙: ${
-              days > 1 && nights > 0 && dayIndex < days - 1
-                ? `이 Day는 마지막 날이 아니므로 hotel 1곳 포함(저녁 복귀)`
-                : "마지막 날 또는 당일치기이므로 hotel 제외"
-            }
-- 동선이 자연스럽고 이동 시간/비용도 현실적으로 (${currency})
+        days > 1 && nights > 0 && dayIndex < days - 1
+          ? `이 Day는 마지막 날이 아니므로 hotel 1곳 포함(저녁 복귀)`
+          : "마지막 날 또는 당일치기이므로 hotel 제외"
+      }
+- 동선이 자연스럽고 이동 시간은 차로 기준, 비용도 현실적으로 (${currency})
+- food·attraction 체류는 기본 약 60분. hotel은 저녁 숙박(1시간 방문 체류 규칙 제외)
 - 반드시 ${city.nameKo} 및 인근 국내 명소만 제안
 
 반드시 JSON만:
@@ -250,18 +176,35 @@ export async function rerouteItinerary(body, env) {
         apiKey: env.geminiApiKey,
         model: env.geminiModel,
         prompt,
-        systemHint:
-          mode === "reflect"
-            ? `${city.nameKo} itinerary reflect planner. Honor user request first. Return valid JSON only. Prefer ${currency}.`
-            : `${city.nameKo} reroute planner. Return valid JSON only. Prefer ${currency}.`,
+        systemHint: `${city.nameKo} reroute planner. Return valid JSON only. Prefer ${currency}.`,
         timeoutMs: env.llmTimeoutMs,
       });
       const parsed = parseJsonLoose(text);
       const raw = Array.isArray(parsed.places) ? parsed.places : [];
       if (raw.length > 0) {
         newPlaces = raw.map((p, i) =>
-          normalizePlace({ ...p, dayIndex }, i, days, city.center),
+          normalizePlace({ ...p, dayIndex }, i, days, city.center, cityId),
         );
+        if (domestic) {
+          const tourKey = String(env.tourApiServiceKey || "").trim();
+          let tourPool = { attraction: [], food: [], hotel: [] };
+          if (tourKey) {
+            try {
+              tourPool = await fetchTourPlacePool({
+                cityIds: [cityId],
+                serviceKey: tourKey,
+                perCategory: 12,
+              });
+            } catch {
+              tourPool = { attraction: [], food: [], hotel: [] };
+            }
+          }
+          newPlaces = await groundDomesticPlaces(newPlaces, {
+            tourPool,
+            mapsApiKey: env.googleMapsApiKey || "",
+            partySize,
+          });
+        }
         engine = eng;
         summary = String(parsed.summary || summary);
       }

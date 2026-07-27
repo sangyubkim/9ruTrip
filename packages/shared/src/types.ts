@@ -73,8 +73,6 @@ export type LodgingCandidate = {
   scoreBreakdown: LodgingScoreBreakdown;
   /** 조식 제공 여부 (없으면 정보없음) */
   breakfastIncluded?: boolean;
-  /** 조식 별도 시 인당 가격 */
-  breakfastPricePerPerson?: number;
   /** 숙박 인당 가격 (없으면 estimatedCost / partySize) */
   pricePerPerson?: number;
 };
@@ -125,10 +123,30 @@ export type ItineraryPlace = {
   aiReason?: string;
   /** 숙소 조식 제공 여부 (없으면 정보없음) */
   breakfastIncluded?: boolean;
-  /** 조식 별도 시 인당 가격 */
-  breakfastPricePerPerson?: number;
-  /** 숙박 인당 가격 (없으면 estimatedCost / partySize) */
+  /** 숙박 인당 가격 (알려진 경우만; 없으면 생략) */
   pricePerPerson?: number;
+  /** 주소 */
+  address?: string;
+  /** 전화·문의처 */
+  phone?: string;
+  /** 영업시간(맛집) / 이용시간(관광) */
+  openingHours?: string;
+  /** 휴무일 */
+  restDate?: string;
+  /** 공식 메뉴(맛집) */
+  officialMenu?: string;
+  /** 입장료(관광) */
+  admissionFee?: string;
+  /** 체크인 시각(숙소) */
+  checkInTime?: string;
+  /** 체크아웃 시각(숙소) */
+  checkOutTime?: string;
+  /** 예약 URL */
+  reservationUrl?: string;
+  /** 예약 안내 */
+  reservationInfo?: string;
+  contentId?: string;
+  googlePlaceId?: string;
 };
 
 /** 멀티시티 여행의 도시별 Day 할당 */

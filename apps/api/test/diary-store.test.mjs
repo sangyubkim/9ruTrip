@@ -21,12 +21,38 @@ test("완료 여행 다이어리를 디스크에 upsert하고 연도별로 조�
     endDate: "2026-07-03",
     status: "done",
     updatedAt: "2026-07-03T10:00:00.000Z",
-    places: [{ name: "경복궁" }, { name: "북촌" }],
+    briefing: "서울 고궁과 골목을 느긋하게 도는 일정입니다.",
+    routeOutline: "서울역 → 서울 → 서울역",
+    places: [
+      {
+        id: "p1",
+        name: "경복궁",
+        category: "attraction",
+        lat: 37.5796,
+        lng: 126.977,
+        dayIndex: 0,
+        order: 0,
+        notes: "오전 관람",
+      },
+      {
+        id: "p2",
+        name: "북촌",
+        category: "attraction",
+        lat: 37.5826,
+        lng: 126.983,
+        dayIndex: 0,
+        order: 1,
+        travelFromPrevMinutes: 18,
+      },
+    ],
   };
 
   const created = await store.upsertFromTrip(trip);
   assert.equal(created.tripId, trip.id);
   assert.equal(created.placeCount, 2);
+  assert.equal(created.places?.length, 2);
+  assert.equal(created.briefing, trip.briefing);
+  assert.equal(created.routeOutline, trip.routeOutline);
   assert.equal((await store.list("2026")).length, 1);
   assert.equal((await store.list("2025")).length, 0);
 

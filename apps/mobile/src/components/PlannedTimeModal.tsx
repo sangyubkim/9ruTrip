@@ -46,6 +46,15 @@ export function PlannedTimeModal({
     }
   }, [visible, initialTime]);
 
+  const useNow = () => {
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(
+      now.getMinutes(),
+    ).padStart(2, "0")}`;
+    setValue(hhmm);
+    setError("");
+  };
+
   const save = () => {
     const n = normalizeHhmm(value);
     if (!n) {
@@ -82,6 +91,14 @@ export function PlannedTimeModal({
             maxLength={5}
           />
           {error ? <Text style={styles.error}>{error}</Text> : null}
+          <Pressable
+            style={styles.nowBtn}
+            onPress={useNow}
+            accessibilityRole="button"
+            accessibilityLabel="현재 시각으로 채우기"
+          >
+            <Text style={styles.nowBtnText}>현재 시각으로</Text>
+          </Pressable>
           <View style={styles.row}>
             <Pressable style={styles.cancel} onPress={onClose}>
               <Text style={styles.cancelText}>취소</Text>
@@ -122,6 +139,17 @@ const styles = StyleSheet.create({
     color: "#0f172a",
   },
   error: { marginTop: 6, color: "#b91c1c", fontSize: 12 },
+  nowBtn: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    minHeight: 36,
+    borderRadius: 8,
+    backgroundColor: "#e0f2fe",
+    justifyContent: "center",
+  },
+  nowBtnText: { fontWeight: "800", fontSize: 13, color: "#0369a1" },
   row: { flexDirection: "row", gap: 8, marginTop: 14 },
   cancel: {
     flex: 1,
