@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import type { TourCourseWaypoint } from "../api/trip";
@@ -11,17 +11,24 @@ import { radius, space } from "../theme/tokens";
 type Props = {
   cityId: MvpCityId;
   waypoints: TourCourseWaypoint[];
+  /** 기본 200. fullscreen 모달에서는 "flex" */
+  height?: number | "flex";
 };
 
 /**
- * 코스 상세 미리보기용 단일 지도 (마커 + 순서 polyline).
- * 목록 카드에는 마운트하지 않음.
+ * 코스 미리보기/동선 확인용 지도.
+ * 좌표 있는 경유지에 번호 마커 + polyline. canMountNativeMap 없으면 stub.
  */
-export function CoursePreviewMap({ cityId, waypoints }: Props) {
+export function CoursePreviewMap({
+  cityId,
+  waypoints,
+  height = 200,
+}: Props) {
   const { colors, isDark } = useTheme();
   const mapRef = useRef<MapView>(null);
   const city = getCityMeta(cityId);
   const mapCfg = getMapViewConfig(cityId);
+  const fillFlex = height === "flex";
 
   const coords = useMemo(
     () =>
@@ -63,34 +70,77 @@ export function CoursePreviewMap({ cityId, waypoints }: Props) {
     [coords],
   );
 
+  const fitRoute = () => {
+    if (!mapRef.current || coords.length === 0) return;
+    if (coords.length === 1) {
+      mapRef.current.animateToRegion(
+        {
+          latitude: Number(coords[0].lat),
+          longitude: Number(coords[0].lng),
+          latitudeDelta: 0.025,
+          longitudeDelta: 0.025,
+        },
+        0,
+      );
+      return;
+    }
+    mapRef.current.fitToCoordinates(polylineCoords, {
+      animated: false,
+      edgePadding: { top: 72, right: 40, bottom: 72, left: 40 },
+    });
+  };
+
+  useEffect(() => {
+    fitRoute();
+  }, [coords.length, polylineCoords]);
+
+  const pinBg = isDark ? "#0284c7" : "#0369a1";
+  const lineColor = isDark ? "#7dd3fc" : "#0369a1";
+
   if (mapCfg.providerId === "naver" || !mapCfg.canMountNativeMap) {
     return (
-      <View style={[styles.stub, { borderColor: colors.mapBorder }]}>
+      <View
+        style={[
+          styles.stub,
+          fillFlex ? styles.flexFill : { minHeight: typeof height === "number" ? height : 140 },
+          { borderColor: colors.mapBorder, backgroundColor: colors.bgElevated },
+        ]}
+      >
         <Text style={[styles.stubText, { color: colors.accent }]}>
           {mapCfg.providerId === "naver"
             ? `Naver Maps 스캐폴드 · 경유 ${coords.length}곳`
             : `지도 키 없음 · 경유 ${coords.length}곳`}
         </Text>
-        {coords.slice(0, 8).map((p, i) => (
-          <Text
-            key={`${p.contentId || p.name}-${i}`}
-            style={[styles.stubItem, { color: colors.text }]}
-            numberOfLines={1}
-          >
-            {p.order || i + 1}. {p.name}
+        <Text style={[styles.stubHint, { color: colors.textMuted }]}>
+          {mapCfg.stubMessage ??
+            "좌표가 있는 경유지만 번호 순서로 표시합니다."}
+        </Text>
+        {coords.map((p, i) => {
+          const n = p.order || i + 1;
+          return (
+            <Text
+              key={`${p.contentId || p.name}-${i}`}
+              style={[styles.stubItem, { color: colors.text }]}
+              numberOfLines={1}
+            >
+              {n}. {p.name}
+            </Text>
+          );
+        })}
+        {coords.length === 0 ? (
+          <Text style={[styles.stubHint, { color: colors.textMuted }]}>
+            표시할 좌표가 없습니다.
           </Text>
-        ))}
+        ) : null}
       </View>
     );
   }
-
-  const pinColor = isDark ? "#38bdf8" : "#0284c7";
-  const lineColor = isDark ? "#7dd3fc" : "#0369a1";
 
   return (
     <View
       style={[
         styles.wrap,
+        fillFlex ? styles.flexFill : { height: typeof height === "number" ? height : 200 },
         { borderColor: colors.mapBorder, backgroundColor: colors.accentMuted },
       ]}
       accessibilityLabel="추천 코스 지도"
@@ -102,25 +152,36 @@ export function CoursePreviewMap({ cityId, waypoints }: Props) {
         initialRegion={region}
         rotateEnabled={false}
         pitchEnabled={false}
+        onMapReady={fitRoute}
       >
         {polylineCoords.length > 1 ? (
           <Polyline
             coordinates={polylineCoords}
             strokeColor={lineColor}
             strokeWidth={3}
+            lineCap="round"
+            lineJoin="round"
           />
         ) : null}
-        {coords.map((p, i) => (
-          <Marker
-            key={`${p.contentId || p.name}-${i}`}
-            coordinate={{
-              latitude: Number(p.lat),
-              longitude: Number(p.lng),
-            }}
-            title={`${p.order || i + 1}. ${p.name}`}
-            pinColor={pinColor}
-          />
-        ))}
+        {coords.map((p, i) => {
+          const n = p.order || i + 1;
+          return (
+            <Marker
+              key={`${p.contentId || p.name}-${i}`}
+              coordinate={{
+                latitude: Number(p.lat),
+                longitude: Number(p.lng),
+              }}
+              title={`${n}. ${p.name}`}
+              description={p.address || p.overview || undefined}
+              accessibilityLabel={`${n}번 ${p.name}`}
+            >
+              <View style={[styles.pin, { backgroundColor: pinBg }]}>
+                <Text style={styles.pinText}>{n}</Text>
+              </View>
+            </Marker>
+          );
+        })}
       </MapView>
     </View>
   );
@@ -128,19 +189,34 @@ export function CoursePreviewMap({ cityId, waypoints }: Props) {
 
 const styles = StyleSheet.create({
   wrap: {
-    height: 200,
     borderRadius: radius.md,
     borderWidth: 1,
     overflow: "hidden",
   },
-  map: { flex: 1 },
+  flexFill: { flex: 1 },
+  map: { flex: 1, width: "100%" },
   stub: {
-    minHeight: 140,
     borderRadius: radius.md,
     borderWidth: 1,
     padding: space.md,
     gap: 4,
   },
   stubText: { fontSize: 13, fontWeight: "800", marginBottom: 4 },
+  stubHint: { fontSize: 12, lineHeight: 18, marginBottom: 4 },
   stubItem: { fontSize: 13, fontWeight: "600" },
+  pin: {
+    minWidth: 28,
+    minHeight: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  pinText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900",
+  },
 });

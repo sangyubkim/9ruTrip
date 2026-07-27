@@ -291,6 +291,7 @@ function AppInner() {
           mainRequest: input.userRequest,
           briefing,
           routeOutline,
+          routeBriefing: result.routeBriefing,
           seedCourse: result.seedCourse,
         });
         // 구 API/AI가 숙소를 빠뜨려도 마지막 날 제외 Day에 hotel 보정
@@ -318,6 +319,7 @@ function AppInner() {
           cities,
           briefing,
           routeOutline,
+          routeBriefing: result.routeBriefing,
           seedCourse: result.seedCourse,
           startAddress: input.startAddress,
           startLat: input.startLat,

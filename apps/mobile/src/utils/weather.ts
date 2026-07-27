@@ -1,80 +1,106 @@
 /** Open-Meteo (키 불필요) + 시간대 혼잡 휴리스틱 */
 
+/** 광역시·특별시 축약명 (역지오코딩 토큰 매칭용) */
+const METRO_SHORT_NAMES = new Set([
+  "서울",
+  "부산",
+  "대구",
+  "인천",
+  "광주",
+  "대전",
+  "울산",
+  "세종",
+]);
+
 /**
  * 네이버 날씨 검색용 장소 라벨.
- * 상세주소(동/읍/면/리/로/길/번지)는 제거하고 시·군·구 단위까지만 남긴다.
+ * 상세주소(동/읍/면/리/로/길/번지)와 조각 음절은 제거하고 시·군·구만 남긴다.
+ * 임의 토큰을 구 앞에 붙이지 않는다 (예: "난 해운대구" 방지).
  *
  * 예:
  * - "서울특별시 강남구 역삼동 …" → "서울 강남구"
+ * - "부산광역시 해운대구 우동 123-4" → "부산 해운대구"
+ * - "수영로 난 해운대구 부산" → "부산 해운대구"
  * - "경기도 하남시 감북동 …" → "하남시"
  * - "경기도 성남시 분당구 …" → "성남시 분당구"
- * - "강원도 정선군 …" → "정선군"
  * - "하남" / "서울" → 그대로
  */
 export function toNaverWeatherPlaceLabel(addressOrCity: string): string {
   const input = String(addressOrCity ?? "").replace(/\s+/g, " ").trim();
   if (!input) return "";
 
-  // 광역 표기 축약: 서울특별시 → 서울
+  // 이미 도시명(nameKo)만 있으면 그대로
+  if (/^[가-힣]{2,10}$/.test(input)) {
+    return input;
+  }
+
+  const metroFromSuffix =
+    input.match(/([가-힣]+)(?:특별자치시|특별시|광역시)/)?.[1] ?? "";
+
   const normalized = input
     .replace(/([가-힣]+)특별자치시/g, "$1")
     .replace(/([가-힣]+)특별시/g, "$1")
     .replace(/([가-힣]+)광역시/g, "$1");
 
-  const adminMatches = normalized.match(/[가-힣]+(?:시|군|구)/g) ?? [];
-  // 도 단위(경기도 등)는 시|군|구 패턴에 안 걸림
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  const adminUnits: string[] = [];
+  let metroShort = metroFromSuffix;
 
-  if (adminMatches.length > 0) {
-    const lastGuGunIdx = (() => {
-      for (let i = adminMatches.length - 1; i >= 0; i -= 1) {
-        if (/[군구]$/.test(adminMatches[i]!)) return i;
+  for (const token of tokens) {
+    if (/(?:특별자치)?도$/.test(token)) continue;
+    // 토큰 전체가 시·군·구일 때만 채택 (도로명 부분일치·조각 음절 제외)
+    if (/^[가-힣]+(?:시|군|구)$/.test(token)) {
+      adminUnits.push(token);
+      continue;
+    }
+    if (METRO_SHORT_NAMES.has(token)) {
+      metroShort = metroShort || token;
+    }
+    // 동/읍/면/리/로/길/번지/숫자/고아 음절(난 등)은 무시
+  }
+
+  if (adminUnits.length > 0) {
+    let lastGuGunIdx = -1;
+    for (let i = adminUnits.length - 1; i >= 0; i -= 1) {
+      if (/[군구]$/.test(adminUnits[i]!)) {
+        lastGuGunIdx = i;
+        break;
       }
-      return -1;
-    })();
+    }
 
     if (lastGuGunIdx >= 0) {
-      const district = adminMatches[lastGuGunIdx]!;
+      const district = adminUnits[lastGuGunIdx]!;
       const prevAdmin =
-        lastGuGunIdx > 0 ? adminMatches[lastGuGunIdx - 1]! : undefined;
+        lastGuGunIdx > 0 ? adminUnits[lastGuGunIdx - 1] : undefined;
       if (prevAdmin && /시$/.test(prevAdmin)) {
         return `${prevAdmin} ${district}`;
       }
-      // "서울 강남구"처럼 축약 광역명이 구 앞에 있는 경우
-      const districtAt = normalized.indexOf(district);
-      const before = normalized
-        .slice(0, Math.max(0, districtAt))
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean)
-        .filter((t) => !/(?:특별자치)?도$/.test(t));
-      const prev = before[before.length - 1];
-      if (
-        prev &&
-        prev !== district &&
-        !/(?:동|읍|면|리|로|길)$/.test(prev) &&
-        !/\d/.test(prev)
-      ) {
-        return `${prev} ${district}`;
+      if (metroShort && metroShort !== district) {
+        return `${metroShort} ${district}`;
       }
       return district;
     }
 
-    // 구/군 없이 시만 있는 경우 → 마지막 시 (하남시, 제주시)
-    const cities = adminMatches.filter((a) => /시$/.test(a));
+    const cities = adminUnits.filter((a) => /시$/.test(a));
     if (cities.length) return cities[cities.length - 1]!;
-    return adminMatches[adminMatches.length - 1]!;
+    return adminUnits[adminUnits.length - 1]!;
   }
 
-  // 시·군·구가 없으면 도시명(서울, 하남)으로 보고 상세 토큰 이전까지만
-  const kept: string[] = [];
-  for (const token of normalized.split(" ").filter(Boolean)) {
+  if (metroShort) return metroShort;
+
+  for (const token of tokens) {
     if (/(?:특별자치)?도$/.test(token)) continue;
-    if (/(?:동|읍|면|리|로|길)$/.test(token) || /\d/.test(token) || /번지/.test(token)) {
+    if (
+      /(?:동|읍|면|리|로|길)$/.test(token) ||
+      /\d/.test(token) ||
+      /번지/.test(token)
+    ) {
       break;
     }
-    kept.push(token);
+    if (/^[가-힣]{2,10}$/.test(token)) return token;
   }
-  return (kept[0] ?? normalized.split(" ")[0] ?? "").trim();
+
+  return "";
 }
 
 export type WeatherSnapshot = {
@@ -228,5 +254,74 @@ export async function fetchDateRangeWeather(
       weatherLabel,
       label: parts.join(" · "),
     };
+  });
+}
+
+export type CityWeatherTarget = {
+  cityId: string;
+  nameKo: string;
+  lat: number;
+  lng: number;
+};
+
+export type CityDateRangeWeather = {
+  cityId: string;
+  nameKo: string;
+  days: DailyWeather[];
+  error: string | null;
+};
+
+const WEATHER_FETCH_CONCURRENCY = 3;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return [];
+  const limit = Math.max(1, Math.min(concurrency, list.length));
+  const results = new Array<R>(list.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < list.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(list[index]!, index);
+    }
+  }
+  await Promise.all(Array.from({ length: limit }, () => worker()));
+  return results;
+}
+
+/** 여러 도시 일별 예보 — 동시성 제한(기본 3) */
+export async function fetchCitiesDateRangeWeather(
+  cities: CityWeatherTarget[],
+  startDate: string,
+  endDate: string,
+  concurrency = WEATHER_FETCH_CONCURRENCY,
+): Promise<CityDateRangeWeather[]> {
+  return mapWithConcurrency(cities, concurrency, async (city) => {
+    try {
+      const days = await fetchDateRangeWeather(
+        city.lat,
+        city.lng,
+        startDate,
+        endDate,
+      );
+      return {
+        cityId: city.cityId,
+        nameKo: city.nameKo,
+        days,
+        error: days.length ? null : "해당 기간 예보를 찾지 못했습니다.",
+      };
+    } catch {
+      return {
+        cityId: city.cityId,
+        nameKo: city.nameKo,
+        days: [],
+        error: "날씨 예보를 불러오지 못했습니다.",
+      };
+    }
   });
 }

@@ -166,6 +166,48 @@ export const lodgingCandidateSchema = z.object({
   contentId: z.string().optional(),
 });
 
+export const routeBriefingFestivalSchema = z.object({
+  name: z.string(),
+  cityId: z.string().optional(),
+  cityName: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+});
+
+export const routeBriefingPreferenceSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  value: z.number(),
+});
+
+export const routeBriefingSchema = z.object({
+  routeSummary: z.string(),
+  dayAssignments: z.string().optional(),
+  durationLabel: z.string().optional(),
+  requests: z
+    .object({
+      mainRequest: z.string().optional(),
+      extraRequest: z.string().optional(),
+      preferences: z.array(routeBriefingPreferenceSchema).optional(),
+      reflected: z.boolean().optional(),
+    })
+    .optional(),
+  festivals: z.array(routeBriefingFestivalSchema).optional(),
+  festivalsReflected: z.boolean().optional(),
+  seedCourse: z
+    .object({
+      title: z.string(),
+      source: z.string().optional(),
+      stopCount: z.number().optional(),
+      routeSummary: z.string().optional(),
+      usedAsSeed: z.boolean().optional(),
+    })
+    .nullable()
+    .optional(),
+  courseReflected: z.boolean().optional(),
+  scheduleRule: z.string().optional(),
+});
+
 export const itineraryResponseSchema = z.object({
   places: z.array(itineraryPlaceSchema),
   plannedBudget: z.number(),
@@ -179,6 +221,17 @@ export const itineraryResponseSchema = z.object({
   transportEngine: z.string().optional(),
   briefing: z.string().optional(),
   routeOutline: z.string().optional(),
+  /** 구조화된 경로 구성·반영 내역 (브리핑 화면용) */
+  routeBriefing: routeBriefingSchema.optional(),
+  seedCourse: z
+    .object({
+      contentId: z.string(),
+      title: z.string(),
+      source: z.string().optional(),
+      stopCount: z.number().optional(),
+      routeSummary: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type ItineraryResponse = z.infer<typeof itineraryResponseSchema>;

@@ -15,7 +15,6 @@ import {
   type FocusEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CoursePreviewMap } from "../components/CoursePreviewMap";
 import { DateRangeCalendar } from "../components/DateRangeCalendar";
 import { ProvinceCityPicker } from "../components/ProvinceCityPicker";
 import {
@@ -29,12 +28,9 @@ import { useTheme } from "../theme/ThemeContext";
 import { radius, space } from "../theme/tokens";
 import {
   fetchFestivals,
-  fetchTourCourseDetail,
-  fetchTourCourses,
   type Festival,
   type PreferredFestival,
   type TourCourseDetail,
-  type TourCourseListItem,
   type TourCourseSeed,
 } from "../api/trip";
 import { formatDistanceKm, haversineKm } from "../utils/geo";
@@ -45,10 +41,12 @@ import {
 } from "../utils/deviceLocation";
 import { openNaverSearch } from "../utils/naverSearch";
 import {
-  fetchDateRangeWeather,
+  fetchCitiesDateRangeWeather,
   toNaverWeatherPlaceLabel,
-  type DailyWeather,
+  type CityDateRangeWeather,
+  type CityWeatherTarget,
 } from "../utils/weather";
+import { TourCourseScreen } from "./TourCourseScreen";
 
 const OUTBOUND_TRANSPORT_OPTIONS: {
   id: OutboundTransportMode;
@@ -222,16 +220,15 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [festivals, setFestivals] = useState<Festival[]>([]);
   const [selectedFestivals, setSelectedFestivals] = useState<Festival[]>([]);
+  /** 축제 선택으로만 자동 추가된 도시 — 수동 선택 도시와 구분 */
+  const [festivalAddedCityIds, setFestivalAddedCityIds] = useState<MvpCityId[]>([]);
   const [festivalVisible, setFestivalVisible] = useState(false);
   const [festivalLoading, setFestivalLoading] = useState(false);
-  const [courseOpen, setCourseOpen] = useState(false);
-  const [courses, setCourses] = useState<TourCourseListItem[]>([]);
-  const [coursesLoading, setCoursesLoading] = useState(false);
-  const [courseDetailLoading, setCourseDetailLoading] = useState(false);
+  const [courseScreenOpen, setCourseScreenOpen] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<TourCourseDetail | null>(
     null,
   );
-  const [rangeWeather, setRangeWeather] = useState<DailyWeather[]>([]);
+  const [cityWeathers, setCityWeathers] = useState<CityDateRangeWeather[]>([]);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
 
@@ -296,7 +293,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const clearDateRange = () => {
     setStartDate(undefined);
     setEndDate(undefined);
-    setRangeWeather([]);
+    setCityWeathers([]);
     setWeatherError(null);
     setSelectedFestivals([]);
     setFestivals([]);
@@ -307,22 +304,38 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   );
   const datesReady = Boolean(startDate && endDate);
   const travelCityId = selected[0];
-  const weatherCityId = travelCityId ?? departureCityId;
-  const weatherCityName = weatherCityId
-    ? CITIES[weatherCityId]?.nameKo
-    : undefined;
-  const weatherCoords = (() => {
-    if (travelCityId && CITIES[travelCityId]?.center) {
-      return CITIES[travelCityId].center;
+  /** 여행지 우선, 없으면 출발 도시만 — GPS는 날씨 기준으로 쓰지 않음 */
+  const weatherTargets: CityWeatherTarget[] = (() => {
+    if (selected.length > 0) {
+      return selected.flatMap((id) => {
+        const city = CITIES[id];
+        if (!city?.center) return [];
+        return [
+          {
+            cityId: id,
+            nameKo: city.nameKo,
+            lat: city.center.lat,
+            lng: city.center.lng,
+          },
+        ];
+      });
     }
-    if (departureCityId && CITIES[departureCityId]?.center) {
-      return CITIES[departureCityId].center;
+    if (departureCityId) {
+      const city = CITIES[departureCityId];
+      if (city?.center) {
+        return [
+          {
+            cityId: departureCityId,
+            nameKo: city.nameKo,
+            lat: city.center.lat,
+            lng: city.center.lng,
+          },
+        ];
+      }
     }
-    if (startLat != null && startLng != null) {
-      return { lat: startLat, lng: startLng };
-    }
-    return undefined;
+    return [];
   })();
+  const weatherTargetKey = weatherTargets.map((t) => t.cityId).join(",");
   const canLoadCourses =
     datesReady && Boolean(travelCityId) && isDomesticCityId(travelCityId);
 
@@ -330,38 +343,58 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
 
   const loadRangeWeather = useCallback(
     async (mode: "auto" | "refresh" = "auto") => {
-      if (!datesReady || !startDate || !endDate || !weatherCoords) {
-        setRangeWeather([]);
+      if (!datesReady || !startDate || !endDate || !weatherTargets.length) {
+        setCityWeathers([]);
         setWeatherError(null);
         setWeatherLoading(false);
         return;
       }
       const reqId = ++weatherReqId.current;
+      const targets = weatherTargets;
       setWeatherLoading(true);
       if (mode === "auto") {
         setWeatherError(null);
       }
       try {
-        const days = await fetchDateRangeWeather(
-          weatherCoords.lat,
-          weatherCoords.lng,
+        const results = await fetchCitiesDateRangeWeather(
+          targets,
           startDate,
           endDate,
         );
         if (reqId !== weatherReqId.current) return;
-        setRangeWeather(days);
-        setWeatherError(
-          days.length ? null : "해당 기간 예보를 찾지 못했습니다.",
-        );
+        if (mode === "refresh") {
+          setCityWeathers((prev) =>
+            results.map((next) => {
+              if (next.days.length) return next;
+              const kept = prev.find((p) => p.cityId === next.cityId);
+              if (kept?.days.length) {
+                return {
+                  ...kept,
+                  error:
+                    "날씨 예보를 불러오지 못했습니다. 이전 정보를 유지합니다.",
+                };
+              }
+              return next;
+            }),
+          );
+          const anyFail = results.some((r) => !r.days.length);
+          setWeatherError(
+            anyFail
+              ? "일부 도시 날씨를 불러오지 못했습니다. 이전 정보를 유지합니다."
+              : null,
+          );
+        } else {
+          setCityWeathers(results);
+          setWeatherError(null);
+        }
       } catch {
         if (reqId !== weatherReqId.current) return;
         if (mode === "refresh") {
-          // 갱신 실패 시 이전 예보를 유지하고 소프트한 안내만 표시
           setWeatherError(
             "날씨 예보를 불러오지 못했습니다. 이전 정보를 유지합니다.",
           );
         } else {
-          setRangeWeather([]);
+          setCityWeathers([]);
           setWeatherError("날씨 예보를 불러오지 못했습니다.");
         }
       } finally {
@@ -370,13 +403,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
         }
       }
     },
-    [
-      datesReady,
-      startDate,
-      endDate,
-      weatherCoords?.lat,
-      weatherCoords?.lng,
-    ],
+    [datesReady, startDate, endDate, weatherTargetKey],
   );
 
   useEffect(() => {
@@ -386,64 +413,22 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
     };
   }, [loadRangeWeather]);
 
-  const loadCourses = async () => {
-    if (!canLoadCourses || !travelCityId) return;
-    setCoursesLoading(true);
-    try {
-      const list = await fetchTourCourses({
-        cityId: travelCityId,
-        limit: 8,
-        lat: CITIES[travelCityId]?.center.lat,
-        lng: CITIES[travelCityId]?.center.lng,
-      });
-      setCourses(list);
-      if (!list.length) {
-        Alert.alert("추천 코스", "이 지역 추천 코스가 없습니다");
-      }
-    } catch (e) {
-      const raw = e instanceof Error ? e.message : "";
-      const msg =
-        !raw || /^not found$/i.test(raw.trim())
-          ? "이 지역 추천 코스가 없습니다"
-          : raw;
-      Alert.alert("추천 코스", msg);
-    } finally {
-      setCoursesLoading(false);
-    }
-  };
-
-  const selectCourse = async (item: TourCourseListItem) => {
-    if (!travelCityId) return;
-    if (selectedCourse?.contentId === item.contentId) {
-      setSelectedCourse(null);
-      return;
-    }
-    setCourseDetailLoading(true);
-    try {
-      const detail = await fetchTourCourseDetail({
-        contentId: item.contentId,
-        cityId: travelCityId,
-      });
-      setSelectedCourse(detail);
-    } catch (e) {
-      Alert.alert(
-        "코스 상세",
-        e instanceof Error ? e.message : "경유지를 불러오지 못했습니다.",
-      );
-    } finally {
-      setCourseDetailLoading(false);
-    }
-  };
-
   useEffect(() => {
     setSelectedCourse(null);
-    setCourses([]);
+    setCourseScreenOpen(false);
   }, [travelCityId]);
 
-  const applyCitySelection = (nextIds: MvpCityId[], onCancel?: () => void) => {
+  const applyCitySelection = (
+    nextIds: MvpCityId[],
+    onCancel?: () => void,
+    onApplied?: () => void,
+  ) => {
     const added = nextIds.find((id) => !selected.includes(id));
     if (!added) {
       setSelected(nextIds);
+      // 수동으로 제거된 도시는 축제 자동추가 추적에서도 제외
+      setFestivalAddedCityIds((ids) => ids.filter((id) => nextIds.includes(id)));
+      onApplied?.();
       return;
     }
     if (selected.length >= MAX_SELECTED_CITIES) {
@@ -460,6 +445,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       : undefined;
     if (!farCity) {
       setSelected(nextIds);
+      onApplied?.();
       return;
     }
     Alert.alert(
@@ -467,7 +453,13 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
       "선택한 도시가 기존 여행지와 100km 이상 떨어져 있습니다. 그래도 추가할까요?",
       [
         { text: "취소", style: "cancel", onPress: onCancel },
-        { text: "추가", onPress: () => setSelected(nextIds) },
+        {
+          text: "추가",
+          onPress: () => {
+            setSelected(nextIds);
+            onApplied?.();
+          },
+        },
       ],
     );
   };
@@ -499,14 +491,33 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
   const toggleFestival = (festival: Festival) => {
     const exists = selectedFestivals.some((item) => item.id === festival.id);
     if (exists) {
-      setSelectedFestivals((items) => items.filter((item) => item.id !== festival.id));
+      const remaining = selectedFestivals.filter((item) => item.id !== festival.id);
+      setSelectedFestivals(remaining);
+      const cityId = festival.cityId;
+      if (cityId === "unknown") return;
+      const stillRequired = remaining.some((item) => item.cityId === cityId);
+      const wasFestivalAdded = festivalAddedCityIds.includes(cityId);
+      // 축제만으로 추가된 도시이고, 남은 축제도 해당 도시를 쓰지 않으면 여행지에서 제거
+      if (!stillRequired && wasFestivalAdded) {
+        setSelected((ids) => ids.filter((id) => id !== cityId));
+        setFestivalAddedCityIds((ids) => ids.filter((id) => id !== cityId));
+      }
       return;
     }
     setSelectedFestivals((items) => [...items, festival]);
     if (festival.cityId !== "unknown" && !selected.includes(festival.cityId)) {
-      applyCitySelection([...selected, festival.cityId], () => {
-        setSelectedFestivals((items) => items.filter((item) => item.id !== festival.id));
-      });
+      const cityId = festival.cityId;
+      applyCitySelection(
+        [...selected, cityId],
+        () => {
+          setSelectedFestivals((items) => items.filter((item) => item.id !== festival.id));
+        },
+        () => {
+          setFestivalAddedCityIds((ids) =>
+            ids.includes(cityId) ? ids : [...ids, cityId],
+          );
+        },
+      );
     }
   };
 
@@ -611,6 +622,17 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
     primaryFg: colors.primaryFg,
     chipBg: colors.chipBg,
   };
+
+  if (courseScreenOpen && canLoadCourses && travelCityId) {
+    return (
+      <TourCourseScreen
+        cityId={travelCityId}
+        selectedCourse={selectedCourse}
+        onBack={() => setCourseScreenOpen(false)}
+        onSelect={setSelectedCourse}
+      />
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -747,7 +769,11 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
             <View style={styles.weatherHeader}>
               <Text style={[styles.weatherTitle, { color: colors.text }]}>
                 여행 기간 날씨
-                {weatherCityName ? ` · ${weatherCityName}` : ""}
+                {selected.length > 0
+                  ? ` · 여행지 ${selected.length}곳`
+                  : weatherTargets[0]
+                    ? ` · ${weatherTargets[0].nameKo}`
+                    : ""}
               </Text>
               <Pressable
                 style={[
@@ -756,10 +782,10 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
                     borderColor: colors.border,
                     backgroundColor: colors.chipBg,
                   },
-                  (weatherLoading || !weatherCoords) && { opacity: 0.45 },
+                  (weatherLoading || !weatherTargets.length) && { opacity: 0.45 },
                 ]}
                 onPress={() => void loadRangeWeather("refresh")}
-                disabled={weatherLoading || !weatherCoords}
+                disabled={weatherLoading || !weatherTargets.length}
                 accessibilityRole="button"
                 accessibilityLabel="날씨 갱신"
               >
@@ -774,15 +800,73 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
                 )}
               </Pressable>
             </View>
-            {rangeWeather.length ? (
-              <View style={styles.weatherDayList}>
-                {rangeWeather.map((day) => (
-                  <Text
-                    key={day.date}
-                    style={[styles.weatherDayText, { color: colors.textSecondary }]}
-                  >
-                    {day.label}
-                  </Text>
+            {cityWeathers.length ? (
+              <View style={styles.weatherCityList}>
+                {cityWeathers.map((block) => (
+                  <View key={block.cityId} style={styles.weatherCityBlock}>
+                    <Text
+                      style={[styles.weatherCityName, { color: colors.text }]}
+                    >
+                      {block.nameKo}
+                    </Text>
+                    {block.days.length ? (
+                      <View style={styles.weatherDayList}>
+                        {block.days.map((day) => (
+                          <Text
+                            key={day.date}
+                            style={[
+                              styles.weatherDayText,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            {day.label}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text
+                        style={[styles.fieldHint, { color: colors.textMuted }]}
+                      >
+                        {block.error ?? "예보를 표시할 수 없습니다."}
+                      </Text>
+                    )}
+                    {block.error && block.days.length ? (
+                      <Text
+                        style={[styles.fieldHint, { color: colors.textMuted }]}
+                      >
+                        {block.error}
+                      </Text>
+                    ) : null}
+                    {startDate ? (
+                      <Pressable
+                        style={[
+                          styles.weatherNaverBtn,
+                          {
+                            borderColor: colors.accent,
+                            backgroundColor: colors.accentMuted,
+                          },
+                        ]}
+                        onPress={() => {
+                          const place =
+                            toNaverWeatherPlaceLabel(block.nameKo) ||
+                            block.nameKo ||
+                            "여행지";
+                          void openNaverSearch(`${place} ${startDate} 날씨`);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${block.nameKo} 네이버에서 날씨 보기`}
+                      >
+                        <Text
+                          style={[
+                            styles.weatherNaverText,
+                            { color: colors.accent },
+                          ]}
+                        >
+                          네이버에서 날씨 보기
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 ))}
               </View>
             ) : weatherLoading ? (
@@ -793,47 +877,15 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
               </Text>
             ) : (
               <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
-                {weatherCoords
+                {weatherTargets.length
                   ? "예보를 표시할 수 없습니다."
-                  : "출발 도시 또는 위치를 지정하면 예보를 불러옵니다."}
+                  : "출발 도시 또는 여행지를 선택하면 예보를 불러옵니다."}
               </Text>
             )}
-            {weatherError && rangeWeather.length ? (
+            {weatherError && cityWeathers.length ? (
               <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
                 {weatherError}
               </Text>
-            ) : null}
-            {startDate ? (
-              <Pressable
-                style={[
-                  styles.weatherNaverBtn,
-                  {
-                    borderColor: colors.accent,
-                    backgroundColor: colors.accentMuted,
-                  },
-                ]}
-                onPress={() => {
-                  // 상세주소는 네이버 날씨 검색이 비므로 시·군·구까지만 사용
-                  const city = weatherCityName?.trim() || "";
-                  const fromAddress = toNaverWeatherPlaceLabel(startAddress);
-                  const addrHasCity =
-                    Boolean(city) &&
-                    Boolean(fromAddress) &&
-                    (fromAddress.includes(city) ||
-                      fromAddress.split(/\s+/)[0] === city);
-                  const place =
-                    (addrHasCity
-                      ? fromAddress
-                      : city || fromAddress) || "여행지";
-                  void openNaverSearch(`${place} ${startDate} 날씨`);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="네이버에서 날씨 보기"
-              >
-                <Text style={[styles.weatherNaverText, { color: colors.accent }]}>
-                  네이버에서 날씨 보기
-                </Text>
-              </Pressable>
             ) : null}
           </View>
         ) : null}
@@ -889,152 +941,55 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
           </Text>
         ) : null}
 
-        <Pressable
+        <View
           style={[
             styles.courseToggle,
             {
-              borderColor: colors.border,
-              backgroundColor: colors.bgElevated,
+              borderColor: selectedCourse ? colors.primary : colors.border,
+              backgroundColor: selectedCourse
+                ? colors.accentMuted
+                : colors.bgElevated,
             },
             !canLoadCourses && { opacity: 0.5 },
           ]}
-          onPress={() => {
-            if (!canLoadCourses) {
-              Alert.alert(
-                "추천 코스",
-                "국내 여행지를 선택한 뒤 열 수 있습니다. (선택 사항)",
-              );
-              return;
-            }
-            const next = !courseOpen;
-            setCourseOpen(next);
-            if (next && courses.length === 0 && !coursesLoading) {
-              void loadCourses();
-            }
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="한국관광공사 추천 코스 선택"
         >
-          <Text style={[styles.courseToggleTitle, { color: colors.text }]}>
-            {courseOpen ? "▾" : "▸"} 한국관광공사 추천 코스 (선택)
-          </Text>
-          <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
-            AI 일정의 경유지 시드 · 최종 스케줄은 AI가 구성합니다
-          </Text>
-        </Pressable>
-
-        {courseOpen && canLoadCourses ? (
-          <View style={styles.coursePanel}>
-            {coursesLoading ? (
-              <ActivityIndicator color={colors.accent} />
-            ) : (
-              courses.map((course) => {
-                const on = selectedCourse?.contentId === course.contentId;
-                return (
-                  <Pressable
-                    key={course.contentId}
-                    style={[
-                      styles.courseCard,
-                      {
-                        borderColor: on ? colors.primary : colors.border,
-                        backgroundColor: on ? colors.accentMuted : colors.bgElevated,
-                      },
-                    ]}
-                    onPress={() => void selectCourse(course)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${course.title} 코스 선택`}
-                  >
-                    <View style={styles.courseCardHeader}>
-                      <Text
-                        style={[styles.courseCardTitle, { color: colors.text }]}
-                        numberOfLines={2}
-                      >
-                        {course.title}
-                      </Text>
-                      <View
-                        style={[
-                          styles.courseBadge,
-                          { backgroundColor: colors.chipBg },
-                        ]}
-                      >
-                        <Text
-                          style={[styles.courseBadgeText, { color: colors.chipFg }]}
-                        >
-                          관광공사
-                        </Text>
-                      </View>
-                    </View>
-                    {course.overview ? (
-                      <Text
-                        style={[styles.courseOverview, { color: colors.textMuted }]}
-                        numberOfLines={2}
-                      >
-                        {course.overview}
-                      </Text>
-                    ) : null}
-                    <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
-                      {course.address || CITIES[travelCityId]?.nameKo || ""}
-                      {typeof course.stopCount === "number"
-                        ? ` · 경유 ${course.stopCount}곳`
-                        : ""}
-                    </Text>
-                  </Pressable>
+          <Pressable
+            onPress={() => {
+              if (!canLoadCourses) {
+                Alert.alert(
+                  "추천 코스",
+                  "국내 여행지를 선택한 뒤 열 수 있습니다. (선택 사항)",
                 );
-              })
-            )}
-
-            {courseDetailLoading ? (
-              <ActivityIndicator color={colors.accent} style={{ marginTop: space.sm }} />
-            ) : null}
-
-            {selectedCourse ? (
-              <View
-                style={[
-                  styles.coursePreview,
-                  {
-                    borderColor: colors.border,
-                    backgroundColor: colors.bgElevated,
-                  },
-                ]}
-              >
-                <Text style={[styles.courseCardTitle, { color: colors.text }]}>
-                  선택 코스 미리보기
-                </Text>
-                <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
-                  {selectedCourse.routeSummary ||
-                    (selectedCourse.waypoints || [])
-                      .map((w) => w.name)
-                      .filter(Boolean)
-                      .join(" → ") ||
-                    "경유지 정보 없음"}
-                </Text>
-                {(selectedCourse.distance || selectedCourse.takeTime) && (
-                  <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
-                    {[selectedCourse.distance, selectedCourse.takeTime]
-                      .filter(Boolean)
-                      .join(" · ")}
-                    {selectedCourse.stopCount
-                      ? ` · 경유 ${selectedCourse.stopCount}곳`
-                      : ""}
-                  </Text>
-                )}
-                <CoursePreviewMap
-                  cityId={travelCityId ?? selected[0] ?? "seoul"}
-                  waypoints={selectedCourse.waypoints || []}
-                />
-                <Pressable
-                  onPress={() => setSelectedCourse(null)}
-                  accessibilityRole="button"
-                  accessibilityLabel="코스 선택 해제"
-                >
-                  <Text style={{ color: colors.accent, fontWeight: "700" }}>
-                    선택 해제
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
+                return;
+              }
+              setCourseScreenOpen(true);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="한국관광공사 추천 코스 선택"
+          >
+            <Text style={[styles.courseToggleTitle, { color: colors.text }]}>
+              한국관광공사 추천 코스 (선택)
+            </Text>
+            <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+              {selectedCourse
+                ? `선택: ${selectedCourse.title}`
+                : "AI 일정의 경유지 시드 · 탭하여 코스 목록 열기"}
+            </Text>
+          </Pressable>
+          {selectedCourse ? (
+            <Pressable
+              onPress={() => setSelectedCourse(null)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="코스 선택 해제"
+              style={{ marginTop: 4 }}
+            >
+              <Text style={{ color: colors.danger, fontWeight: "700" }}>
+                선택 해제
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
 
         <View style={styles.fieldGrid}>
           <NumberStepper
@@ -1276,6 +1231,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   weatherRefreshText: { fontWeight: "800", fontSize: 12 },
+  weatherCityList: { gap: space.md },
+  weatherCityBlock: { gap: space.xs },
+  weatherCityName: { fontSize: 13, fontWeight: "800" },
   weatherDayList: { gap: 4 },
   weatherDayText: { fontSize: 13, fontWeight: "600", lineHeight: 18 },
   weatherNaverBtn: {
@@ -1423,30 +1381,4 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   courseToggleTitle: { fontSize: 15, fontWeight: "800" },
-  coursePanel: { marginTop: space.sm, gap: space.sm },
-  courseCard: {
-    borderWidth: 1.5,
-    borderRadius: radius.md,
-    padding: space.md,
-    gap: 4,
-  },
-  courseCardHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: space.sm,
-  },
-  courseCardTitle: { flex: 1, fontSize: 15, fontWeight: "800" },
-  courseBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
-  },
-  courseBadgeText: { fontSize: 11, fontWeight: "800" },
-  courseOverview: { fontSize: 13, lineHeight: 18, fontWeight: "500" },
-  coursePreview: {
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: space.md,
-    gap: space.sm,
-  },
 });

@@ -22,6 +22,8 @@ const TOUR_API_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const DEFAULT_RADIUS_M = 40_000;
 const DETAIL_CONCURRENCY = 4;
 const DEFAULT_LIST_LIMIT = 8;
+/** 목록 카드용 한줄 소개 길이 (detailCommon2 overview) */
+const LIST_BRIEFING_MAX_LEN = 100;
 
 const courseCache = new Map();
 
@@ -255,22 +257,38 @@ async function mapWithConcurrency(items, concurrency, mapper) {
 }
 
 /**
+ * detailCommon2 overview → 목록용 한줄 소개.
+ * list API(areaBasedList2 등)에는 overview가 없으므로 enrichment 결과/상세에서만 의미가 있음.
+ * addr1(주소)는 개요가 아니므로 쓰지 않는다.
+ */
+export function formatCourseListBriefing(raw, maxLen = LIST_BRIEFING_MAX_LEN) {
+  const len = Number.isFinite(Number(maxLen))
+    ? Math.max(40, Math.min(160, Number(maxLen)))
+    : LIST_BRIEFING_MAX_LEN;
+  return cleanTourText(raw, len);
+}
+
+/**
  * areaBasedList2 / locationBasedList2 항목 → 코스 카드
+ * overview/distance/takeTime은 list 응답에 보통 없고, enrich 단계에서 채운다.
  */
 export function normalizeTourCourseListItem(item, cityId) {
   const contentId = String(item?.contentid || "").trim();
   const title = String(item?.title || "").trim();
   if (!contentId || !title) return null;
   const coords = parseCoord(item?.mapy, item?.mapx);
-  const overview = cleanTourText(
-    item?.overview || item?.addr1 || "",
-    120,
-  );
+  const overview = formatCourseListBriefing(item?.overview);
+  const distance = cleanTourText(item?.distance, 40);
+  const takeTime = cleanTourText(item?.taketime || item?.takeTime, 40);
+  const theme = cleanTourText(item?.theme, 80);
   return {
     contentId,
     title: title.slice(0, 80),
     cityId: isDomesticCityId(cityId) ? cityId : undefined,
     overview: overview || undefined,
+    distance: distance || undefined,
+    takeTime: takeTime || undefined,
+    theme: theme || undefined,
     lat: coords?.lat,
     lng: coords?.lng,
     address: cleanTourText(item?.addr1, 120),
@@ -412,6 +430,55 @@ async function fetchCourseIntro(contentId, serviceKey) {
   return items[0] || {};
 }
 
+/**
+ * 목록 카드용: detailCommon2 overview + detailIntro2 distance/taketime.
+ * 실패해도 원본 카드는 유지 (제목/주소만으로 선택 가능).
+ */
+async function enrichTourCourseListItem(course, serviceKey) {
+  if (!course?.contentId || !serviceKey) return course;
+  const cacheKey = `list-enrich|${course.contentId}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) {
+    return {
+      ...course,
+      overview: cached.overview || course.overview,
+      distance: cached.distance || course.distance,
+      takeTime: cached.takeTime || course.takeTime,
+      theme: cached.theme || course.theme,
+      address: course.address || cached.address,
+    };
+  }
+
+  const [common, intro] = await Promise.all([
+    fetchCourseCommon(course.contentId, serviceKey),
+    fetchCourseIntro(course.contentId, serviceKey),
+  ]);
+
+  const overview =
+    formatCourseListBriefing(common.overview) || course.overview;
+  const distance =
+    cleanTourText(intro.distance, 40) || course.distance;
+  const takeTime =
+    cleanTourText(intro.taketime, 40) || course.takeTime;
+  const theme = cleanTourText(intro.theme, 80) || course.theme;
+  const address =
+    course.address ||
+    cleanTourText(
+      [common.addr1, common.addr2].filter(Boolean).join(" "),
+      120,
+    );
+
+  const enrichment = {
+    overview: overview || undefined,
+    distance: distance || undefined,
+    takeTime: takeTime || undefined,
+    theme: theme || undefined,
+    address: address || undefined,
+  };
+  cacheSet(cacheKey, enrichment);
+  return { ...course, ...enrichment };
+}
+
 async function fetchWaypointCoords(contentId, serviceKey) {
   if (!contentId) return null;
   const cacheKey = `wp-coord|${contentId}`;
@@ -500,7 +567,7 @@ export async function listTourCourses({
     }
   }
 
-  const courses = items
+  const baseCourses = items
     .map((item) => normalizeTourCourseListItem(item, cityId))
     .filter(Boolean)
     .slice(0, numOfRows)
@@ -508,6 +575,19 @@ export async function listTourCourses({
       ...course,
       stopCount: undefined,
     }));
+
+  // list API에는 overview가 없음 → detailCommon2/detailIntro2로 top N 보강 (concurrency 4)
+  const courses = await mapWithConcurrency(
+    baseCourses,
+    DETAIL_CONCURRENCY,
+    async (course) => {
+      try {
+        return await enrichTourCourseListItem(course, key);
+      } catch {
+        return course;
+      }
+    },
+  );
 
   const result = { courses, source };
   if (courses.length) cacheSet(cacheKey, result);

@@ -58,6 +58,8 @@ function normalizeTrip(data: Trip): Trip {
     extraRequest: data.extraRequest,
     briefing: data.briefing,
     routeOutline: data.routeOutline,
+    routeBriefing: data.routeBriefing,
+    seedCourse: data.seedCourse,
     startTime: normalizeHhmm(data.startTime, DEFAULT_START_TIME),
     outboundTransportMode: (["car", "train", "bus", "flight"] as const).includes(
       data.outboundTransportMode as "car",
@@ -170,6 +172,7 @@ export function createEmptyTrip(input: {
   extraRequest?: string;
   briefing?: string;
   routeOutline?: string;
+  routeBriefing?: Trip["routeBriefing"];
   seedCourse?: Trip["seedCourse"];
   startAddress?: string;
   startLat?: number;
@@ -204,6 +207,7 @@ export function createEmptyTrip(input: {
     extraRequest: input.extraRequest,
     briefing: input.briefing,
     routeOutline: input.routeOutline,
+    routeBriefing: input.routeBriefing,
     seedCourse: input.seedCourse,
     nights: input.nights,
     days: input.days,

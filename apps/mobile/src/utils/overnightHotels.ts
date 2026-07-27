@@ -126,13 +126,21 @@ export function ensureOvernightHotelsInPlaces(
       const rest = arr.filter((p) => p.category !== "hotel");
       const stay = hotels.filter((p) => !isChainDeparturePlace(p));
       const chainMorning = hotels.filter((p) => isChainDeparturePlace(p));
-      // 체인 아침 출발은 앞에 두고 plannedTime 비움; 저녁 숙소는 끝 + 복귀 시각
+      // 체인 아침 출발은 앞에 두고 plannedTime 비움; 저녁 숙소는 끝으로.
+      // 기존 plannedTime(enrich 순차 도착)은 유지 — 없으면 복귀 시각 fallback.
       const last = stay[stay.length - 1];
       const dayList = last
         ? [
             ...chainMorning.map(clearChainMorning),
             ...rest,
-            { ...last, plannedTime: returnHhmm },
+            {
+              ...last,
+              plannedTime:
+                last.plannedTime &&
+                /^\d{1,2}:\d{2}$/.test(String(last.plannedTime))
+                  ? last.plannedTime
+                  : returnHhmm,
+            },
           ]
         : [...chainMorning.map(clearChainMorning), ...rest];
       dayList.forEach((p, i) => {

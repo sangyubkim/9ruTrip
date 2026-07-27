@@ -28,6 +28,7 @@ import {
   injectCourseWaypointsIntoPool,
   normalizeTourCourseSeed,
 } from "./tour-courses.mjs";
+import { buildRouteBriefing } from "./route-briefing.mjs";
 
 const PLACE_DETAIL_KEYS = [
   "address",
@@ -1261,6 +1262,35 @@ export async function generateItinerary(body, env) {
     const briefing =
       String(base.briefing || summary || "").trim() ||
       `${routeOutline} · ${nights}박 ${days}일 추천 일정`;
+    const seedCourseMeta = seedCourse
+      ? {
+          contentId: seedCourse.contentId,
+          title: seedCourse.title,
+          source: "한국관광공사",
+          stopCount: seedCourse.stopCount,
+          routeSummary: seedCourse.routeSummary,
+        }
+      : null;
+    const endName =
+      body?.endPoint && typeof body.endPoint === "object"
+        ? String(body.endPoint.address || body.endPoint.name || "").trim()
+        : "";
+    const routeBriefing = buildRouteBriefing({
+      originLabel: startAddress || null,
+      endLabel: endName || startAddress || null,
+      cityIds,
+      cities,
+      nights,
+      days,
+      routeOutline: base.routeOutline || routeOutline,
+      mainRequest: body?.mainRequest,
+      extraRequest: body?.extraRequest,
+      userRequest,
+      preferences: body?.preferences,
+      preferredFestivals,
+      seedCourse: seedCourseMeta || seedCourse,
+      outboundTransportMode,
+    });
     return {
       places: enriched,
       lodgingCandidates,
@@ -1269,22 +1299,13 @@ export async function generateItinerary(body, env) {
       summary,
       briefing,
       routeOutline: base.routeOutline || routeOutline,
+      routeBriefing,
       engine: base.engine,
       cityId: base.cityId || city.id,
       cities,
       mapProvider: city.mapProvider,
       transportEngine: mapsApiKey ? "directions+haversine" : "haversine",
-      ...(seedCourse
-        ? {
-            seedCourse: {
-              contentId: seedCourse.contentId,
-              title: seedCourse.title,
-              source: "한국관광공사",
-              stopCount: seedCourse.stopCount,
-              routeSummary: seedCourse.routeSummary,
-            },
-          }
-        : {}),
+      ...(seedCourseMeta ? { seedCourse: seedCourseMeta } : {}),
     };
   };
 

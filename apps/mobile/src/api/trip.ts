@@ -6,6 +6,7 @@ import type {
   PlaceCategory,
   OutboundTransportMode,
   PlaceRef,
+  RouteBriefing,
   TransportOption,
   TravelDiaryEntry,
   Trip,
@@ -73,7 +74,11 @@ export type TourCourseListItem = {
   contentId: string;
   title: string;
   cityId?: MvpCityId;
+  /** detailCommon2 overview 한줄 소개 (목록 enrichment) */
   overview?: string;
+  distance?: string;
+  takeTime?: string;
+  theme?: string;
   address?: string;
   lat?: number;
   lng?: number;
@@ -83,9 +88,6 @@ export type TourCourseListItem = {
 };
 
 export type TourCourseDetail = TourCourseListItem & {
-  distance?: string;
-  takeTime?: string;
-  theme?: string;
   waypoints: TourCourseWaypoint[];
   routeSummary?: string;
 };
@@ -122,6 +124,8 @@ export type ItineraryResponse = {
   transportEngine?: string;
   briefing?: string;
   routeOutline?: string;
+  /** 구조화된 경로 구성·반영 내역 */
+  routeBriefing?: RouteBriefing;
   seedCourse?: SeedCourseMeta;
 };
 

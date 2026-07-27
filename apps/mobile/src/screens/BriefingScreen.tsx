@@ -1,9 +1,9 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import type { Trip, TripPreferenceWeights } from "../types";
-import { getCityMeta, tripCitiesLabel } from "../types";
+import type { Trip } from "../types";
 import { useTheme } from "../theme/ThemeContext";
 import { radius, space } from "../theme/tokens";
 import { currencyForCity, formatMoney } from "../utils/cost";
+import { resolveRouteBriefing } from "../utils/routeBriefing";
 
 type Props = {
   trip: Trip;
@@ -11,38 +11,27 @@ type Props = {
   onBack: () => void;
 };
 
-const PREF_LABELS: { key: keyof TripPreferenceWeights; label: string }[] = [
-  { key: "food", label: "맛집" },
-  { key: "attraction", label: "명소" },
-  { key: "activity", label: "액티비티" },
-  { key: "cost", label: "비용" },
-  { key: "minTravel", label: "최소 이동" },
-];
+function formatFestivalPeriod(startDate?: string, endDate?: string) {
+  const formatDate = (date: string) => {
+    const [, month, day] = date.match(/^\d{4}-(\d{2})-(\d{2})$/) ?? [];
+    return month && day ? `${Number(month)}/${Number(day)}` : date;
+  };
+  if (!startDate && !endDate) return "";
+  if (startDate && endDate) {
+    return `${formatDate(startDate)}–${formatDate(endDate)}`;
+  }
+  return formatDate(startDate || endDate || "");
+}
 
 export function BriefingScreen({ trip, onContinue, onBack }: Props) {
   const { colors } = useTheme();
-  const outline =
-    trip.routeOutline ||
-    [
-      trip.origin?.name,
-      tripCitiesLabel(trip),
-      ...(trip.stopoverCityIds ?? []).map(
-        (id) => `(경유 ${getCityMeta(id).nameKo})`,
-      ),
-      trip.endPoint?.name,
-    ]
-      .filter(Boolean)
-      .join(" → ");
-
-  const dayLegs =
-    trip.cities && trip.cities.length > 0
-      ? trip.cities
-          .map(
-            (c) =>
-              `${c.cityName} ${c.dayIndexes.length}일 (Day ${c.dayIndexes.map((d) => d + 1).join(",")})`,
-          )
-          .join(" · ")
-      : trip.cityName;
+  const rb = resolveRouteBriefing(trip);
+  const festivals = rb.festivals ?? [];
+  const prefs = rb.requests?.preferences ?? [];
+  const hasRequest =
+    rb.requests?.reflected ||
+    Boolean(rb.requests?.mainRequest || rb.requests?.extraRequest || prefs.length);
+  const hasCourse = rb.courseReflected || Boolean(rb.seedCourse?.title);
 
   return (
     <ScrollView
@@ -64,15 +53,20 @@ export function BriefingScreen({ trip, onContinue, onBack }: Props) {
       </Text>
       <Text style={[styles.title, { color: colors.text }]}>여행 브리핑</Text>
       <Text style={[styles.sub, { color: colors.textSecondary }]}>
-        {trip.nights}박 {trip.days}일 · {trip.partySize}명 ·{" "}
+        {rb.durationLabel || `${trip.nights}박 ${trip.days}일`} · {trip.partySize}명 ·{" "}
         {formatMoney(trip.plannedBudget, currencyForCity(trip.cityId))}
       </Text>
 
       <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-          추천 경로
+          전체 경로 구성
         </Text>
-        <Text style={[styles.route, { color: colors.text }]}>{outline}</Text>
+        <Text style={[styles.route, { color: colors.text }]}>{rb.routeSummary}</Text>
+        {rb.dayAssignments ? (
+          <Text style={[styles.meta, { color: colors.textMuted }]}>
+            Day 배정 · {rb.dayAssignments}
+          </Text>
+        ) : null}
         {trip.origin?.address || trip.endPoint?.address ? (
           <Text style={[styles.meta, { color: colors.textMuted }]}>
             {[
@@ -89,73 +83,126 @@ export function BriefingScreen({ trip, onContinue, onBack }: Props) {
         ) : null}
       </View>
 
-      {trip.seedCourse?.title ? (
-        <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
-          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-            기반 코스
-          </Text>
-          <Text style={[styles.body, { color: colors.text }]}>
-            {trip.seedCourse.title} (한국관광공사)
-          </Text>
-          {trip.seedCourse.routeSummary ? (
-            <Text style={[styles.meta, { color: colors.textMuted }]}>
-              {trip.seedCourse.routeSummary}
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
+      <View style={[styles.card, { backgroundColor: colors.accentMuted, borderColor: "transparent" }]}>
+        <Text style={[styles.cardLabel, { color: colors.accent }]}>
+          AI 요약
+        </Text>
+        <Text style={[styles.briefing, { color: colors.text }]}>
+          {trip.briefing || "일정 요약을 준비했습니다. 아래에서 반영 내역을 확인하세요."}
+        </Text>
+      </View>
+
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>반영 내역</Text>
+      <Text style={[styles.sectionHint, { color: colors.textMuted }]}>
+        요청·축제·관광공사 코스가 일정에 어떻게 들어갔는지 정리했습니다.
+      </Text>
 
       <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-          여행지 Day 배정
+          반영된 요청
         </Text>
-        <Text style={[styles.body, { color: colors.text }]}>{dayLegs}</Text>
-        {trip.cityWeights && trip.cityWeights.length > 1 ? (
-          <Text style={[styles.meta, { color: colors.textMuted }]}>
-            비중{" "}
-            {(trip.cities ?? [])
-              .map((c, i) => `${c.cityName} ${trip.cityWeights?.[i] ?? "?"}%`)
-              .join(" · ")}
-          </Text>
-        ) : null}
-      </View>
-
-      <View style={[styles.card, { backgroundColor: colors.accentMuted, borderColor: "transparent" }]}>
-        <Text style={[styles.cardLabel, { color: colors.accent }]}>
-          간략 브리핑
-        </Text>
-        <Text style={[styles.briefing, { color: colors.text }]}>
-          {trip.briefing || "일정 요약을 준비했습니다. 상세에서 장소를 확인하세요."}
-        </Text>
-      </View>
-
-      {trip.preferences ? (
-        <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
-          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-            반영된 가중치
-          </Text>
-          <View style={styles.prefWrap}>
-            {PREF_LABELS.map(({ key, label }) => (
-              <View
-                key={key}
-                style={[styles.prefChip, { backgroundColor: colors.chipBg }]}
-              >
-                <Text style={{ color: colors.chipFg, fontWeight: "700", fontSize: 13 }}>
-                  {label} {trip.preferences?.[key] ?? 3}
+        {hasRequest ? (
+          <>
+            {rb.requests?.extraRequest ? (
+              <View style={styles.rowBlock}>
+                <Text style={[styles.rowTag, { color: colors.accent }]}>추가 요청</Text>
+                <Text style={[styles.body, { color: colors.text }]}>
+                  {rb.requests.extraRequest}
                 </Text>
               </View>
-            ))}
-          </View>
-          {trip.extraRequest ? (
-            <Text style={[styles.meta, { color: colors.accent, marginTop: space.sm }]}>
-              추가 요청 우선: {trip.extraRequest}
+            ) : null}
+            {rb.requests?.mainRequest ? (
+              <View style={styles.rowBlock}>
+                <Text style={[styles.rowTag, { color: colors.textMuted }]}>주요 요청</Text>
+                <Text style={[styles.body, { color: colors.text }]}>
+                  {rb.requests.mainRequest}
+                </Text>
+              </View>
+            ) : null}
+            {prefs.length > 0 ? (
+              <View style={[styles.prefWrap, { marginTop: space.sm }]}>
+                {prefs.map((p) => (
+                  <View
+                    key={p.key}
+                    style={[styles.prefChip, { backgroundColor: colors.chipBg }]}
+                  >
+                    <Text style={{ color: colors.chipFg, fontWeight: "700", fontSize: 13 }}>
+                      {p.label} {p.value}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <Text style={[styles.bodyMuted, { color: colors.textMuted }]}>
+            별도 요청 없이 기본 조건으로 구성했습니다.
+          </Text>
+        )}
+      </View>
+
+      <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          반영된 축제
+        </Text>
+        {festivals.length > 0 ? (
+          festivals.map((f, i) => {
+            const period = formatFestivalPeriod(f.startDate, f.endDate);
+            return (
+              <View key={`${f.name}-${i}`} style={i > 0 ? styles.rowBlock : undefined}>
+                <Text style={[styles.body, { color: colors.text }]}>{f.name}</Text>
+                <Text style={[styles.meta, { color: colors.textMuted, marginTop: 2 }]}>
+                  {[f.cityName, period].filter(Boolean).join(" · ") || "일정에 포함"}
+                </Text>
+              </View>
+            );
+          })
+        ) : (
+          <Text style={[styles.bodyMuted, { color: colors.textMuted }]}>
+            선택한 축제가 없어 축제 방문은 반영되지 않았습니다.
+          </Text>
+        )}
+      </View>
+
+      <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          반영된 관광공사 코스
+        </Text>
+        {hasCourse && rb.seedCourse ? (
+          <>
+            <Text style={[styles.body, { color: colors.text }]}>
+              {rb.seedCourse.title}
             </Text>
-          ) : null}
-          {trip.mainRequest ? (
-            <Text style={[styles.meta, { color: colors.textMuted, marginTop: space.xs }]}>
-              주요 요청: {trip.mainRequest}
+            <Text style={[styles.meta, { color: colors.textMuted }]}>
+              {[
+                rb.seedCourse.source || "한국관광공사",
+                rb.seedCourse.stopCount != null
+                  ? `경유지 ${rb.seedCourse.stopCount}곳`
+                  : null,
+                "시드로 사용",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </Text>
-          ) : null}
+            {rb.seedCourse.routeSummary ? (
+              <Text style={[styles.meta, { color: colors.textMuted }]}>
+                {rb.seedCourse.routeSummary}
+              </Text>
+            ) : null}
+          </>
+        ) : (
+          <Text style={[styles.bodyMuted, { color: colors.textMuted }]}>
+            추천 코스 시드 없이 AI가 직접 경로를 구성했습니다.
+          </Text>
+        )}
+      </View>
+
+      {rb.scheduleRule ? (
+        <View style={[styles.card, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
+          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+            일정 규칙
+          </Text>
+          <Text style={[styles.body, { color: colors.text }]}>{rb.scheduleRule}</Text>
         </View>
       ) : null}
 
@@ -189,6 +236,16 @@ const styles = StyleSheet.create({
   eyebrow: { marginTop: space.sm, fontSize: 12, fontWeight: "700" },
   title: { fontSize: 26, fontWeight: "800", letterSpacing: -0.3, marginTop: 4 },
   sub: { marginTop: space.sm, fontSize: 14, fontWeight: "600" },
+  sectionTitle: {
+    marginTop: space.xl,
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  sectionHint: {
+    marginTop: space.xs,
+    fontSize: 12,
+    lineHeight: 18,
+  },
   card: {
     marginTop: space.lg,
     borderRadius: radius.lg,
@@ -198,8 +255,11 @@ const styles = StyleSheet.create({
   cardLabel: { fontSize: 12, fontWeight: "800", marginBottom: space.sm },
   route: { fontSize: 17, fontWeight: "800", lineHeight: 26 },
   body: { fontSize: 15, fontWeight: "600", lineHeight: 22 },
+  bodyMuted: { fontSize: 14, fontWeight: "500", lineHeight: 21 },
   briefing: { fontSize: 15, lineHeight: 24, fontWeight: "600" },
   meta: { marginTop: space.sm, fontSize: 12, lineHeight: 18 },
+  rowBlock: { marginTop: space.md },
+  rowTag: { fontSize: 11, fontWeight: "800", marginBottom: 4 },
   prefWrap: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
   prefChip: {
     paddingHorizontal: space.md,

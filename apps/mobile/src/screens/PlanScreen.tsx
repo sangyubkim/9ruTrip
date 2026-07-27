@@ -1393,207 +1393,207 @@ export function PlanScreen({
               done && styles.rowDone,
             ]}
           >
-            <Pressable
-              onLongPress={drag}
-              delayLongPress={120}
-              hitSlop={HANDLE_HIT_SLOP}
-              style={styles.dragHandle}
-              accessibilityRole="button"
-              accessibilityLabel="순서 변경 핸들"
-              accessibilityHint="≡만 길게 눌러 순서를 바꿉니다. 삭제는 왼쪽 스와이프"
-            >
-              <Text style={[styles.drag, { color: colors.textMutedOnCard }]}>
-                ≡
-              </Text>
-            </Pressable>
-            {routeNo != null ? (
-              <View
-                style={[
-                  styles.mapNoBadge,
-                  {
-                    backgroundColor: selected
-                      ? colors.primary
-                      : colors.chipOnBg,
-                  },
-                ]}
-                accessibilityLabel={`지도 ${routeNo}번`}
-              >
-                <Text
-                  style={[
-                    styles.mapNoBadgeText,
-                    {
-                      color: selected ? colors.primaryFg : colors.chipOnFg,
-                    },
-                  ]}
-                >
-                  {routeNo}
-                </Text>
-              </View>
-            ) : null}
-            <View
-              style={[
-                styles.categoryBadge,
-                {
-                  backgroundColor: badgeStyle.backgroundColor,
-                  borderColor: badgeStyle.borderColor,
-                },
-              ]}
-              accessibilityLabel={CATEGORY_LABEL[item.category] || item.category}
-            >
-              <Text
-                style={[styles.categoryBadgeText, { color: badgeStyle.color }]}
-              >
-                {CATEGORY_LABEL[item.category] || item.category}
-              </Text>
-            </View>
-            <View style={styles.rowBody}>
-              <View style={styles.nameRow}>
+            <View style={styles.nameRow}>
+              <View style={styles.leftCluster}>
                 <Pressable
-                  onPress={() => setTimeEditPlace(item)}
-                  style={[
-                    styles.timeBtn,
-                    { backgroundColor: colors.chipOnBg },
-                  ]}
+                  onLongPress={drag}
+                  delayLongPress={120}
+                  hitSlop={HANDLE_HIT_SLOP}
+                  style={styles.dragHandle}
                   accessibilityRole="button"
-                  accessibilityLabel="예정 시각 편집"
-                  accessibilityHint="탭하면 시각을 수정합니다"
+                  accessibilityLabel="순서 변경 핸들"
+                  accessibilityHint="≡만 길게 눌러 순서를 바꿉니다. 삭제는 왼쪽 스와이프"
                 >
-                  <Text
-                    style={[styles.timeText, { color: colors.chipOnFg }]}
-                  >
-                    {item.plannedTime ? `🕒 ${item.plannedTime}` : "🕒 --:--"}
+                  <Text style={[styles.drag, { color: colors.textMutedOnCard }]}>
+                    ≡
                   </Text>
                 </Pressable>
-                <Pressable
-                  onPress={() => applyCurrentTime(item)}
-                  style={styles.nowTimeBtn}
-                  accessibilityRole="button"
-                  accessibilityLabel="현재 시각으로 맞춤"
-                  hitSlop={4}
-                >
-                  <Text style={styles.nowTimeBtnText}>지금</Text>
-                </Pressable>
-                <Text
-                  style={[styles.name, { color: colors.textOnCard }]}
-                  numberOfLines={2}
-                >
-                  {item.name}
-                </Text>
-                <Pressable
-                  onPress={() => void openNaverSearch(item.name)}
-                  style={styles.searchBtn}
-                  accessibilityRole="link"
-                  accessibilityLabel={`${item.name} 네이버 검색`}
-                  hitSlop={6}
-                >
-                  <Text style={styles.searchBtnText}>검색</Text>
-                </Pressable>
-              </View>
-              {item.category === "hotel" ? (
-                <>
-                  <Text
-                    style={[styles.meta, { color: colors.textMutedOnCard }]}
-                    numberOfLines={2}
+                {routeNo != null ? (
+                  <View
+                    style={[
+                      styles.mapNoBadge,
+                      {
+                        backgroundColor: selected
+                          ? colors.primary
+                          : colors.chipOnBg,
+                      },
+                    ]}
+                    accessibilityLabel={`지도 ${routeNo}번`}
                   >
-                    숙소 · {formatHotelBreakfastLabel(item.breakfastIncluded)}
-                    {hotelNightly ? ` · 1박 · ${hotelNightly}` : ""}
-                    {item.lodgingScore
-                      ? ` · 숙소점수 ${item.lodgingScore}`
-                      : ""}
-                  </Text>
-                  {hotelNightly ? (
                     <Text
                       style={[
-                        styles.estimateHint,
-                        { color: colors.textMutedOnCard },
+                        styles.mapNoBadgeText,
+                        {
+                          color: selected ? colors.primaryFg : colors.chipOnFg,
+                        },
                       ]}
                     >
-                      추정가 · 확정 아님
+                      {routeNo}
                     </Text>
-                  ) : null}
-                  {detailLines.map((line) => (
-                    <Text
-                      key={line}
-                      style={[styles.meta, { color: colors.textMutedOnCard }]}
-                      numberOfLines={1}
-                    >
-                      {line}
-                    </Text>
-                  ))}
-                  {item.notes ? (
-                    <Text
-                      style={[styles.meta, { color: colors.textMutedOnCard }]}
-                      numberOfLines={2}
-                    >
-                      {item.notes}
-                    </Text>
-                  ) : null}
-                </>
-              ) : (
-                <>
+                  </View>
+                ) : null}
+                <View
+                  style={[
+                    styles.categoryBadge,
+                    {
+                      backgroundColor: badgeStyle.backgroundColor,
+                      borderColor: badgeStyle.borderColor,
+                    },
+                  ]}
+                  accessibilityLabel={
+                    CATEGORY_LABEL[item.category] || item.category
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.categoryBadgeText,
+                      { color: badgeStyle.color },
+                    ]}
+                  >
+                    {CATEGORY_LABEL[item.category] || item.category}
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                onPress={() => setTimeEditPlace(item)}
+                style={[styles.timeBtn, { backgroundColor: colors.chipOnBg }]}
+                accessibilityRole="button"
+                accessibilityLabel="예정 시각 편집"
+                accessibilityHint="탭하면 시각을 수정합니다"
+              >
+                <Text style={[styles.timeText, { color: colors.chipOnFg }]}>
+                  {item.plannedTime ? `🕒 ${item.plannedTime}` : "🕒 --:--"}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => applyCurrentTime(item)}
+                style={styles.nowTimeBtn}
+                accessibilityRole="button"
+                accessibilityLabel="현재 시각으로 맞춤"
+                hitSlop={4}
+              >
+                <Text style={styles.nowTimeBtnText}>지금</Text>
+              </Pressable>
+              <Text
+                style={[styles.name, { color: colors.textOnCard }]}
+                numberOfLines={2}
+              >
+                {item.name}
+              </Text>
+              <Pressable
+                onPress={() => void openNaverSearch(item.name)}
+                style={styles.searchBtn}
+                accessibilityRole="link"
+                accessibilityLabel={`${item.name} 네이버 검색`}
+                hitSlop={6}
+              >
+                <Text style={styles.searchBtnText}>검색</Text>
+              </Pressable>
+            </View>
+            {item.category === "hotel" ? (
+              <>
+                <Text
+                  style={[styles.meta, { color: colors.textMutedOnCard }]}
+                  numberOfLines={2}
+                >
+                  숙소 · {formatHotelBreakfastLabel(item.breakfastIncluded)}
+                  {hotelNightly ? ` · 1박 · ${hotelNightly}` : ""}
+                  {item.lodgingScore
+                    ? ` · 숙소점수 ${item.lodgingScore}`
+                    : ""}
+                </Text>
+                {hotelNightly ? (
+                  <Text
+                    style={[
+                      styles.estimateHint,
+                      { color: colors.textMutedOnCard },
+                    ]}
+                  >
+                    추정가 · 확정 아님
+                  </Text>
+                ) : null}
+                {detailLines.map((line) => (
+                  <Text
+                    key={line}
+                    style={[styles.meta, { color: colors.textMutedOnCard }]}
+                    numberOfLines={1}
+                  >
+                    {line}
+                  </Text>
+                ))}
+                {item.notes ? (
                   <Text
                     style={[styles.meta, { color: colors.textMutedOnCard }]}
                     numberOfLines={2}
                   >
-                    {CATEGORY_LABEL[item.category] || item.category}
-                    {Number(item.estimatedCost) > 0
-                      ? ` · ${formatPlaceMoney(
-                          item.estimatedCost,
-                          item.category,
-                          currency,
-                        )}`
-                      : ""}
-                    {item.notes ? ` · ${item.notes}` : ""}
+                    {item.notes}
                   </Text>
-                  {detailLines.map((line) => (
-                    <Text
-                      key={line}
-                      style={[styles.meta, { color: colors.textMutedOnCard }]}
-                      numberOfLines={1}
-                    >
-                      {line}
-                    </Text>
-                  ))}
-                </>
-              )}
-              <View style={styles.actionRow}>
-                <Pressable
-                  onPress={() => openNavToPlace(item)}
-                  style={styles.actionPrimary}
-                  accessibilityRole="button"
-                  accessibilityLabel="길안내"
-                >
-                  <Text style={styles.actionPrimaryText}>길안내</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => promptMoveDay(item)}
-                  style={styles.actionBtn}
-                  accessibilityRole="button"
-                  accessibilityLabel="다른 날로 이동"
-                >
-                  <Text style={styles.actionBtnText}>Day▶</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => deletePlace(item)}
-                  style={styles.actionDanger}
-                  accessibilityRole="button"
-                  accessibilityLabel="장소 삭제"
-                >
-                  <Text style={styles.actionDangerText}>삭제</Text>
-                </Pressable>
-                {trip.status === "active" ? (
-                  <Pressable
-                    onPress={() => markDone(item.id)}
-                    style={styles.actionDone}
-                    accessibilityRole="button"
-                    accessibilityLabel={done ? "완료됨" : "완료 표시"}
-                  >
-                    <Text style={styles.actionDoneText}>
-                      {done ? "✓" : "완료"}
-                    </Text>
-                  </Pressable>
                 ) : null}
-              </View>
+              </>
+            ) : (
+              <>
+                <Text
+                  style={[styles.meta, { color: colors.textMutedOnCard }]}
+                  numberOfLines={2}
+                >
+                  {CATEGORY_LABEL[item.category] || item.category}
+                  {Number(item.estimatedCost) > 0
+                    ? ` · ${formatPlaceMoney(
+                        item.estimatedCost,
+                        item.category,
+                        currency,
+                      )}`
+                    : ""}
+                  {item.notes ? ` · ${item.notes}` : ""}
+                </Text>
+                {detailLines.map((line) => (
+                  <Text
+                    key={line}
+                    style={[styles.meta, { color: colors.textMutedOnCard }]}
+                    numberOfLines={1}
+                  >
+                    {line}
+                  </Text>
+                ))}
+              </>
+            )}
+            <View style={styles.actionRow}>
+              <Pressable
+                onPress={() => openNavToPlace(item)}
+                style={styles.actionPrimary}
+                accessibilityRole="button"
+                accessibilityLabel="길안내"
+              >
+                <Text style={styles.actionPrimaryText}>길안내</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => promptMoveDay(item)}
+                style={styles.actionBtn}
+                accessibilityRole="button"
+                accessibilityLabel="다른 날로 이동"
+              >
+                <Text style={styles.actionBtnText}>Day▶</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => deletePlace(item)}
+                style={styles.actionDanger}
+                accessibilityRole="button"
+                accessibilityLabel="장소 삭제"
+              >
+                <Text style={styles.actionDangerText}>삭제</Text>
+              </Pressable>
+              {trip.status === "active" ? (
+                <Pressable
+                  onPress={() => markDone(item.id)}
+                  style={styles.actionDone}
+                  accessibilityRole="button"
+                  accessibilityLabel={done ? "완료됨" : "완료 표시"}
+                >
+                  <Text style={styles.actionDoneText}>
+                    {done ? "✓" : "완료"}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           </Pressable>
         </View>
@@ -2797,6 +2797,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     minWidth: 0,
+    width: "100%",
+  },
+  leftCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 0,
   },
   searchBtn: {
     paddingHorizontal: 10,
@@ -2817,9 +2824,7 @@ const styles = StyleSheet.create({
     minHeight: 28,
     justifyContent: "center",
     alignItems: "center",
-    alignSelf: "center",
     flexShrink: 0,
-    marginRight: 6,
   },
   categoryBadgeText: { fontSize: 11, fontWeight: "900" },
   timeBtn: {
@@ -3028,8 +3033,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   row: {
-    flexDirection: "row",
-    alignItems: "flex-start",
+    flexDirection: "column",
+    alignItems: "stretch",
     backgroundColor: "#fff",
     borderRadius: 12,
     padding: 12,
@@ -3040,13 +3045,11 @@ const styles = StyleSheet.create({
   rowSelected: { borderColor: "#0284c7", backgroundColor: "#f0f9ff" },
   rowDone: { opacity: 0.55 },
   dragHandle: {
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    marginRight: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
     justifyContent: "center",
     alignItems: "center",
-    alignSelf: "center",
-    minWidth: 32,
+    minWidth: 28,
     minHeight: TOUCH_MIN,
     flexShrink: 0,
   },
@@ -3057,13 +3060,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    alignSelf: "center",
-    marginRight: 6,
     paddingHorizontal: 6,
     flexShrink: 0,
   },
   mapNoBadgeText: { fontSize: 13, fontWeight: "900" },
-  rowBody: { flex: 1, minWidth: 0 },
   name: {
     flex: 1,
     flexShrink: 1,

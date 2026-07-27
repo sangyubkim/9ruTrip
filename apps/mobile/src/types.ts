@@ -223,6 +223,44 @@ export type TripPreferenceWeights = {
   minTravel: number;
 };
 
+/** 구조화된 경로 브리핑 (요청·축제·관광공사 코스 반영 내역) */
+export type RouteBriefingPreference = {
+  key: string;
+  label: string;
+  value: number;
+};
+
+export type RouteBriefingFestival = {
+  name: string;
+  cityId?: string;
+  cityName?: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+export type RouteBriefing = {
+  routeSummary: string;
+  dayAssignments?: string;
+  durationLabel?: string;
+  requests?: {
+    mainRequest?: string;
+    extraRequest?: string;
+    preferences?: RouteBriefingPreference[];
+    reflected?: boolean;
+  };
+  festivals?: RouteBriefingFestival[];
+  festivalsReflected?: boolean;
+  seedCourse?: {
+    title: string;
+    source?: string;
+    stopCount?: number;
+    routeSummary?: string;
+    usedAsSeed?: boolean;
+  } | null;
+  courseReflected?: boolean;
+  scheduleRule?: string;
+};
+
 export const DEFAULT_PREFERENCE_WEIGHTS: TripPreferenceWeights = {
   food: 3,
   attraction: 3,
@@ -253,6 +291,8 @@ export type Trip = {
   briefing?: string;
   /** 경로 한 줄 요약 (출발→여행지→경유→도착) */
   routeOutline?: string;
+  /** 구조화된 경로 구성·반영 내역 (브리핑 화면용) */
+  routeBriefing?: RouteBriefing;
   /** 한국관광공사 추천 코스 시드 메타 (브리핑 표시용) */
   seedCourse?: {
     contentId: string;

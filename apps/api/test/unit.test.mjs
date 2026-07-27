@@ -41,14 +41,17 @@ import {
 } from "../lib/tourapi.mjs";
 import {
   clearTourCourseCache,
+  formatCourseListBriefing,
   formatCourseSeedForPrompt,
   formatCourseWaypointSummary,
   injectCourseWaypointsIntoPool,
+  listTourCourses,
   normalizeTourCourseListItem,
   normalizeTourCourseSeed,
   normalizeTourCourseWaypoint,
   resolveTourAreaCode,
 } from "../lib/tour-courses.mjs";
+import { buildRouteBriefing } from "../lib/route-briefing.mjs";
 import {
   ensureDailyMealSlots,
   mealArriveFloorMinutes,
@@ -492,8 +495,13 @@ describe("plannedTime sequential", () => {
         defaultStayMinutes("food") +
         Number(a2.travelFromPrevMinutes),
     );
-    // hotel은 1시간 체류 규칙 제외 — 복귀 시각 이상
-    assert.ok(toMin(h1.plannedTime) >= 21 * 60);
+    // hotel은 1시간 체류 규칙 제외 — 순차 도착(직전+체류+이동), 21:00 강제 없음
+    assert.equal(
+      toMin(h1.plannedTime),
+      toMin(a2.plannedTime) +
+        defaultStayMinutes("attraction") +
+        Number(h1.travelFromPrevMinutes),
+    );
     assert.notEqual(defaultStayMinutes("hotel"), 60);
   });
 
@@ -599,7 +607,154 @@ describe("plannedTime sequential", () => {
       toMin(beforeHotel.plannedTime) >= MEAL_WINDOWS.dinner.startMin,
       "last stop before hotel should be dinner, not a 16:00 attraction gap",
     );
-    assert.ok(toMin(hotel.plannedTime) >= 21 * 60);
+    assert.equal(
+      toMin(hotel.plannedTime),
+      toMin(beforeHotel.plannedTime) +
+        defaultStayMinutes(beforeHotel.category) +
+        Number(hotel.travelFromPrevMinutes),
+    );
+  });
+
+  it("hotel plannedTime follows sequential (18:30+60+20 → 19:50), not 21:00 floor", async () => {
+    const places = await enrichPlacesWithTransport(
+      [
+        {
+          id: "f1",
+          name: "저녁",
+          category: "food",
+          lat: 37.5,
+          lng: 127.0,
+          dayIndex: 0,
+          order: 0,
+          plannedTime: "18:30",
+          notes: "저녁 식사",
+          travelFromPrevMinutes: 0,
+          travelFromPrevCost: 0,
+        },
+        {
+          id: "h1",
+          name: "숙소",
+          category: "hotel",
+          lat: 37.51,
+          lng: 127.01,
+          dayIndex: 0,
+          order: 1,
+          plannedTime: "21:00",
+          travelFromPrevMinutes: 20,
+          travelFromPrevCost: 5000,
+          transportOptions: [
+            { mode: "taxi", minutes: 20, estimatedCost: 5000, engine: "test" },
+          ],
+        },
+      ],
+      {
+        startHour: 18,
+        startMinutes: 18 * 60 + 30,
+        forceRecalc: false,
+        lodgingReturnTime: "21:00",
+        cityId: "seoul",
+      },
+    );
+    const hotel = places.find((p) => p.id === "h1");
+    const toMin = (hhmm) => {
+      const [h, m] = String(hhmm).split(":").map(Number);
+      return h * 60 + m;
+    };
+    // 18:30 + food stay 60 + travel 20 = 19:50 (not clamped to 21:00)
+    assert.equal(hotel.plannedTime, "19:50");
+    assert.ok(toMin(hotel.plannedTime) < 21 * 60);
+    assert.notEqual(hotel.plannedTime, "21:00");
+  });
+
+  it("hotel plannedTime does not clamp back to 21:00 when sequential is 22:30", async () => {
+    const places = await enrichPlacesWithTransport(
+      [
+        {
+          id: "f1",
+          name: "늦은 저녁",
+          category: "food",
+          lat: 37.5,
+          lng: 127.0,
+          dayIndex: 0,
+          order: 0,
+          plannedTime: "21:10",
+          notes: "저녁 식사",
+          travelFromPrevMinutes: 0,
+          travelFromPrevCost: 0,
+        },
+        {
+          id: "h1",
+          name: "숙소",
+          category: "hotel",
+          lat: 37.51,
+          lng: 127.01,
+          dayIndex: 0,
+          order: 1,
+          plannedTime: "21:00",
+          travelFromPrevMinutes: 20,
+          travelFromPrevCost: 5000,
+          transportOptions: [
+            { mode: "taxi", minutes: 20, estimatedCost: 5000, engine: "test" },
+          ],
+        },
+      ],
+      {
+        startHour: 21,
+        startMinutes: 21 * 60 + 10,
+        forceRecalc: false,
+        lodgingReturnTime: "21:00",
+        cityId: "seoul",
+      },
+    );
+    const hotel = places.find((p) => p.id === "h1");
+    // food 21:10 + stay 60 + travel 20 = 22:30
+    assert.equal(hotel.plannedTime, "22:30");
+    assert.notEqual(hotel.plannedTime, "21:00");
+  });
+
+  it("hotel follows late-night sequential (03:07) and does not snap to 21:00", async () => {
+    const places = await enrichPlacesWithTransport(
+      [
+        {
+          id: "f1",
+          name: "심야 식사",
+          category: "food",
+          lat: 37.5,
+          lng: 127.0,
+          dayIndex: 0,
+          order: 0,
+          plannedTime: "03:07",
+          travelFromPrevMinutes: 0,
+          travelFromPrevCost: 0,
+        },
+        {
+          id: "h1",
+          name: "숙소",
+          category: "hotel",
+          lat: 37.51,
+          lng: 127.01,
+          dayIndex: 0,
+          order: 1,
+          plannedTime: "21:00",
+          travelFromPrevMinutes: 23,
+          travelFromPrevCost: 8000,
+          transportOptions: [
+            { mode: "taxi", minutes: 23, estimatedCost: 8000, engine: "test" },
+          ],
+        },
+      ],
+      {
+        startHour: 3,
+        startMinutes: 3 * 60 + 7,
+        forceRecalc: false,
+        lodgingReturnTime: "21:00",
+        cityId: "seoul",
+      },
+    );
+    const hotel = places.find((p) => p.id === "h1");
+    // 03:07 + food stay 60 + taxi 23 = 04:30 (old max(seq,21:00) wrongly kept 21:00)
+    assert.equal(hotel.plannedTime, "04:30");
+    assert.notEqual(hotel.plannedTime, "21:00");
   });
 
   it("hotel plannedTime shifts past 21:00 when sequential arrival is later", async () => {
@@ -1740,6 +1895,25 @@ describe("tour courses (contentTypeId=25)", () => {
     assert.equal(listed.badge, "관광공사");
     assert.equal(listed.lat, 37.52);
     assert.equal(listed.lng, 126.93);
+    // list API addr1은 개요가 아님 — overview로 쓰지 않음
+    assert.equal(listed.overview, undefined);
+    assert.equal(listed.address, "서울 영등포구");
+
+    const withOverview = normalizeTourCourseListItem(
+      {
+        contentid: "999",
+        title: "개요있는 코스",
+        overview: "<b>한강</b>을 따라 걷는 도심 산책 코스입니다.<br>여의도부터",
+        distance: "5km",
+        taketime: "2시간",
+        theme: "산책",
+      },
+      "seoul",
+    );
+    assert.equal(withOverview.overview, "한강을 따라 걷는 도심 산책 코스입니다. 여의도부터");
+    assert.equal(withOverview.distance, "5km");
+    assert.equal(withOverview.takeTime, "2시간");
+    assert.equal(withOverview.theme, "산책");
 
     const withCoords = normalizeTourCourseWaypoint(
       {
@@ -1769,6 +1943,85 @@ describe("tour courses (contentTypeId=25)", () => {
       formatCourseWaypointSummary([withCoords, noCoords]),
       "여의도공원 → 좌표없음명소",
     );
+  });
+
+  it("formats list briefing from overview and truncates", () => {
+    assert.equal(formatCourseListBriefing(""), undefined);
+    assert.equal(formatCourseListBriefing(null), undefined);
+    assert.equal(
+      formatCourseListBriefing("한강 뷰를 즐기는 산책 코스"),
+      "한강 뷰를 즐기는 산책 코스",
+    );
+    assert.equal(
+      formatCourseListBriefing("A".repeat(200), 80)?.length,
+      80,
+    );
+    assert.equal(
+      formatCourseListBriefing("소개<br>문구 &amp; 테마"),
+      "소개 문구 & 테마",
+    );
+  });
+
+  it("enriches course list with detailCommon2 overview", async () => {
+    clearTourCourseCache();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input) => {
+      const u = new URL(String(input));
+      let item;
+      if (u.pathname.includes("areaBasedList2")) {
+        item = {
+          contentid: "c-100",
+          title: "서울 한강 코스",
+          addr1: "서울 영등포구",
+          mapy: "37.52",
+          mapx: "126.93",
+        };
+      } else if (u.pathname.includes("detailCommon2")) {
+        item = {
+          contentid: "c-100",
+          title: "서울 한강 코스",
+          overview: "여의도에서 시작해 한강을 따라 걷는 공식 추천 코스입니다.",
+          addr1: "서울 영등포구",
+        };
+      } else if (u.pathname.includes("detailIntro2")) {
+        item = {
+          contentid: "c-100",
+          distance: "8km",
+          taketime: "3시간",
+          theme: "도심산책",
+        };
+      } else {
+        item = {};
+      }
+      return new Response(
+        JSON.stringify({
+          response: {
+            header: { resultCode: "0000", resultMsg: "OK" },
+            body: { items: { item: [item] } },
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    };
+    try {
+      const { courses, source } = await listTourCourses({
+        cityId: "seoul",
+        serviceKey: "test-key",
+        limit: 4,
+      });
+      assert.equal(source, "areaBasedList2");
+      assert.equal(courses.length, 1);
+      assert.equal(courses[0].contentId, "c-100");
+      assert.match(courses[0].overview || "", /한강을 따라/);
+      assert.equal(courses[0].distance, "8km");
+      assert.equal(courses[0].takeTime, "3시간");
+      assert.equal(courses[0].theme, "도심산책");
+      // addr1을 overview로 쓰지 않음
+      assert.notEqual(courses[0].overview, "서울 영등포구");
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearTourCourseCache();
+    }
   });
 
   it("injects seeded waypoints into tour pool and formats prompt", () => {
@@ -1803,5 +2056,73 @@ describe("tour courses (contentTypeId=25)", () => {
     assert.match(prompt, /경복궁/);
     assert.match(prompt, /북촌/);
     assert.ok(!prompt.includes("좌표없음"));
+  });
+});
+
+describe("buildRouteBriefing", () => {
+  it("builds structured sections from trip input and seed", () => {
+    const rb = buildRouteBriefing({
+      originLabel: "서울역",
+      endLabel: "서울역",
+      cityIds: ["busan", "jeju"],
+      cities: [
+        { cityId: "busan", cityName: "부산", dayIndexes: [0, 1] },
+        { cityId: "jeju", cityName: "제주", dayIndexes: [2] },
+      ],
+      nights: 2,
+      days: 3,
+      mainRequest: "해산물 위주로",
+      extraRequest: "아이와 함께",
+      preferences: { food: 5, attraction: 3, activity: 2, cost: 4, minTravel: 3 },
+      preferredFestivals: [
+        {
+          name: "부산불꽃축제",
+          cityId: "busan",
+          startDate: "2026-10-01",
+          endDate: "2026-10-05",
+        },
+      ],
+      seedCourse: {
+        title: "부산 해변 코스",
+        source: "한국관광공사",
+        stopCount: 4,
+        routeSummary: "해운대 → 광안리",
+      },
+      outboundTransportMode: "train",
+    });
+
+    assert.match(rb.routeSummary, /서울역/);
+    assert.match(rb.routeSummary, /부산/);
+    assert.match(rb.routeSummary, /제주/);
+    assert.equal(rb.durationLabel, "2박 3일");
+    assert.match(rb.dayAssignments, /부산 2일/);
+    assert.equal(rb.requests.mainRequest, "해산물 위주로");
+    assert.equal(rb.requests.extraRequest, "아이와 함께");
+    assert.equal(rb.requests.reflected, true);
+    assert.equal(rb.requests.preferences.find((p) => p.key === "food")?.value, 5);
+    assert.equal(rb.festivalsReflected, true);
+    assert.equal(rb.festivals[0].name, "부산불꽃축제");
+    assert.equal(rb.festivals[0].cityName, "부산");
+    assert.equal(rb.courseReflected, true);
+    assert.equal(rb.seedCourse.title, "부산 해변 코스");
+    assert.equal(rb.seedCourse.stopCount, 4);
+    assert.equal(rb.seedCourse.usedAsSeed, true);
+    assert.match(rb.scheduleRule, /11–14/);
+    assert.match(rb.scheduleRule, /기차/);
+  });
+
+  it("marks empty request/festival/course as not reflected", () => {
+    const rb = buildRouteBriefing({
+      cityIds: ["seoul"],
+      nights: 1,
+      days: 2,
+      routeOutline: "집 → 서울 → 집",
+    });
+    assert.equal(rb.routeSummary, "집 → 서울 → 집");
+    assert.equal(rb.requests.reflected, false);
+    assert.equal(rb.festivalsReflected, false);
+    assert.equal(rb.courseReflected, false);
+    assert.equal(rb.seedCourse, null);
+    assert.match(rb.scheduleRule, /체류/);
   });
 });
