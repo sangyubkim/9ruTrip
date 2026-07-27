@@ -41,6 +41,7 @@ import {
 } from "../lib/tourapi.mjs";
 import {
   clearTourCourseCache,
+  fetchTourCourseDetail,
   formatCourseListBriefing,
   formatCourseSeedForPrompt,
   formatCourseWaypointSummary,
@@ -1977,6 +1978,9 @@ describe("tour courses (contentTypeId=25)", () => {
           mapx: "126.93",
         };
       } else if (u.pathname.includes("detailCommon2")) {
+        // TourAPI 4.3: YN 파라미터 없어야 정상 응답
+        assert.equal(u.searchParams.get("mapinfoYN"), null);
+        assert.equal(u.searchParams.get("defaultYN"), null);
         item = {
           contentid: "c-100",
           title: "서울 한강 코스",
@@ -2018,6 +2022,104 @@ describe("tour courses (contentTypeId=25)", () => {
       assert.equal(courses[0].theme, "도심산책");
       // addr1을 overview로 쓰지 않음
       assert.notEqual(courses[0].overview, "서울 영등포구");
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearTourCourseCache();
+    }
+  });
+
+  it("fills waypoint coords from detailCommon2 when detailInfo2 lacks mapx/mapy", async () => {
+    clearTourCourseCache();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input) => {
+      const u = new URL(String(input));
+      let item;
+      if (u.pathname.includes("detailInfo2")) {
+        item = [
+          {
+            subnum: "0",
+            subcontentid: "111",
+            subname: "하회마을",
+            subdetailoverview: "세계문화유산",
+          },
+          {
+            subnum: "1",
+            subcontentid: "222",
+            subname: "병산서원",
+            subdetailoverview: "서원",
+          },
+          {
+            subnum: "2",
+            subname: "좌표없는임의스탑",
+            subdetailoverview: "설명만",
+          },
+        ];
+      } else if (u.pathname.includes("detailCommon2")) {
+        assert.equal(u.searchParams.get("mapinfoYN"), null);
+        const cid = u.searchParams.get("contentId");
+        if (cid === "course-1") {
+          item = {
+            contentid: "course-1",
+            title: "안동 하회마을 코스",
+            overview: "하회 일대",
+            mapy: "36.54",
+            mapx: "128.52",
+          };
+        } else if (cid === "111") {
+          item = {
+            contentid: "111",
+            title: "하회마을",
+            mapy: "36.539",
+            mapx: "128.517",
+            addr1: "경북 안동시",
+          };
+        } else if (cid === "222") {
+          item = {
+            contentid: "222",
+            title: "병산서원",
+            mapy: "36.542",
+            mapx: "128.553",
+          };
+        } else {
+          item = {};
+        }
+      } else if (u.pathname.includes("detailIntro2")) {
+        item = { distance: "5km", taketime: "3시간" };
+      } else {
+        item = {};
+      }
+      return new Response(
+        JSON.stringify({
+          response: {
+            header: { resultCode: "0000", resultMsg: "OK" },
+            body: {
+              items: {
+                item: Array.isArray(item) ? item : [item],
+              },
+            },
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    };
+    try {
+      const detail = await fetchTourCourseDetail({
+        contentId: "course-1",
+        cityId: "andong",
+        serviceKey: "test-key",
+      });
+      assert.equal(detail.title, "안동 하회마을 코스");
+      assert.equal(detail.waypoints.length, 3);
+      assert.equal(detail.waypoints[0].name, "하회마을");
+      assert.equal(detail.waypoints[0].lat, 36.539);
+      assert.equal(detail.waypoints[0].lng, 128.517);
+      assert.equal(detail.waypoints[1].lat, 36.542);
+      assert.equal(detail.waypoints[2].lat, undefined);
+      assert.ok(
+        detail.waypoints.some(
+          (w) => Number.isFinite(w.lat) && Number.isFinite(w.lng),
+        ),
+      );
     } finally {
       globalThis.fetch = originalFetch;
       clearTourCourseCache();

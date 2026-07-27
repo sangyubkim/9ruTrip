@@ -756,6 +756,57 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
             : "출발일을 선택한 뒤 복귀일을 선택해 주세요."}
         </Text>
 
+        <Text style={[styles.label, { color: colors.textSecondary }]}>
+          여행 기간 축제
+        </Text>
+        <Pressable
+          style={[
+            styles.gpsBtn,
+            {
+              borderColor: datesReady ? colors.primary : colors.border,
+              backgroundColor: datesReady ? colors.primary : colors.chipBg,
+            },
+            (!datesReady || festivalLoading) && { opacity: 0.45 },
+          ]}
+          onPress={() => void loadFestivals()}
+          disabled={!datesReady || festivalLoading}
+          accessibilityRole="button"
+          accessibilityLabel="여행 기간 축제 목록 보기"
+        >
+          {festivalLoading ? (
+            <ActivityIndicator color={colors.accent} />
+          ) : (
+            <Text
+              style={[
+                styles.gpsBtnText,
+                { color: datesReady ? colors.primaryFg : colors.textMuted },
+              ]}
+            >
+              {datesReady ? "여행 기간 축제 보기" : "여행 날짜를 먼저 선택해 주세요"}
+            </Text>
+          )}
+        </Pressable>
+        {selectedFestivals.length ? (
+          <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+            선택 축제: {selectedFestivals.map((festival) => festival.name).join(" · ")}
+          </Text>
+        ) : null}
+
+        <Text style={[styles.label, { color: colors.textSecondary }]}>
+          여행지 (도 → 도시)
+        </Text>
+        <ProvinceCityPicker
+          selectedCityIds={selected}
+          onChangeCityIds={(ids) => applyCitySelection(ids as MvpCityId[])}
+          maxCities={MAX_SELECTED_CITIES}
+          disabled={!datesReady}
+        />
+        {!datesReady ? (
+          <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+            여행 날짜를 선택하면 여행지 도시를 고를 수 있습니다.
+          </Text>
+        ) : null}
+
         {datesReady ? (
           <View
             style={[
@@ -851,7 +902,7 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
                             toNaverWeatherPlaceLabel(block.nameKo) ||
                             block.nameKo ||
                             "여행지";
-                          void openNaverSearch(`${place} ${startDate} 날씨`);
+                          void openNaverSearch(`${place} 날씨`);
                         }}
                         accessibilityRole="button"
                         accessibilityLabel={`${block.nameKo} 네이버에서 날씨 보기`}
@@ -888,57 +939,6 @@ export function CreateTripScreen({ onBack, onSubmit, generating }: Props) {
               </Text>
             ) : null}
           </View>
-        ) : null}
-
-        <Text style={[styles.label, { color: colors.textSecondary }]}>
-          여행 기간 축제
-        </Text>
-        <Pressable
-          style={[
-            styles.gpsBtn,
-            {
-              borderColor: datesReady ? colors.primary : colors.border,
-              backgroundColor: datesReady ? colors.primary : colors.chipBg,
-            },
-            (!datesReady || festivalLoading) && { opacity: 0.45 },
-          ]}
-          onPress={() => void loadFestivals()}
-          disabled={!datesReady || festivalLoading}
-          accessibilityRole="button"
-          accessibilityLabel="여행 기간 축제 목록 보기"
-        >
-          {festivalLoading ? (
-            <ActivityIndicator color={colors.accent} />
-          ) : (
-            <Text
-              style={[
-                styles.gpsBtnText,
-                { color: datesReady ? colors.primaryFg : colors.textMuted },
-              ]}
-            >
-              {datesReady ? "여행 기간 축제 보기" : "여행 날짜를 먼저 선택해 주세요"}
-            </Text>
-          )}
-        </Pressable>
-        {selectedFestivals.length ? (
-          <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
-            선택 축제: {selectedFestivals.map((festival) => festival.name).join(" · ")}
-          </Text>
-        ) : null}
-
-        <Text style={[styles.label, { color: colors.textSecondary }]}>
-          여행지 (도 → 도시)
-        </Text>
-        <ProvinceCityPicker
-          selectedCityIds={selected}
-          onChangeCityIds={(ids) => applyCitySelection(ids as MvpCityId[])}
-          maxCities={MAX_SELECTED_CITIES}
-          disabled={!datesReady}
-        />
-        {!datesReady ? (
-          <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
-            여행 날짜를 선택하면 여행지 도시를 고를 수 있습니다.
-          </Text>
         ) : null}
 
         <View

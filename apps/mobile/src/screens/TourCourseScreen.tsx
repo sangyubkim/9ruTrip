@@ -135,14 +135,15 @@ export function TourCourseScreen({
   const openRouteMap = async (item: TourCourseListItem) => {
     const detail = await ensureDetail(item);
     if (!detail) return;
-    const hasCoords = (detail.waypoints || []).some(
+    const withCoords = (detail.waypoints || []).filter(
       (w) => Number.isFinite(Number(w.lat)) && Number.isFinite(Number(w.lng)),
     );
-    if (!hasCoords) {
+    if (withCoords.length === 0) {
       Alert.alert(
         "동선 확인",
         "이 코스에 표시할 좌표가 없습니다. 경유지 목록만 확인하세요.",
       );
+      return;
     }
     setMapCourse(detail);
   };
@@ -296,21 +297,6 @@ export function TourCourseScreen({
                   </Pressable>
 
                   <View style={styles.sideCol}>
-                    <Pressable
-                      style={[
-                        styles.sideBtn,
-                        { borderColor: colors.border },
-                      ]}
-                      onPress={() => void openNaverSearch(course.title)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${course.title} 네이버 검색`}
-                    >
-                      <Text
-                        style={[styles.sideBtnText, { color: colors.accent }]}
-                      >
-                        검색
-                      </Text>
-                    </Pressable>
                     <Pressable
                       style={[
                         styles.sideBtn,

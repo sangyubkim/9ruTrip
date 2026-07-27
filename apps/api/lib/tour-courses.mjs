@@ -211,6 +211,29 @@ function parseCoord(latRaw, lngRaw) {
   return { lat, lng };
 }
 
+/** 빈 문자열은 무시 — TourAPI mapx/mapy가 ""로 올 수 있음 */
+function firstNonEmpty(...vals) {
+  for (const v of vals) {
+    if (v === undefined || v === null) continue;
+    const s = String(v).trim();
+    if (!s) continue;
+    return v;
+  }
+  return undefined;
+}
+
+/**
+ * TourAPI 좌표 추출. mapy=lat, mapx=lng (문자열).
+ * detailInfo2에는 보통 없고, detailCommon2 / 일부 응답의 lat·lng 별칭도 허용.
+ */
+function coordsFromTourItem(item) {
+  if (!item || typeof item !== "object") return null;
+  return parseCoord(
+    firstNonEmpty(item.mapy, item.submapy, item.lat, item.y),
+    firstNonEmpty(item.mapx, item.submapx, item.lng, item.lon, item.x),
+  );
+}
+
 async function tourApiGet(endpoint, params, serviceKey) {
   const search = new URLSearchParams({
     serviceKey: decodedServiceKey(serviceKey),
@@ -276,7 +299,7 @@ export function normalizeTourCourseListItem(item, cityId) {
   const contentId = String(item?.contentid || "").trim();
   const title = String(item?.title || "").trim();
   if (!contentId || !title) return null;
-  const coords = parseCoord(item?.mapy, item?.mapx);
+  const coords = coordsFromTourItem(item);
   const overview = formatCourseListBriefing(item?.overview);
   const distance = cleanTourText(item?.distance, 40);
   const takeTime = cleanTourText(item?.taketime || item?.takeTime, 40);
@@ -308,10 +331,8 @@ export function normalizeTourCourseWaypoint(item, index = 0) {
   const subContentId = String(
     item?.subcontentid || item?.subcontentId || "",
   ).trim();
-  const coords = parseCoord(
-    item?.mapy ?? item?.submapy,
-    item?.mapx ?? item?.submapx,
-  );
+  // detailInfo2 코스 구간은 보통 mapx/mapy 없음 → subcontentid로 detailCommon2 폴백
+  const coords = coordsFromTourItem(item);
   const orderRaw = Number(item?.subnum ?? item?.subNum ?? index + 1);
   const order = Number.isFinite(orderRaw) && orderRaw > 0 ? orderRaw : index + 1;
   return {
@@ -404,14 +425,12 @@ export function formatCourseSeedForPrompt(course) {
 }
 
 async function fetchCourseCommon(contentId, serviceKey) {
+  // TourAPI 4.3: detailCommon2에서 defaultYN/mapinfoYN 등 YN 파라미터 제거됨.
+  // YN을내면 빈 응답(좌표·개요 누락) → contentId만 전달.
   const items = await tourApiGet(
     DETAIL_COMMON_ENDPOINT,
     {
       contentId: String(contentId),
-      defaultYN: "Y",
-      addrinfoYN: "Y",
-      overviewYN: "Y",
-      mapinfoYN: "Y",
     },
     serviceKey,
   ).catch(() => []);
@@ -436,7 +455,7 @@ async function fetchCourseIntro(contentId, serviceKey) {
  */
 async function enrichTourCourseListItem(course, serviceKey) {
   if (!course?.contentId || !serviceKey) return course;
-  const cacheKey = `list-enrich|${course.contentId}`;
+  const cacheKey = `list-enrich-v2|${course.contentId}`;
   const cached = cacheGet(cacheKey);
   if (cached) {
     return {
@@ -481,11 +500,11 @@ async function enrichTourCourseListItem(course, serviceKey) {
 
 async function fetchWaypointCoords(contentId, serviceKey) {
   if (!contentId) return null;
-  const cacheKey = `wp-coord|${contentId}`;
+  const cacheKey = `wp-coord-v2|${contentId}`;
   const cached = cacheGet(cacheKey);
   if (cached) return cached;
   const common = await fetchCourseCommon(contentId, serviceKey);
-  const coords = parseCoord(common.mapy, common.mapx);
+  const coords = coordsFromTourItem(common);
   if (!coords) return null;
   const result = {
     ...coords,
@@ -606,7 +625,7 @@ export async function fetchTourCourseDetail({
   const id = String(contentId || "").trim();
   if (!key || !id) return null;
 
-  const cacheKey = `detail|${id}|${cityId || ""}`;
+  const cacheKey = `detail-v2|${id}|${cityId || ""}`;
   const cached = cacheGet(cacheKey);
   if (cached) return cached;
 
@@ -630,6 +649,7 @@ export async function fetchTourCourseDetail({
     .filter(Boolean)
     .sort((a, b) => a.order - b.order);
 
+  // detailInfo2에 좌표 없는 경유지 → subcontentid로 detailCommon2 폴백
   waypoints = await mapWithConcurrency(
     waypoints,
     DETAIL_CONCURRENCY,
@@ -650,7 +670,7 @@ export async function fetchTourCourseDetail({
     },
   );
 
-  const courseCoords = parseCoord(common.mapy, common.mapx);
+  const courseCoords = coordsFromTourItem(common);
   const title =
     String(common.title || "").trim().slice(0, 80) ||
     `코스 ${id}`;

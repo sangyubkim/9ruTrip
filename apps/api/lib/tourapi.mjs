@@ -179,13 +179,11 @@ export async function fetchTourPlaceDetails({
   if (cached) return cached;
 
   const [commonItems, introItems] = await Promise.all([
+    // TourAPI 4.3: detailCommon2 YN 파라미터 제거 — 넣으면 빈 응답
     tourApiGet(
       DETAIL_COMMON_ENDPOINT,
       {
         contentId: id,
-        defaultYN: "Y",
-        addrinfoYN: "Y",
-        overviewYN: "N",
       },
       key,
     ).catch(() => []),
