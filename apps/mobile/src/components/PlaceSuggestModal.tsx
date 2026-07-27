@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type FocusEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -81,6 +85,7 @@ export function PlaceSuggestModal({
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
   const currency = currencyForCity(cityId);
   const isHotel = category === "hotel";
   const isFood = category === "food";
@@ -99,6 +104,7 @@ export function PlaceSuggestModal({
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeResults, setPlaceResults] = useState<PlaceSearchResult[]>([]);
   const [placeSearching, setPlaceSearching] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeq = useRef(0);
 
@@ -112,9 +118,56 @@ export function PlaceSuggestModal({
       setPlaceResults([]);
       setPlaceSearching(false);
       setSelectedIds(new Set());
+      setKeyboardHeight(0);
       return;
     }
   }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [visible]);
+
+  /** ManualPlaceModal과 동일: 포커스된 필드를 키보드 위로 스크롤 */
+  const scrollFocusedIntoView = (e: FocusEvent) => {
+    const target = e?.nativeEvent?.target;
+    setTimeout(
+      () => {
+        if (!scrollRef.current || target == null) {
+          scrollRef.current?.scrollToEnd({ animated: true });
+          return;
+        }
+        const responder = (
+          scrollRef.current as unknown as {
+            getScrollResponder?: () => {
+              scrollResponderScrollNativeHandleToKeyboard?: (
+                node: number,
+                offset: number,
+                animated: boolean,
+              ) => void;
+            };
+          }
+        ).getScrollResponder?.();
+        responder?.scrollResponderScrollNativeHandleToKeyboard?.(
+          target as unknown as number,
+          120,
+          true,
+        );
+      },
+      Platform.OS === "ios" ? 280 : 120,
+    );
+  };
 
   useEffect(() => {
     if (!visible || !center) return;
@@ -276,432 +329,455 @@ export function PlaceSuggestModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable
-          style={[
-            styles.sheet,
-            { paddingBottom: Math.max(insets.bottom, 16) + 8 },
-          ]}
-          onPress={(e) => e.stopPropagation()}
-        >
-          <Text style={styles.title}>{categoryLabel} 후보 선택</Text>
-          <Text style={styles.sub}>
-            {showList
-              ? isHotel
-                ? "1일 1곳만 선택 · AI 추천 이유를 확인하세요"
-                : source === "places"
-                  ? "여러 곳 선택 가능 · Google Places"
-                  : source === "tourapi"
-                    ? "여러 곳 선택 가능 · TourAPI"
-                    : "여러 곳 선택 가능 · 정적 POI"
-              : "검색 기준 위치를 먼저 선택하세요"}
-            {centerHint ? ` · ${centerHint}` : ""}
-          </Text>
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <Pressable style={styles.backdrop} onPress={onClose}>
+          <Pressable
+            style={[
+              styles.sheet,
+              {
+                paddingBottom: Math.max(insets.bottom, 16) + 8,
+                // Android Modal은 window resize가 잘 안 먹혀 시트를 키보드 높이만큼 올림
+                marginBottom: Platform.OS === "android" ? keyboardHeight : 0,
+              },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <ScrollView
+              ref={scrollRef}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+              automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+              bounces={false}
+              contentContainerStyle={{
+                paddingBottom:
+                  keyboardHeight > 0 ? keyboardHeight * 0.15 + 24 : 0,
+              }}
+            >
+              <Text style={styles.title}>{categoryLabel} 후보 선택</Text>
+              <Text style={styles.sub}>
+                {showList
+                  ? isHotel
+                    ? "1일 1곳만 선택 · AI 추천 이유를 확인하세요"
+                    : source === "places"
+                      ? "여러 곳 선택 가능 · Google Places"
+                      : source === "tourapi"
+                        ? "여러 곳 선택 가능 · TourAPI"
+                        : "여러 곳 선택 가능 · 정적 POI"
+                  : "검색 기준 위치를 먼저 선택하세요"}
+                {centerHint ? ` · ${centerHint}` : ""}
+              </Text>
 
-          {!showList ? (
-            <View style={styles.centerBlock}>
-              <View style={styles.modeRow}>
-                <Pressable
-                  style={[
-                    styles.modeBtn,
-                    centerMode === "gps" && styles.modeBtnOn,
-                  ]}
-                  onPress={() => void pickGps()}
-                  accessibilityRole="button"
-                  accessibilityLabel="현재 위치 기준 검색"
-                >
-                  {gpsStatus === "loading" ? (
-                    <ActivityIndicator color="#0c4a6e" />
-                  ) : (
-                    <Text
+              {!showList ? (
+                <View style={styles.centerBlock}>
+                  <View style={styles.modeRow}>
+                    <Pressable
                       style={[
-                        styles.modeBtnText,
-                        centerMode === "gps" && styles.modeBtnTextOn,
+                        styles.modeBtn,
+                        centerMode === "gps" && styles.modeBtnOn,
                       ]}
+                      onPress={() => void pickGps()}
+                      accessibilityRole="button"
+                      accessibilityLabel="현재 위치 기준 검색"
                     >
-                      현재 위치
-                    </Text>
-                  )}
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.modeBtn,
-                    centerMode === "custom" && styles.modeBtnOn,
-                  ]}
-                  onPress={() => {
-                    setCenterMode("custom");
-                    setGpsError("");
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel="위치 지정 검색"
-                >
-                  <Text
-                    style={[
-                      styles.modeBtnText,
-                      centerMode === "custom" && styles.modeBtnTextOn,
-                    ]}
-                  >
-                    위치 지정
-                  </Text>
-                </Pressable>
-              </View>
-
-              {gpsError ? (
-                <Text style={styles.errorText}>{gpsError}</Text>
-              ) : null}
-
-              {centerMode === "custom" ? (
-                <View style={styles.searchBlock}>
-                  <Text style={styles.searchLabel}>
-                    주소·장소명으로 기준 위치 검색
-                  </Text>
-                  <View style={styles.searchRow}>
-                    <TextInput
-                      style={styles.searchInput}
-                      value={placeQuery}
-                      placeholder="예: 강남역, 해운대 해수욕장"
-                      placeholderTextColor="#94a3b8"
-                      onChangeText={(t) => {
-                        setPlaceQuery(t);
-                        runPlaceSearch(t);
-                      }}
-                      accessibilityLabel="기준 위치 검색"
-                    />
-                    {placeSearching ? (
-                      <ActivityIndicator size="small" color="#0369a1" />
-                    ) : null}
-                  </View>
-                  {placeResults.length > 0 ? (
-                    <ScrollView style={styles.searchList} nestedScrollEnabled>
-                      {placeResults.map((r, i) => (
-                        <Pressable
-                          key={`${r.placeId || r.name}-${i}`}
-                          style={styles.searchItem}
-                          onPress={() => pickPlace(r)}
-                          accessibilityRole="button"
-                          accessibilityLabel={`${r.name} 선택`}
+                      {gpsStatus === "loading" ? (
+                        <ActivityIndicator color="#0c4a6e" />
+                      ) : (
+                        <Text
+                          style={[
+                            styles.modeBtnText,
+                            centerMode === "gps" && styles.modeBtnTextOn,
+                          ]}
                         >
-                          <Text style={styles.searchItemTitle}>{r.name}</Text>
-                          {r.address ? (
-                            <Text style={styles.searchItemSub} numberOfLines={1}>
-                              {r.address}
-                            </Text>
-                          ) : null}
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  ) : placeQuery.trim().length >= 2 && !placeSearching ? (
-                    <Text style={styles.empty}>검색 결과가 없습니다.</Text>
+                          현재 위치
+                        </Text>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.modeBtn,
+                        centerMode === "custom" && styles.modeBtnOn,
+                      ]}
+                      onPress={() => {
+                        setCenterMode("custom");
+                        setGpsError("");
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="위치 지정 검색"
+                    >
+                      <Text
+                        style={[
+                          styles.modeBtnText,
+                          centerMode === "custom" && styles.modeBtnTextOn,
+                        ]}
+                      >
+                        위치 지정
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  {gpsError ? (
+                    <Text style={styles.errorText}>{gpsError}</Text>
+                  ) : null}
+
+                  {centerMode === "custom" ? (
+                    <View style={styles.searchBlock}>
+                      <Text style={styles.searchLabel}>
+                        주소·장소명으로 기준 위치 검색
+                      </Text>
+                      <View style={styles.searchRow}>
+                        <TextInput
+                          style={styles.searchInput}
+                          value={placeQuery}
+                          placeholder="예: 강남역, 해운대 해수욕장"
+                          placeholderTextColor="#94a3b8"
+                          onChangeText={(t) => {
+                            setPlaceQuery(t);
+                            runPlaceSearch(t);
+                          }}
+                          onFocus={scrollFocusedIntoView}
+                          accessibilityLabel="기준 위치 검색"
+                        />
+                        {placeSearching ? (
+                          <ActivityIndicator size="small" color="#0369a1" />
+                        ) : null}
+                      </View>
+                      {placeResults.length > 0 ? (
+                        <ScrollView style={styles.searchList} nestedScrollEnabled>
+                          {placeResults.map((r, i) => (
+                            <Pressable
+                              key={`${r.placeId || r.name}-${i}`}
+                              style={styles.searchItem}
+                              onPress={() => pickPlace(r)}
+                              accessibilityRole="button"
+                              accessibilityLabel={`${r.name} 선택`}
+                            >
+                              <Text style={styles.searchItemTitle}>{r.name}</Text>
+                              {r.address ? (
+                                <Text style={styles.searchItemSub} numberOfLines={1}>
+                                  {r.address}
+                                </Text>
+                              ) : null}
+                            </Pressable>
+                          ))}
+                        </ScrollView>
+                      ) : placeQuery.trim().length >= 2 && !placeSearching ? (
+                        <Text style={styles.empty}>검색 결과가 없습니다.</Text>
+                      ) : null}
+                    </View>
+                  ) : centerMode === null ? (
+                    <Text style={styles.hint}>
+                      「현재 위치」또는 「위치 지정」을 고른 뒤 후보를 불러옵니다.
+                    </Text>
                   ) : null}
                 </View>
-              ) : centerMode === null ? (
-                <Text style={styles.hint}>
-                  「현재 위치」또는 「위치 지정」을 고른 뒤 후보를 불러옵니다.
-                </Text>
-              ) : null}
-            </View>
-          ) : (
-            <>
-              <View style={styles.centerBadgeRow}>
-                <Text style={styles.centerBadge} numberOfLines={1}>
-                  기준 · {center?.label}
-                </Text>
-                <Pressable
-                  onPress={resetCenter}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="기준 위치 변경"
-                >
-                  <Text style={styles.changeLink}>변경</Text>
-                </Pressable>
-              </View>
-              {loading ? (
-                <ActivityIndicator
-                  style={{ marginVertical: 24 }}
-                  color="#0369a1"
-                />
               ) : (
-                <ScrollView style={styles.list}>
-                  {places.length === 0 ? (
-                    <Text style={styles.empty}>후보가 없습니다.</Text>
+                <>
+                  <View style={styles.centerBadgeRow}>
+                    <Text style={styles.centerBadge} numberOfLines={1}>
+                      기준 · {center?.label}
+                    </Text>
+                    <Pressable
+                      onPress={resetCenter}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="기준 위치 변경"
+                    >
+                      <Text style={styles.changeLink}>변경</Text>
+                    </Pressable>
+                  </View>
+                  {loading ? (
+                    <ActivityIndicator
+                      style={{ marginVertical: 24 }}
+                      color="#0369a1"
+                    />
                   ) : (
-                    places.map((p) => {
-                      const checked = selectedIds.has(p.id);
-                      const inAi = aiSet.has(normName(p.name));
-                      const must =
-                        p.mustVisit ||
-                        (typeof p.rating === "number" && p.rating >= 4.5);
-                      const lodgingScored =
-                        isHotel && !p.scoreBreakdown
-                          ? estimateLodgingBreakdown(p, cityId)
-                          : null;
-                      const scoreBd =
-                        p.scoreBreakdown ?? lodgingScored?.scoreBreakdown;
-                      const lodgingScore =
-                        p.lodgingScore ?? lodgingScored?.lodgingScore;
-                      const reasonLines = formatLodgingScoreLines(scoreBd);
-                      const cityNameKo = CITIES[cityId]?.nameKo ?? "";
-                      const tipFromApi = (p.aiReason || p.notes || "").trim();
-                      const tipLooksAddress =
-                        tipFromApi.length >= 16 &&
-                        /(시|군|구|로|길|동|특별자치|광역시)/.test(tipFromApi);
-                      const tipLooksRating =
-                        tipFromApi === (p.reviewSummary || "").trim();
-                      const lodgingTip =
-                        tipFromApi && !tipLooksAddress && !tipLooksRating
-                          ? tipFromApi
-                          : lodgingTipFromBreakdown(
-                              scoreBd,
-                              p.rating,
-                              cityNameKo,
-                            );
-                      const distKm = distanceById.get(p.id);
-                      const distLabel =
-                        distKm != null ? formatDistanceKm(distKm) : null;
-                      const hotelNightly = isHotel
-                        ? formatHotelNightlyMoney(p.estimatedCost, currency)
-                        : null;
-                      const detailLines = placeDetailLines(p, { maxLines: 3 });
-                      return (
-                        <Pressable
-                          key={p.id}
-                          style={[styles.row, checked && styles.rowOn]}
-                          onPress={() => toggle(p)}
-                          accessibilityRole={isHotel ? "radio" : "checkbox"}
-                          accessibilityState={{ checked }}
-                        >
-                          <View style={styles.checkCol}>
-                            <View
-                              style={[
-                                isHotel ? styles.radio : styles.checkbox,
-                                checked && styles.checkOn,
-                              ]}
+                    <ScrollView style={styles.list} nestedScrollEnabled>
+                      {places.length === 0 ? (
+                        <Text style={styles.empty}>후보가 없습니다.</Text>
+                      ) : (
+                        places.map((p) => {
+                          const checked = selectedIds.has(p.id);
+                          const inAi = aiSet.has(normName(p.name));
+                          const must =
+                            p.mustVisit ||
+                            (typeof p.rating === "number" && p.rating >= 4.5);
+                          const lodgingScored =
+                            isHotel && !p.scoreBreakdown
+                              ? estimateLodgingBreakdown(p, cityId)
+                              : null;
+                          const scoreBd =
+                            p.scoreBreakdown ?? lodgingScored?.scoreBreakdown;
+                          const lodgingScore =
+                            p.lodgingScore ?? lodgingScored?.lodgingScore;
+                          const reasonLines = formatLodgingScoreLines(scoreBd);
+                          const cityNameKo = CITIES[cityId]?.nameKo ?? "";
+                          const tipFromApi = (p.aiReason || p.notes || "").trim();
+                          const tipLooksAddress =
+                            tipFromApi.length >= 16 &&
+                            /(시|군|구|로|길|동|특별자치|광역시)/.test(tipFromApi);
+                          const tipLooksRating =
+                            tipFromApi === (p.reviewSummary || "").trim();
+                          const lodgingTip =
+                            tipFromApi && !tipLooksAddress && !tipLooksRating
+                              ? tipFromApi
+                              : lodgingTipFromBreakdown(
+                                  scoreBd,
+                                  p.rating,
+                                  cityNameKo,
+                                );
+                          const distKm = distanceById.get(p.id);
+                          const distLabel =
+                            distKm != null ? formatDistanceKm(distKm) : null;
+                          const hotelNightly = isHotel
+                            ? formatHotelNightlyMoney(p.estimatedCost, currency)
+                            : null;
+                          const detailLines = placeDetailLines(p, { maxLines: 3 });
+                          return (
+                            <Pressable
+                              key={p.id}
+                              style={[styles.row, checked && styles.rowOn]}
+                              onPress={() => toggle(p)}
+                              accessibilityRole={isHotel ? "radio" : "checkbox"}
+                              accessibilityState={{ checked }}
                             >
-                              {checked ? (
-                                <Text style={styles.checkMark}>
-                                  {isHotel ? "●" : "✓"}
-                                </Text>
-                              ) : null}
-                            </View>
-                          </View>
-                          <View style={styles.bodyCol}>
-                            <View style={styles.nameRow}>
-                              {must ? (
-                                <Text
-                                  style={styles.star}
-                                  accessibilityLabel="추천"
+                              <View style={styles.checkCol}>
+                                <View
+                                  style={[
+                                    isHotel ? styles.radio : styles.checkbox,
+                                    checked && styles.checkOn,
+                                  ]}
                                 >
-                                  ★
-                                </Text>
-                              ) : null}
-                              <Text style={styles.name}>{p.name}</Text>
-                              {inAi ? (
-                                <View style={styles.aiBadge}>
-                                  <Text style={styles.aiBadgeText}>AI</Text>
-                                </View>
-                              ) : null}
-                              {distLabel ? (
-                                <View style={styles.distBadge}>
-                                  <Text style={styles.distBadgeText}>
-                                    {distLabel}
-                                  </Text>
-                                </View>
-                              ) : null}
-                            </View>
-                            {isFood ? (
-                              <>
-                                <Text style={styles.metaStrong}>
-                                  대표 메뉴 ·{" "}
-                                  {(p.officialMenu || p.signatureFood) &&
-                                  !/^(establishment|point of interest|food|restaurant)/i.test(
-                                    p.officialMenu || p.signatureFood || "",
-                                  )
-                                    ? p.officialMenu || p.signatureFood
-                                    : "현지 인기 메뉴"}
-                                </Text>
-                                {Number(p.estimatedCost) > 0 ? (
-                                  <Text style={styles.metaStrong}>
-                                    가격 ·{" "}
-                                    {formatPlaceMoney(
-                                      p.estimatedCost,
-                                      p.category,
-                                      currency,
-                                    )}
-                                  </Text>
-                                ) : null}
-                                {p.reviewSummary || p.rating != null ? (
-                                  <Text style={styles.meta}>
-                                    {p.reviewSummary ||
-                                      (p.rating != null
-                                        ? `평점 ${p.rating}`
-                                        : "")}
-                                  </Text>
-                                ) : null}
-                                {detailLines.map((line) => (
-                                  <Text
-                                    key={line}
-                                    style={styles.meta}
-                                    numberOfLines={1}
-                                  >
-                                    {line}
-                                  </Text>
-                                ))}
-                                {p.notes &&
-                                !detailLines.some((l) => l.includes(p.notes!)) ? (
-                                  <Text style={styles.meta} numberOfLines={2}>
-                                    {p.notes}
-                                  </Text>
-                                ) : null}
-                              </>
-                            ) : null}
-                            {!isFood && !isHotel ? (
-                              <>
-                                {p.reviewSummary || p.rating != null ? (
-                                  <Text style={styles.meta}>
-                                    {p.reviewSummary ||
-                                      (p.rating != null
-                                        ? `평점 ${p.rating}`
-                                        : "")}
-                                  </Text>
-                                ) : null}
-                                {Number(p.estimatedCost) > 0 ? (
-                                  <Text style={styles.meta}>
-                                    {CATEGORY_LABEL[p.category] || p.category}{" "}
-                                    ·{" "}
-                                    {formatPlaceMoney(
-                                      p.estimatedCost,
-                                      p.category,
-                                      currency,
-                                    )}
-                                  </Text>
-                                ) : (
-                                  <Text style={styles.meta}>
-                                    {CATEGORY_LABEL[p.category] || p.category}
-                                  </Text>
-                                )}
-                                {detailLines.map((line) => (
-                                  <Text
-                                    key={line}
-                                    style={styles.meta}
-                                    numberOfLines={1}
-                                  >
-                                    {line}
-                                  </Text>
-                                ))}
-                                {p.notes &&
-                                !detailLines.some((l) =>
-                                  l.includes(String(p.notes)),
-                                ) ? (
-                                  <Text style={styles.meta} numberOfLines={2}>
-                                    {p.notes}
-                                  </Text>
-                                ) : null}
-                              </>
-                            ) : null}
-                            {isHotel ? (
-                              <>
-                                {p.reviewSummary || p.rating != null ? (
-                                  <Text style={styles.meta}>
-                                    {p.reviewSummary ||
-                                      (p.rating != null
-                                        ? `평점 ${p.rating}`
-                                        : "")}
-                                  </Text>
-                                ) : null}
-                                <Text style={styles.metaStrong}>
-                                  {formatHotelBreakfastLabel(
-                                    p.breakfastIncluded,
-                                  )}
-                                </Text>
-                                {hotelNightly ? (
-                                  <>
-                                    <Text style={styles.metaStrong}>
-                                      1박 · {hotelNightly}
-                                    </Text>
-                                    <Text style={styles.estimateHint}>
-                                      추정가 · 확정 아님
-                                    </Text>
-                                  </>
-                                ) : null}
-                                {detailLines.map((line) => (
-                                  <Text
-                                    key={line}
-                                    style={styles.meta}
-                                    numberOfLines={1}
-                                  >
-                                    {line}
-                                  </Text>
-                                ))}
-                                <View style={styles.reasonBox}>
-                                  <Text style={styles.reasonTitle}>
-                                    AI 선택 이유
-                                    {lodgingScore
-                                      ? ` · ${lodgingScore}점`
-                                      : ""}
-                                  </Text>
-                                  {reasonLines.map((line) => (
-                                    <Text key={line} style={styles.reasonLine}>
-                                      · {line}
-                                    </Text>
-                                  ))}
-                                  {lodgingTip ? (
-                                    <Text style={styles.reasonLine}>
-                                      · {lodgingTip}
+                                  {checked ? (
+                                    <Text style={styles.checkMark}>
+                                      {isHotel ? "●" : "✓"}
                                     </Text>
                                   ) : null}
                                 </View>
-                              </>
-                            ) : null}
-                          </View>
-                          <Pressable
-                            onPress={(e) => {
-                              e.stopPropagation?.();
-                              void openNaverSearch(p.name);
-                            }}
-                            style={styles.searchBtn}
-                            accessibilityRole="link"
-                            accessibilityLabel={`${p.name} 네이버 검색`}
-                            hitSlop={6}
-                          >
-                            <Text style={styles.searchBtnText}>검색</Text>
-                          </Pressable>
-                        </Pressable>
-                      );
-                    })
+                              </View>
+                              <View style={styles.bodyCol}>
+                                <View style={styles.nameRow}>
+                                  {must ? (
+                                    <Text
+                                      style={styles.star}
+                                      accessibilityLabel="추천"
+                                    >
+                                      ★
+                                    </Text>
+                                  ) : null}
+                                  <Text style={styles.name}>{p.name}</Text>
+                                  {inAi ? (
+                                    <View style={styles.aiBadge}>
+                                      <Text style={styles.aiBadgeText}>AI</Text>
+                                    </View>
+                                  ) : null}
+                                  {distLabel ? (
+                                    <View style={styles.distBadge}>
+                                      <Text style={styles.distBadgeText}>
+                                        {distLabel}
+                                      </Text>
+                                    </View>
+                                  ) : null}
+                                </View>
+                                {isFood ? (
+                                  <>
+                                    <Text style={styles.metaStrong}>
+                                      대표 메뉴 ·{" "}
+                                      {(p.officialMenu || p.signatureFood) &&
+                                      !/^(establishment|point of interest|food|restaurant)/i.test(
+                                        p.officialMenu || p.signatureFood || "",
+                                      )
+                                        ? p.officialMenu || p.signatureFood
+                                        : "현지 인기 메뉴"}
+                                    </Text>
+                                    {Number(p.estimatedCost) > 0 ? (
+                                      <Text style={styles.metaStrong}>
+                                        가격 ·{" "}
+                                        {formatPlaceMoney(
+                                          p.estimatedCost,
+                                          p.category,
+                                          currency,
+                                        )}
+                                      </Text>
+                                    ) : null}
+                                    {p.reviewSummary || p.rating != null ? (
+                                      <Text style={styles.meta}>
+                                        {p.reviewSummary ||
+                                          (p.rating != null
+                                            ? `평점 ${p.rating}`
+                                            : "")}
+                                      </Text>
+                                    ) : null}
+                                    {detailLines.map((line) => (
+                                      <Text
+                                        key={line}
+                                        style={styles.meta}
+                                        numberOfLines={1}
+                                      >
+                                        {line}
+                                      </Text>
+                                    ))}
+                                    {p.notes &&
+                                    !detailLines.some((l) => l.includes(p.notes!)) ? (
+                                      <Text style={styles.meta} numberOfLines={2}>
+                                        {p.notes}
+                                      </Text>
+                                    ) : null}
+                                  </>
+                                ) : null}
+                                {!isFood && !isHotel ? (
+                                  <>
+                                    {p.reviewSummary || p.rating != null ? (
+                                      <Text style={styles.meta}>
+                                        {p.reviewSummary ||
+                                          (p.rating != null
+                                            ? `평점 ${p.rating}`
+                                            : "")}
+                                      </Text>
+                                    ) : null}
+                                    {Number(p.estimatedCost) > 0 ? (
+                                      <Text style={styles.meta}>
+                                        {CATEGORY_LABEL[p.category] || p.category}{" "}
+                                        ·{" "}
+                                        {formatPlaceMoney(
+                                          p.estimatedCost,
+                                          p.category,
+                                          currency,
+                                        )}
+                                      </Text>
+                                    ) : (
+                                      <Text style={styles.meta}>
+                                        {CATEGORY_LABEL[p.category] || p.category}
+                                      </Text>
+                                    )}
+                                    {detailLines.map((line) => (
+                                      <Text
+                                        key={line}
+                                        style={styles.meta}
+                                        numberOfLines={1}
+                                      >
+                                        {line}
+                                      </Text>
+                                    ))}
+                                    {p.notes &&
+                                    !detailLines.some((l) =>
+                                      l.includes(String(p.notes)),
+                                    ) ? (
+                                      <Text style={styles.meta} numberOfLines={2}>
+                                        {p.notes}
+                                      </Text>
+                                    ) : null}
+                                  </>
+                                ) : null}
+                                {isHotel ? (
+                                  <>
+                                    {p.reviewSummary || p.rating != null ? (
+                                      <Text style={styles.meta}>
+                                        {p.reviewSummary ||
+                                          (p.rating != null
+                                            ? `평점 ${p.rating}`
+                                            : "")}
+                                      </Text>
+                                    ) : null}
+                                    <Text style={styles.metaStrong}>
+                                      {formatHotelBreakfastLabel(
+                                        p.breakfastIncluded,
+                                      )}
+                                    </Text>
+                                    {hotelNightly ? (
+                                      <>
+                                        <Text style={styles.metaStrong}>
+                                          1박 · {hotelNightly}
+                                        </Text>
+                                        <Text style={styles.estimateHint}>
+                                          추정가 · 확정 아님
+                                        </Text>
+                                      </>
+                                    ) : null}
+                                    {detailLines.map((line) => (
+                                      <Text
+                                        key={line}
+                                        style={styles.meta}
+                                        numberOfLines={1}
+                                      >
+                                        {line}
+                                      </Text>
+                                    ))}
+                                    <View style={styles.reasonBox}>
+                                      <Text style={styles.reasonTitle}>
+                                        AI 선택 이유
+                                        {lodgingScore
+                                          ? ` · ${lodgingScore}점`
+                                          : ""}
+                                      </Text>
+                                      {reasonLines.map((line) => (
+                                        <Text key={line} style={styles.reasonLine}>
+                                          · {line}
+                                        </Text>
+                                      ))}
+                                      {lodgingTip ? (
+                                        <Text style={styles.reasonLine}>
+                                          · {lodgingTip}
+                                        </Text>
+                                      ) : null}
+                                    </View>
+                                  </>
+                                ) : null}
+                              </View>
+                              <Pressable
+                                onPress={(e) => {
+                                  e.stopPropagation?.();
+                                  void openNaverSearch(p.name);
+                                }}
+                                style={styles.searchBtn}
+                                accessibilityRole="link"
+                                accessibilityLabel={`${p.name} 네이버 검색`}
+                                hitSlop={6}
+                              >
+                                <Text style={styles.searchBtnText}>검색</Text>
+                              </Pressable>
+                            </Pressable>
+                          );
+                        })
+                      )}
+                    </ScrollView>
                   )}
-                </ScrollView>
+                </>
               )}
-            </>
-          )}
 
-          <View style={styles.actions}>
-            <Pressable style={styles.close} onPress={onClose}>
-              <Text style={styles.closeText}>닫기</Text>
-            </Pressable>
-            {showList ? (
-              <Pressable
-                style={[
-                  styles.confirm,
-                  selectedIds.size === 0 && { opacity: 0.5 },
-                ]}
-                disabled={selectedIds.size === 0 || loading}
-                onPress={confirm}
-              >
-                <Text style={styles.confirmText}>
-                  {isHotel
-                    ? "숙소 선택"
-                    : `선택 추가 (${selectedIds.size})`}
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
+              <View style={styles.actions}>
+                <Pressable style={styles.close} onPress={onClose}>
+                  <Text style={styles.closeText}>닫기</Text>
+                </Pressable>
+                {showList ? (
+                  <Pressable
+                    style={[
+                      styles.confirm,
+                      selectedIds.size === 0 && { opacity: 0.5 },
+                    ]}
+                    disabled={selectedIds.size === 0 || loading}
+                    onPress={confirm}
+                  >
+                    <Text style={styles.confirmText}>
+                      {isHotel
+                        ? "숙소 선택"
+                        : `선택 추가 (${selectedIds.size})`}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </ScrollView>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  kav: { flex: 1, justifyContent: "flex-end" },
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(15,23,42,0.45)",
