@@ -37,7 +37,7 @@ import { placeDetailLines } from "../utils/placeDetails";
 import { openNaverSearch } from "../utils/naverSearch";
 import { CITIES } from "../types";
 
-type CenterMode = "gps" | "custom";
+type CenterMode = "gps" | "custom" | "anchor";
 
 type SearchCenter = {
   lat: number;
@@ -57,6 +57,8 @@ type Props = {
   cityId?: string;
   source?: string;
   loading?: boolean;
+  /** + 삽입점 앞 경로(또는 폴백) 좌표 — 「앞 일정 주변」검색용 */
+  anchorPlace?: { lat: number; lng: number; name: string } | null;
   /** 기준 좌표가 정해지면 카테고리 후보 재조회 */
   onRequestSuggest: (center: {
     lat: number;
@@ -80,6 +82,7 @@ export function PlaceSuggestModal({
   cityId = "seoul",
   source,
   loading,
+  anchorPlace = null,
   onRequestSuggest,
   onConfirm,
   onClose,
@@ -212,6 +215,12 @@ export function PlaceSuggestModal({
     });
   };
 
+  const hasUsableAnchor =
+    anchorPlace != null &&
+    Number.isFinite(anchorPlace.lat) &&
+    Number.isFinite(anchorPlace.lng) &&
+    Boolean(anchorPlace.name?.trim());
+
   const pickGps = async () => {
     setCenterMode("gps");
     setGpsError("");
@@ -238,6 +247,18 @@ export function PlaceSuggestModal({
           : "현재 위치를 가져오지 못했습니다.",
       );
     }
+  };
+
+  const pickAnchor = () => {
+    if (!hasUsableAnchor || !anchorPlace) return;
+    setGpsError("");
+    applyCenter({
+      lat: anchorPlace.lat,
+      lng: anchorPlace.lng,
+      label: anchorPlace.name,
+      nearQuery: anchorPlace.name,
+      mode: "anchor",
+    });
   };
 
   const runPlaceSearch = (text: string) => {
@@ -317,7 +338,9 @@ export function PlaceSuggestModal({
   const centerHint = center
     ? center.mode === "gps"
       ? `거리 · ${center.label} 기준`
-      : `거리 · ${center.label} 근처`
+      : center.mode === "anchor"
+        ? `거리 · ${center.label}(앞 일정) 근처`
+        : `거리 · ${center.label} 근처`
     : "";
 
   const showList = Boolean(center);
@@ -416,7 +439,33 @@ export function PlaceSuggestModal({
                         위치 지정
                       </Text>
                     </Pressable>
+                    <Pressable
+                      style={[
+                        styles.modeBtn,
+                        centerMode === "anchor" && styles.modeBtnOn,
+                        !hasUsableAnchor && styles.modeBtnDisabled,
+                      ]}
+                      disabled={!hasUsableAnchor}
+                      onPress={pickAnchor}
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: !hasUsableAnchor }}
+                      accessibilityLabel="앞 일정 주변 검색"
+                    >
+                      <Text
+                        style={[
+                          styles.modeBtnText,
+                          centerMode === "anchor" && styles.modeBtnTextOn,
+                          !hasUsableAnchor && styles.modeBtnTextDisabled,
+                        ]}
+                      >
+                        앞 일정 주변
+                      </Text>
+                    </Pressable>
                   </View>
+
+                  {!hasUsableAnchor ? (
+                    <Text style={styles.hint}>앞 일정에 위치가 없습니다</Text>
+                  ) : null}
 
                   {gpsError ? (
                     <Text style={styles.errorText}>{gpsError}</Text>
@@ -469,7 +518,8 @@ export function PlaceSuggestModal({
                     </View>
                   ) : centerMode === null ? (
                     <Text style={styles.hint}>
-                      「현재 위치」또는 「위치 지정」을 고른 뒤 후보를 불러옵니다.
+                      「현재 위치」「위치 지정」「앞 일정 주변」중 하나를 고른 뒤
+                      후보를 불러옵니다.
                     </Text>
                   ) : null}
                 </View>
@@ -809,8 +859,12 @@ const styles = StyleSheet.create({
     borderColor: "#0c4a6e",
     backgroundColor: "#e0f2fe",
   },
+  modeBtnDisabled: {
+    opacity: 0.45,
+  },
   modeBtnText: { fontSize: 14, fontWeight: "800", color: "#475569" },
   modeBtnTextOn: { color: "#0c4a6e" },
+  modeBtnTextDisabled: { color: "#94a3b8" },
   hint: {
     marginTop: 12,
     fontSize: 12,

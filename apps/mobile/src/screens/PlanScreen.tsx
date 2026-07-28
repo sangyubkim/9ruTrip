@@ -353,6 +353,59 @@ export function PlanScreen({
     return list;
   }, [trip.places, day, catFilter]);
 
+  /** PlaceSuggestModal 「앞 일정 주변」— + 삽입점 앞 카드 좌표 (폴백 포함) */
+  const suggestAnchorPlace = useMemo(() => {
+    if (!addPlaceCtx) return null;
+
+    const usable = (
+      lat: unknown,
+      lng: unknown,
+    ): { lat: number; lng: number } | null => {
+      const la = Number(lat);
+      const ln = Number(lng);
+      if (!Number.isFinite(la) || !Number.isFinite(ln)) return null;
+      return { lat: la, lng: ln };
+    };
+
+    if (addPlaceCtx.afterPlaceId) {
+      const prev = trip.places.find((p) => p.id === addPlaceCtx.afterPlaceId);
+      const coords = prev ? usable(prev.lat, prev.lng) : null;
+      if (prev && coords) {
+        return { ...coords, name: prev.name };
+      }
+    }
+
+    const originCoords = usable(
+      trip.startLat ?? trip.origin?.lat,
+      trip.startLng ?? trip.origin?.lng,
+    );
+    if (originCoords) {
+      const name =
+        (trip.origin?.name || trip.startAddress || "").trim() || "출발지";
+      return { ...originCoords, name };
+    }
+
+    const dayFull = trip.places
+      .filter((p) => p.dayIndex === day)
+      .sort((a, b) => a.order - b.order);
+    const firstOnDay = dayFull.find((p) => usable(p.lat, p.lng));
+    if (firstOnDay) {
+      const coords = usable(firstOnDay.lat, firstOnDay.lng)!;
+      return { ...coords, name: firstOnDay.name };
+    }
+
+    const city = CITIES[dayCityId];
+    if (city?.center) {
+      return {
+        lat: city.center.lat,
+        lng: city.center.lng,
+        name: city.nameKo,
+      };
+    }
+
+    return null;
+  }, [addPlaceCtx, trip, day, dayCityId]);
+
   const mapPlaces = useMemo(
     () =>
       trip.places
@@ -2774,6 +2827,7 @@ export function PlanScreen({
         cityId={dayCityId}
         source={suggestSource}
         loading={suggesting}
+        anchorPlace={suggestAnchorPlace}
         onRequestSuggest={(center) => void loadSuggestAround(center)}
         onConfirm={(picks) => void confirmSuggested(picks)}
         onClose={() => setSuggestVisible(false)}
