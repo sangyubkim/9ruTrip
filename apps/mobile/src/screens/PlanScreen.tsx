@@ -2821,9 +2821,7 @@ export function PlanScreen({
         category={suggestCategory}
         categoryLabel={CATEGORY_LABEL[suggestCategory] || suggestCategory}
         places={suggestList}
-        aiRouteNames={trip.places
-          .filter((p) => p.dayIndex === day)
-          .map((p) => p.name)}
+        dayPlaces={trip.places.filter((p) => p.dayIndex === day)}
         cityId={dayCityId}
         source={suggestSource}
         loading={suggesting}

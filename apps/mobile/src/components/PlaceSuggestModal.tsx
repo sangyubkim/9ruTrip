@@ -35,6 +35,11 @@ import {
 } from "../utils/lodgingExplain";
 import { placeDetailLines } from "../utils/placeDetails";
 import { openNaverSearch } from "../utils/naverSearch";
+import {
+  findDuplicatePlace,
+  isSamePlace,
+  namesSimilar,
+} from "../utils/placeMatch";
 import { CITIES } from "../types";
 
 type CenterMode = "gps" | "custom" | "anchor";
@@ -47,13 +52,18 @@ type SearchCenter = {
   mode: CenterMode;
 };
 
+/** 검색 중심(앞 일정·위치 지정)과 실질적으로 같은 장소면 후보에서 제외 */
+const ANCHOR_EXCLUDE_KM = 0.08; // ~80m
+
 type Props = {
   visible: boolean;
   category: PlaceCategory;
   categoryLabel: string;
   places: ItineraryPlace[];
-  /** 이미 AI 추천 경로에 들어간 장소명 (체크+AI 표시) */
+  /** 이미 AI 추천 경로에 들어간 장소명 (체크+AI 표시) — 「일정에 있음」과 별개 */
   aiRouteNames?: string[];
+  /** 현재 Day 일정 장소 — 「일정에 있음」뱃지용 */
+  dayPlaces?: ItineraryPlace[];
   cityId?: string;
   source?: string;
   loading?: boolean;
@@ -73,12 +83,33 @@ function normName(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, "");
 }
 
+function isSearchCenterItself(
+  place: ItineraryPlace,
+  ref: { lat: number; lng: number; name: string },
+): boolean {
+  if (isSamePlace(place, ref)) return true;
+  if (
+    !Number.isFinite(place.lat) ||
+    !Number.isFinite(place.lng) ||
+    !namesSimilar(place.name, ref.name)
+  ) {
+    return false;
+  }
+  return (
+    haversineKm(
+      { lat: place.lat, lng: place.lng },
+      { lat: ref.lat, lng: ref.lng },
+    ) <= ANCHOR_EXCLUDE_KM
+  );
+}
+
 export function PlaceSuggestModal({
   visible,
   category,
   categoryLabel,
   places,
   aiRouteNames = [],
+  dayPlaces = [],
   cityId = "seoul",
   source,
   loading,
@@ -204,6 +235,23 @@ export function PlaceSuggestModal({
     }
     return map;
   }, [center, places]);
+
+  /** 앞 일정·위치 지정 기준 장소 자체(~1m)는 후보에서 제외 */
+  const displayPlaces = useMemo(() => {
+    if (!center) return places;
+    const ref =
+      center.mode === "anchor" && anchorPlace
+        ? {
+            lat: anchorPlace.lat,
+            lng: anchorPlace.lng,
+            name: anchorPlace.name,
+          }
+        : center.mode === "custom"
+          ? { lat: center.lat, lng: center.lng, name: center.label }
+          : null;
+    if (!ref?.name?.trim()) return places;
+    return places.filter((p) => !isSearchCenterItself(p, ref));
+  }, [places, center, anchorPlace]);
 
   const applyCenter = (next: SearchCenter) => {
     setCenter(next);
@@ -392,6 +440,11 @@ export function PlaceSuggestModal({
                   : "검색 기준 위치를 먼저 선택하세요"}
                 {centerHint ? ` · ${centerHint}` : ""}
               </Text>
+              {showList ? (
+                <Text style={styles.hintLine}>
+                  체크 = 추가할 장소 선택 · 「일정에 있음」= 이미 이 Day에 포함
+                </Text>
+              ) : null}
 
               {!showList ? (
                 <View style={styles.centerBlock}>
@@ -545,12 +598,15 @@ export function PlaceSuggestModal({
                     />
                   ) : (
                     <ScrollView style={styles.list} nestedScrollEnabled>
-                      {places.length === 0 ? (
+                      {displayPlaces.length === 0 ? (
                         <Text style={styles.empty}>후보가 없습니다.</Text>
                       ) : (
-                        places.map((p) => {
+                        displayPlaces.map((p) => {
                           const checked = selectedIds.has(p.id);
                           const inAi = aiSet.has(normName(p.name));
+                          const inDay = Boolean(
+                            findDuplicatePlace(dayPlaces, p),
+                          );
                           const must =
                             p.mustVisit ||
                             (typeof p.rating === "number" && p.rating >= 4.5);
@@ -618,6 +674,16 @@ export function PlaceSuggestModal({
                                     </Text>
                                   ) : null}
                                   <Text style={styles.name}>{p.name}</Text>
+                                  {inDay ? (
+                                    <View
+                                      style={styles.inDayBadge}
+                                      accessibilityLabel="일정에 있음"
+                                    >
+                                      <Text style={styles.inDayBadgeText}>
+                                        일정에 있음
+                                      </Text>
+                                    </View>
+                                  ) : null}
                                   {inAi ? (
                                     <View style={styles.aiBadge}>
                                       <Text style={styles.aiBadgeText}>AI</Text>
@@ -841,7 +907,13 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   title: { fontSize: 17, fontWeight: "800", color: "#0c4a6e" },
-  sub: { marginTop: 4, fontSize: 12, color: "#64748b", marginBottom: 10 },
+  sub: { marginTop: 4, fontSize: 12, color: "#64748b", marginBottom: 4 },
+  hintLine: {
+    marginBottom: 10,
+    fontSize: 11,
+    color: "#94a3b8",
+    fontWeight: "600",
+  },
   centerBlock: { marginBottom: 8 },
   modeRow: { flexDirection: "row", gap: 8 },
   modeBtn: {
@@ -985,6 +1057,13 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   aiBadgeText: { fontSize: 10, fontWeight: "800", color: "#c2410c" },
+  inDayBadge: {
+    backgroundColor: "#e2e8f0",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  inDayBadgeText: { fontSize: 10, fontWeight: "800", color: "#475569" },
   distBadge: {
     backgroundColor: "#ecfdf5",
     paddingHorizontal: 8,
