@@ -41,6 +41,11 @@ import {
   namesSimilar,
 } from "../utils/placeMatch";
 import { CITIES } from "../types";
+import { useTheme } from "../theme/ThemeContext";
+
+/** 기본 prop — 매 렌더 `= []` 새 참조면 selectedIds 초기화 effect가 선택을 덮어씀 */
+const EMPTY_AI_NAMES: string[] = [];
+const EMPTY_DAY_PLACES: ItineraryPlace[] = [];
 
 type CenterMode = "gps" | "custom" | "anchor";
 
@@ -108,8 +113,8 @@ export function PlaceSuggestModal({
   category,
   categoryLabel,
   places,
-  aiRouteNames = [],
-  dayPlaces = [],
+  aiRouteNames = EMPTY_AI_NAMES,
+  dayPlaces = EMPTY_DAY_PLACES,
   cityId = "seoul",
   source,
   loading,
@@ -119,13 +124,17 @@ export function PlaceSuggestModal({
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const scrollRef = useRef<ScrollView>(null);
   const currency = currencyForCity(cityId);
   const isHotel = category === "hotel";
   const isFood = category === "food";
+  /** 참조가 아닌 내용 기준으로 고정 — 부모의 인라인 .map/.filter 재생성에도 안전 */
+  const aiNamesKey = aiRouteNames.map(normName).join("\n");
+  const placesKey = places.map((p) => p.id).join("|");
   const aiSet = useMemo(
-    () => new Set(aiRouteNames.map(normName)),
-    [aiRouteNames],
+    () => new Set(aiNamesKey ? aiNamesKey.split("\n") : []),
+    [aiNamesKey],
   );
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -205,17 +214,21 @@ export function PlaceSuggestModal({
 
   useEffect(() => {
     if (!visible || !center) return;
+    // placesKey / aiNamesKey로만 재실행 — 참조 변경으로 사용자 토글이 초기화되지 않게
+    const ai = new Set(aiNamesKey ? aiNamesKey.split("\n") : []);
+    if (isHotel) {
+      const firstAi = places.find((p) => ai.has(normName(p.name)));
+      setSelectedIds(firstAi ? new Set([firstAi.id]) : new Set());
+      return;
+    }
     const initial = new Set<string>();
     for (const p of places) {
-      if (aiSet.has(normName(p.name))) initial.add(p.id);
+      if (ai.has(normName(p.name))) initial.add(p.id);
     }
-    if (isHotel) {
-      const firstAi = places.find((p) => aiSet.has(normName(p.name)));
-      setSelectedIds(firstAi ? new Set([firstAi.id]) : new Set());
-    } else {
-      setSelectedIds(initial);
-    }
-  }, [visible, places, aiSet, isHotel, center]);
+    setSelectedIds(initial);
+    // places는 placesKey로 동기화됨
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, placesKey, aiNamesKey, isHotel, center]);
 
   useEffect(() => {
     return () => {
@@ -364,10 +377,12 @@ export function PlaceSuggestModal({
 
   const toggle = (place: ItineraryPlace) => {
     setSelectedIds((prev) => {
-      const next = new Set(prev);
       if (isHotel) {
+        // 숙소: 단일 선택(라디오) — 같은 항목 다시 누르면 해제
+        if (prev.has(place.id)) return new Set();
         return new Set([place.id]);
       }
+      const next = new Set(prev);
       if (next.has(place.id)) next.delete(place.id);
       else next.add(place.id);
       return next;
@@ -676,7 +691,10 @@ export function PlaceSuggestModal({
                                   <Text style={styles.name}>{p.name}</Text>
                                   {inDay ? (
                                     <View
-                                      style={styles.inDayBadge}
+                                      style={[
+                                        styles.inDayBadge,
+                                        { backgroundColor: colors.danger },
+                                      ]}
                                       accessibilityLabel="일정에 있음"
                                     >
                                       <Text style={styles.inDayBadgeText}>
@@ -1058,12 +1076,12 @@ const styles = StyleSheet.create({
   },
   aiBadgeText: { fontSize: 10, fontWeight: "800", color: "#c2410c" },
   inDayBadge: {
-    backgroundColor: "#e2e8f0",
+    backgroundColor: "#b91c1c",
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 6,
   },
-  inDayBadgeText: { fontSize: 10, fontWeight: "800", color: "#475569" },
+  inDayBadgeText: { fontSize: 10, fontWeight: "800", color: "#fff" },
   distBadge: {
     backgroundColor: "#ecfdf5",
     paddingHorizontal: 8,
